@@ -2255,7 +2255,7 @@ const App: React.FC = () => {
             </button>
             <div className="px-5 py-2 bg-slate-900/80 rounded-full border border-slate-800">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">
-                TECH TROLLEY
+                {companySettings?.name || 'TECH TROLLEY'}
               </span>
             </div>
 

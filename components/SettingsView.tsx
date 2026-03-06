@@ -13,7 +13,7 @@ interface SystemUser {
 import { CompanySettings } from '../types';
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
-    const API_BASE = `http://${window.location.hostname}:8000`;
+    const API_BASE = '';
     const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'team'>('general');
     const [users, setUsers] = useState<SystemUser[]>([]);
 
@@ -87,19 +87,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
                 method: 'POST',
                 body: formData
             });
+
+            let data: any = {};
+            const contentType = res.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                data = await res.json();
+            } else {
+                const text = await res.text();
+                console.error('Non-JSON response:', text);
+                throw new Error(`Server returned non-JSON response: ${res.status} ${res.statusText}`);
+            }
+
             if (res.ok) {
                 setSettingsMsg({ type: 'success', text: 'Company settings saved successfully!' });
-                const updated = await res.json();
-                setCompanySettings(updated);
-                if (updated.logo) setLogoPreview(updated.logo);
+                setCompanySettings(data);
+                if (data.logo) setLogoPreview(data.logo);
                 setLogoFile(null);
                 setIsEditing(false);
-                // Trigger a global reload or update to refresh logo in App.tsx if needed
                 window.location.reload();
             } else if (res.status !== 401) {
-                setSettingsMsg({ type: 'error', text: 'Failed to save settings.' });
+                const errorMsg = typeof data === 'object'
+                    ? Object.entries(data).map(([k, v]) => `${k}: ${v}`).join(', ')
+                    : 'Failed to save settings.';
+                setSettingsMsg({ type: 'error', text: errorMsg });
             }
-        } catch (e) { setSettingsMsg({ type: 'error', text: 'Connection error.' }); }
+        } catch (e: any) {
+            console.error('Settings save error:', e);
+            setSettingsMsg({ type: 'error', text: e.message || 'Connection error.' });
+        }
     };
 
     const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {

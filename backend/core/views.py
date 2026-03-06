@@ -1,7 +1,8 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse
-from .models import Asset, Conference, DeliveryChallan, Employee
+from .models import Asset, Conference, DeliveryChallan, Employee, CompanySettings
+from django.core.files.uploadedfile import UploadedFile
 from .forms import AssetForm, ConferenceForm
 from reportlab.pdfgen import canvas
 import io
@@ -152,35 +153,43 @@ def employee_detail(request, pk):
         employee.delete()
         return Response(status=204)
 
-from .models import CompanySettings
-from .serializers import CompanySettingsSerializer
+
 
 @api_view(['GET', 'POST'])
 def company_settings(request):
+    from .serializers import CompanySettingsSerializer
     # Ensure there's at least one settings object
     settings, created = CompanySettings.objects.get_or_create(pk=1)
 
     if request.method == 'GET':
-        serializer = CompanySettingsSerializer(settings)
+        serializer = CompanySettingsSerializer(settings, context={'request': request})
         return Response(serializer.data)
     
     elif request.method == 'POST':
-        # Use partial update if needed, but here we usually want to update all fields provided
-        data = request.data.copy()
-        
-        # If 'logo' is in data but it's not a file (e.g. it's a string URL or empty string from frontend)
-        # we should avoid trying to 'save' it as an image if it hasn't changed.
-        if 'logo' in data and not isinstance(data['logo'], (io.BytesIO, io.FileIO, type(request.FILES.get('logo')))):
-            # If it's a string (URL) or empty, we remove it from the update unless we want to clear it
-            if not data['logo']:
-                 settings.logo = None
-            del data['logo']
+        try:
+            # Use partial update if needed, but here we usually want to update all fields provided
+            data = request.data.copy()
+            
+            # If 'logo' is in data but it's not a file (e.g. it's a string URL or empty string from frontend)
+            # we should avoid trying to 'save' it as an image if it hasn't changed.
+            if 'logo' in data and not isinstance(data.get('logo'), UploadedFile):
+                # If it's a string (URL) or empty, we remove it from the update unless we want to clear it
+                if not data['logo']:
+                     if settings.logo:
+                         settings.logo.delete(save=False)
+                     settings.logo = None
+                del data['logo']
 
-        serializer = CompanySettingsSerializer(settings, data=data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=400)
+            serializer = CompanySettingsSerializer(settings, data=data, partial=True, context={'request': request})
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=400)
+        except Exception as e:
+            import traceback
+            print("ERROR IN COMPANY_SETTINGS POST:")
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=500)
 
 
 import pandas as pd

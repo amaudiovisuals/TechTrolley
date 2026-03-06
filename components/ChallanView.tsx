@@ -98,7 +98,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         <div>
           <Logo size="sm" companySettings={companySettings} />
           <div className="mt-1 text-[9px] text-gray-900 font-medium leading-snug">
-            <p className="font-black text-gray-900 uppercase tracking-tighter text-[10px]">{companySettings?.name || 'AM AUDIOVISUALS PVT LTD'}</p>
+            <p className="font-black text-gray-900 uppercase tracking-tighter text-[10px]">{companySettings?.name || 'TECH TROLLEY'}</p>
             <p className="whitespace-pre-wrap">{companySettings?.address || 'Warehouse Complex 7, Industrial Area Phase II, New Delhi - 110020.'}</p>
             <p>GST: {companySettings?.gst_number || '07AAMAU9988Z2Z1'}</p>
             <p>Tel: {companySettings?.phone || '+91 9999 888 777'} | Email: {companySettings?.email || 'support@amaudiovisuals.in'}</p>
@@ -244,7 +244,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
           <div className="text-center pt-2" style={{ borderTop: '2px double #555' }}>
             <p className="text-[8px] font-black text-gray-900 uppercase tracking-[0.4em]">Authorized Dispatch</p>
             <div className="mt-4 h-8 mx-auto w-36" style={{ borderBottom: '1px solid #555' }}></div>
-            <p className="text-[7px] text-gray-900 mt-1 font-bold uppercase tracking-widest italic">{companySettings?.name || 'AM Audiovisuals'}</p>
+            <p className="text-[7px] text-gray-900 mt-1 font-bold uppercase tracking-widest italic">{companySettings?.name || 'TECH TROLLEY'}</p>
           </div>
         </div>
       </div>
@@ -254,7 +254,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         Technical Desk: {companySettings?.phone || '+91 9999 888 777'} | {companySettings?.email || 'support@amaudiovisuals.in'}
         <br />
         <span>Tech Trolley Monitor System</span> • Internal Asset of{' '}
-        <span style={{ color: bw ? '#111' : '#00AEEF' }}>{companySettings?.name || 'AM Audiovisuals'}</span>
+        <span style={{ color: bw ? '#111' : '#00AEEF' }}>{companySettings?.name || 'TECH TROLLEY'}</span>
         <br />
         <span className="text-[9px] font-black text-gray-900 uppercase tracking-widest mt-0.5 inline-block border border-gray-400 px-1 rounded-sm">{copyLabel}</span>
         {bw && <span className="ml-2 text-[7px] font-black uppercase tracking-widest text-gray-500">[B&amp;W]</span>}

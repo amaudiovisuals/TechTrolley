@@ -41,11 +41,11 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
           <div className="flex flex-col mt-3">
             <div className="flex items-center gap-2">
               <span className="h-[2px] w-8 bg-slate-400"></span>
-              <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] leading-none whitespace-nowrap">
-                Powered by
+              <p className="text-[9px] font-black text-slate-500 lowercase tracking-[0.3em] leading-none whitespace-nowrap">
+                powered by
               </p>
             </div>
-            <p className="text-sm font-bold mt-1 ml-10 leading-none" style={{ fontFamily: 'Tahoma, sans-serif' }}>
+            <p className="text-sm font-bold mt-1 ml-10 leading-none lowercase" style={{ fontFamily: 'Tahoma, sans-serif' }}>
               <span className="text-[#F15A24]">{poweredParts.slice(0, -1).join(' ')}</span> <span className="text-[#00AEEF]">{poweredParts.slice(-1).join(' ')}</span>
             </p>
           </div>
