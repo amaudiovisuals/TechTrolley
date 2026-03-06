@@ -2218,7 +2218,7 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-950">
       <aside className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-[#050A1F] border-r border-slate-900 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-8">
-          <Logo size="lg" companySettings={companySettings} className="mb-12" />
+          <Logo size="sm" companySettings={companySettings} className="mb-12" />
           <nav className="space-y-4">
             {/* ... nav items ... */}
             {[
@@ -2255,7 +2255,7 @@ const App: React.FC = () => {
             </button>
             <div className="px-5 py-2 bg-slate-900/80 rounded-full border border-slate-800">
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">
-                {companySettings?.name || 'AM AUDIOVISUALS'}
+                TECH TROLLEY
               </span>
             </div>
 

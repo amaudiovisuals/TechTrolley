@@ -16,7 +16,8 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
   };
 
   const logoSrc = companySettings?.logo || '/logo.png';
-  const poweredBy = companySettings?.powered_by_name || 'am audiovisuals';
+  const poweredBy = companySettings?.powered_by_name || 'a m audiovisuals';
+  const poweredParts = poweredBy.split(' ');
 
   return (
     <div className={`flex flex-col items-start gap-2 ${className}`}>
@@ -24,7 +25,7 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
       <div className={`${iconDimensions[size]} relative flex items-center justify-center`}>
         <img
           src={logoSrc}
-          alt={`${companySettings?.name || 'Tech Trolley'} Logo`}
+          alt="Tech Trolley Logo"
           className="w-full h-full object-contain"
           onError={(e) => {
             (e.target as HTMLImageElement).src = '/logo.png';
@@ -35,13 +36,7 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
       {showText && (
         <div className="flex flex-col">
           <h1 className={`font-black tracking-tighter uppercase leading-none ${size === 'lg' ? 'text-5xl' : 'text-3xl'} text-[#00AEEF]`}>
-            {companySettings?.name ? (
-              <>
-                {companySettings.name.split(' ').slice(0, 1).join(' ')} <span className="text-[#F15A24]">{companySettings.name.split(' ').slice(1).join(' ')}</span>
-              </>
-            ) : (
-              <>TECH <span className="text-[#F15A24]">TROLLEY</span></>
-            )}
+            TECH <span className="text-[#F15A24]">TROLLEY</span>
           </h1>
           <div className="flex flex-col mt-3">
             <div className="flex items-center gap-2">
@@ -51,7 +46,7 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
               </p>
             </div>
             <p className="text-sm font-bold mt-1 ml-10 leading-none" style={{ fontFamily: 'Tahoma, sans-serif' }}>
-              <span className="text-[#F15A24]">{poweredBy.split(' ').slice(0, 2).join(' ')}</span> <span className="text-[#00AEEF]">{poweredBy.split(' ').slice(2).join(' ')}</span>
+              <span className="text-[#F15A24]">{poweredParts.slice(0, -1).join(' ')}</span> <span className="text-[#00AEEF]">{poweredParts.slice(-1).join(' ')}</span>
             </p>
           </div>
         </div>
