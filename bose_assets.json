@@ -1,0 +1,20 @@
+[
+  {
+    "id": 16,
+    "name": "Speaker",
+    "sku": "BOSE_BASS_MODULE_MODEL_B2-2",
+    "barcode": "BOSE_BASS_MODULE_MODEL_B2-2",
+    "serial_number": "058233Z43641331AE",
+    "brand": "Bose",
+    "model_number": "VPL-EX315"
+  },
+  {
+    "id": 17,
+    "name": "Stand",
+    "sku": "BOSE_L1_MODEL_II_POWER_STAND-2",
+    "barcode": "BOSE_L1_MODEL_II_POWER_STAND-2",
+    "serial_number": "042825Z91640020AC",
+    "brand": "Bose",
+    "model_number": "nan"
+  }
+]

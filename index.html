@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#00AEEF" />
+  <meta name="description" content="Tech Trolley — Professional AV & IT asset management for conferences and events" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Tech Trolley" />
+  <meta name="application-name" content="Tech Trolley" />
+
+  <!-- PWA Icons & Manifest -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml" />
+
+  <title>Tech Trolley | Asset Management</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sky: {
+              400: '#40E0D0', // Cyan Highlight
+              500: '#00AEEF', // Primary Brand Blue
+              600: '#006699', // Darker Brand Blue
+            },
+            orange: {
+              400: '#F15A24', // Brand Orange
+              500: '#F15A24',
+            },
+            slate: {
+              800: '#cbd5e1', // Light Borders
+              900: '#ffffff', // White Cards
+              950: '#F0F9FF', // Very Light Blue Background
+            }
+          },
+          fontFamily: {
+            sans: ['Tahoma', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    /* @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap'); */
+
+    body {
+      font-family: 'Tahoma', sans-serif;
+      background-color: #F0F9FF;
+      /* Very Light Blue */
+      margin: 0;
+      overflow-x: hidden;
+      color: #0f172a;
+      /* Dark Text */
+    }
+
+    /* PDA Specific Optimizations */
+    @media (max-width: 450px) {
+      html {
+        font-size: 12px;
+      }
+
+      body {
+        padding-bottom: 2rem;
+      }
+
+      /* Make dialogs consume less padding */
+      .p-10 {
+        padding: 1.25rem !important;
+      }
+
+      .p-8 {
+        padding: 1rem !important;
+      }
+
+      .p-6 {
+        padding: 0.75rem !important;
+      }
+
+      /* Reduce massive headers */
+      .text-5xl {
+        font-size: 2rem !important;
+        line-height: 2.25rem !important;
+      }
+
+      .text-6xl {
+        font-size: 2.25rem !important;
+        line-height: 2.5rem !important;
+      }
+
+      /* Slim down form inputs */
+      input,
+      select,
+      textarea {
+        padding: 0.5rem 0.75rem !important;
+        font-size: 14px !important;
+        /* Prevents iOS auto-zoom */
+      }
+
+      /* Reduce gap styling in grids */
+      .gap-8 {
+        gap: 1rem !important;
+      }
+
+      .gap-6 {
+        gap: 0.75rem !important;
+      }
+
+      .gap-4 {
+        gap: 0.5rem !important;
+      }
+
+      /* Modals */
+      .md\:w-full {
+        width: 95vw !important;
+        max-width: 100% !important;
+        margin: 0 auto;
+      }
+
+      .max-h-\[90vh\] {
+        max-height: 85vh !important;
+      }
+    }
+
+    /* Light Mode Overrides */
+    .text-white {
+      color: #0f172a !important;
+    }
+
+    .text-slate-500 {
+      color: #64748b !important;
+    }
+
+    .text-slate-400 {
+      color: #475569 !important;
+    }
+
+    .text-slate-300 {
+      color: #334155 !important;
+    }
+
+    .border-slate-800 {
+      border-color: #e2e8f0 !important;
+    }
+
+    .border-slate-900 {
+      border-color: #cbd5e1 !important;
+    }
+
+    .bg-slate-950 {
+      background-color: #F0F9FF !important;
+    }
+
+    .bg-slate-900 {
+      background-color: #ffffff !important;
+    }
+
+    /* Input Fields Fix */
+    input,
+    select,
+    textarea {
+      background-color: #ffffff !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+
+    input::placeholder {
+      color: #94a3b8 !important;
+    }
+
+    .animate-float {
+      animation: float 6s ease-in-out infinite;
+    }
+
+    .animate-float-delayed {
+      animation: float 6s ease-in-out infinite;
+      animation-delay: 3s;
+    }
+
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    .glow-blue {
+      box-shadow: 0 0 20px rgba(0, 174, 239, 0.4);
+    }
+
+    .glow-orange {
+      box-shadow: 0 0 20px rgba(241, 90, 36, 0.4);
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 10px;
+    }
+
+    @media print {
+      @page {
+        size: A4;
+        margin: 0;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .print-only {
+        display: block !important;
+      }
+
+      body {
+        background: white !important;
+        /* color: black !important; - Removed to allow specific text colors like white headers */
+      }
+    }
+
+    .print-only {
+      display: none;
+    }
+
+    .chart-container {
+      filter: drop-shadow(0 0 10px rgba(0, 174, 239, 0.1));
+    }
+  </style>
+  <link rel="stylesheet" href="/index.css">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>

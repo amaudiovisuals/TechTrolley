@@ -1,0 +1,392 @@
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.http import HttpResponse
+from .models import Asset, Conference, DeliveryChallan, Employee
+from .forms import AssetForm, ConferenceForm
+from reportlab.pdfgen import canvas
+import io
+
+def dashboard(request):
+    total_assets = Asset.objects.count()
+    assets_in_use = Asset.objects.filter(status='In Use').count()
+    assets_available = Asset.objects.filter(status='Available').count()
+    conferences = Conference.objects.all().order_by('-start_date')[:5]
+    
+    context = {
+        'total_assets': total_assets,
+        'assets_in_use': assets_in_use,
+        'assets_available': assets_available,
+        'conferences': conferences,
+    }
+    return render(request, 'dashboard.html', context)
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .serializers import AssetSerializer, EmployeeSerializer
+
+@api_view(['GET', 'POST'])
+def asset_list(request):
+    if request.method == 'GET':
+        assets = Asset.objects.all()
+        serializer = AssetSerializer(assets, many=True)
+        return Response(serializer.data)
+    elif request.method == 'POST':
+        serializer = AssetSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+def asset_detail(request, pk):
+    asset = get_object_or_404(Asset, pk=pk)
+
+    if request.method == 'GET':
+        serializer = AssetSerializer(asset)
+        return Response(serializer.data)
+
+    elif request.method in ['PUT', 'PATCH']:
+        partial = (request.method == 'PATCH')
+        serializer = AssetSerializer(asset, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+    elif request.method == 'DELETE':
+        asset.delete()
+        return Response(status=204)
+
+@api_view(['GET', 'POST'])
+def asset_sub_assets(request, pk):
+    """
+    GET  /api/assets/<pk>/sub-assets/  → list all sub-assets of this asset
+    POST /api/assets/<pk>/sub-assets/  → link a child asset { "child_id": <id> }
+    """
+    parent = get_object_or_404(Asset, pk=pk)
+
+    if request.method == 'GET':
+        serializer = AssetSerializer(parent.sub_assets.all(), many=True)
+        return Response(serializer.data)
+
+    elif request.method == 'POST':
+        child_id = request.data.get('child_id')
+        if not child_id:
+            return Response({'error': 'child_id is required'}, status=400)
+        child = get_object_or_404(Asset, pk=child_id)
+        if child.pk == parent.pk:
+            return Response({'error': 'An asset cannot be its own sub-asset'}, status=400)
+        child.parent_asset = parent
+        child.save()
+        serializer = AssetSerializer(parent)
+        return Response(serializer.data)
+
+@api_view(['DELETE'])
+def asset_sub_asset_remove(request, pk, child_pk):
+    """
+    DELETE /api/assets/<pk>/sub-assets/<child_pk>/  → unlink a child asset
+    """
+    get_object_or_404(Asset, pk=pk)  # validate parent exists
+    child = get_object_or_404(Asset, pk=child_pk, parent_asset_id=pk)
+    child.parent_asset = None
+    child.save()
+    return Response(status=204)
+
+
+def generate_pdf_challan(request, conference_id):
+    conference = get_object_or_404(Conference, id=conference_id)
+    
+    # Create PDF in memory
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer)
+    
+    p.drawString(100, 800, f"DELIVERY CHALLAN - {conference.name}")
+    p.drawString(100, 780, f"Client: {conference.association_name}")
+    p.drawString(100, 760, f"Date: {conference.start_date}")
+    p.drawString(100, 740, "--------------------------------------------------")
+    
+    y = 720
+    p.drawString(100, y, "Assets Shipped:")
+    y -= 20
+    for asset in conference.assets.all():
+        display_name = asset.alias_name or asset.sku
+        p.drawString(120, y, f"- {display_name} (SN: {asset.serial_number})")
+        y -= 20
+        
+    p.showPage()
+    p.save()
+    
+    buffer.seek(0)
+    buffer.seek(0)
+    return HttpResponse(buffer, content_type='application/pdf')
+
+@api_view(['GET', 'POST'])
+def employee_list(request):
+    if request.method == 'GET':
+        employees = Employee.objects.all()
+        serializer = EmployeeSerializer(employees, many=True)
+        return Response(serializer.data)
+    elif request.method == 'POST':
+        serializer = EmployeeSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+def employee_detail(request, pk):
+    employee = get_object_or_404(Employee, pk=pk)
+
+    if request.method == 'GET':
+        serializer = EmployeeSerializer(employee)
+        return Response(serializer.data)
+
+    elif request.method == 'PUT':
+        serializer = EmployeeSerializer(employee, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+    elif request.method == 'DELETE':
+        employee.delete()
+        return Response(status=204)
+
+from .models import CompanySettings
+from .serializers import CompanySettingsSerializer
+
+@api_view(['GET', 'POST'])
+def company_settings(request):
+    # Ensure there's at least one settings object
+    settings, created = CompanySettings.objects.get_or_create(pk=1)
+
+    if request.method == 'GET':
+        serializer = CompanySettingsSerializer(settings)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Use partial update if needed, but here we usually want to update all fields provided
+        data = request.data.copy()
+        
+        # If 'logo' is in data but it's not a file (e.g. it's a string URL or empty string from frontend)
+        # we should avoid trying to 'save' it as an image if it hasn't changed.
+        if 'logo' in data and not isinstance(data['logo'], (io.BytesIO, io.FileIO, type(request.FILES.get('logo')))):
+            # If it's a string (URL) or empty, we remove it from the update unless we want to clear it
+            if not data['logo']:
+                 settings.logo = None
+            del data['logo']
+
+        serializer = CompanySettingsSerializer(settings, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+
+
+import pandas as pd
+from rest_framework.parsers import MultiPartParser, FormParser
+
+@api_view(['POST'])
+def bulk_upload_assets(request):
+    """
+    Handle bulk upload of assets via CSV or Excel.
+    Expected columns: Name, Brand, Model Number, Category, Serial Number, SKU, Barcode, Status, Condition, Unit Price, QR Code
+    Re-uploading the same file skips existing records (matched by Serial Number) — no errors on duplicates.
+    """
+    if 'file' not in request.FILES:
+        return Response({'error': 'No file provided'}, status=400)
+
+    file = request.FILES['file']
+
+    try:
+        if file.name.endswith('.csv'):
+            df = pd.read_csv(file)
+        elif file.name.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(file)
+        else:
+            return Response({'error': 'Unsupported file format. Please upload CSV or Excel.'}, status=400)
+
+        created_count = 0
+        skipped_count = 0
+        errors = []
+
+        for index, row in df.iterrows():
+            try:
+                # Exact column mapping from user spreadsheet
+                sku_col = next((c for c in df.columns if str(c).strip().lower() in ['sku']), 'SKU')
+                alias_col = next((c for c in df.columns if str(c).strip().lower() in ['alias name', 'alias_name']), 'Alias Name')
+                mac_col = next((c for c in df.columns if str(c).strip().lower() in ['mac address', 'mac_address']), 'MAC Address')
+                imei1_col = next((c for c in df.columns if str(c).strip().lower() in ['imei number 1', 'imei1']), 'IMEI Number 1')
+                imei2_col = next((c for c in df.columns if str(c).strip().lower() in ['imei number 2', 'imei2']), 'IMEI Number 2')
+                serial_col = next((c for c in df.columns if str(c).strip().lower() in ['serial number', 'serial']), 'Serial Number')
+                desc_col = next((c for c in df.columns if str(c).strip().lower() in ['description']), 'Description')
+                barcode_added_col = next((c for c in df.columns if str(c).strip().lower() in ['is barcode added', 'barcode_added']), 'Is Barcode added')
+                type_col = next((c for c in df.columns if str(c).strip().lower() in ['type', 'category']), 'Type')
+                purchase_col = next((c for c in df.columns if str(c).strip().lower() in ['purchased date', 'purchased_date']), 'Purchased Date')
+                price_col = next((c for c in df.columns if str(c).strip().lower() in ['item price', 'price']), 'Item Price')
+                deprec_col = next((c for c in df.columns if str(c).strip().lower() in ['depreciation percentage', 'depreciation']), 'Depreciation Percentage')
+                avail_from_col = next((c for c in df.columns if str(c).strip().lower() in ['available from', 'available_from']), 'Available from')
+                avail_till_col = next((c for c in df.columns if str(c).strip().lower() in ['available till', 'available_till']), 'Available till')
+                barcode_type_col = next((c for c in df.columns if str(c).strip().lower() == 'barcode type'), 'Barcode Type')
+                barcode_col = next((c for c in df.columns if str(c).strip().lower() == 'barcode'), 'Barcode')
+                qr_code_col = next((c for c in df.columns if str(c).strip().lower() == 'qr code'), 'QR Code')
+
+                serial = str(row.get(serial_col, '')).strip()
+                if not serial or pd.isna(serial):
+                    # Fallback to SKU if serial is missing but SKU exists
+                    sku_val = str(row.get(sku_col, '')).strip()
+                    if sku_val and not pd.isna(sku_val):
+                        serial = sku_val
+                    else:
+                        errors.append(f"Row {index+2}: Missing Serial Number — skipped")
+                        continue
+
+                # Normalize Category/Type
+                raw_type = str(row.get(type_col, 'Other')).strip()
+                # Case-insensitive mapping to valid choices
+                type_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
+                normalized_type = type_map.get(raw_type.lower(), 'Other')
+
+                raw_barcode_type = str(row.get(barcode_type_col, '')).strip()
+                barcode_type_val = raw_barcode_type if raw_barcode_type.lower() != 'nan' else ''
+                
+                raw_barcode = str(row.get(barcode_col, '')).strip()
+                barcode_val = raw_barcode if raw_barcode.lower() != 'nan' else ''
+                
+                raw_qr_code = str(row.get(qr_code_col, '')).strip()
+                qr_code_val = raw_qr_code if raw_qr_code.lower() != 'nan' else ''
+                
+                # Check if barcode or QR code is explicitly provided in the new columns
+                barcode_added = True if (qr_code_val or barcode_val) else str(row.get(barcode_added_col, '')).lower() in ['yes', 'true', '1', 'y']
+
+                desc = str(row.get(desc_col, '')).strip()
+
+                # Parse depreciation percentage: handle string "%" and Excel decimal multipliers
+                raw_deprec = row.get(deprec_col, 0)
+                deprec_val = 0.0
+                if isinstance(raw_deprec, str):
+                    deprec_val = float(raw_deprec.replace('%', '') or 0)
+                elif isinstance(raw_deprec, (int, float)):
+                    # If it's a float between 0 and 1, it's likely an Excel percentage (e.g. 0.4 for 40%)
+                    # Exception: if it's 0, it stays 0.
+                    if 0 < raw_deprec <= 1.0:
+                        deprec_val = float(raw_deprec * 100)
+                    else:
+                        deprec_val = float(raw_deprec)
+                
+                defaults = {
+                    'sku': str(row.get(sku_col, serial)).strip(),
+                    'alias_name': str(row.get(alias_col, '')).strip(),
+                    'mac_address': str(row.get(mac_col, '')).strip(),
+                    'imei_number_1': str(row.get(imei1_col, '')).strip(),
+                    'imei_number_2': str(row.get(imei2_col, '')).strip(),
+                    'serial_number': serial,
+                    'description': desc,
+                    'is_barcode_added': barcode_added,
+                    'barcode': barcode_val,
+                    'barcode_type': barcode_type_val,
+                    'qr_code': qr_code_val,
+                    'type': normalized_type,
+                    'item_price': float(row.get(price_col, 0) or 0),
+                    'depreciation_percentage': deprec_val,
+                    'status': 'Available',
+                    'condition': 'Good'
+                }
+
+                # Date parsing helpers
+                def parse_date(val):
+                    if not val or pd.isna(val) or str(val).lower() == 'nan': return None
+                    try: return pd.to_datetime(val).date()
+                    except: return None
+
+                defaults['purchased_date'] = parse_date(row.get(purchase_col))
+                defaults['available_from'] = parse_date(row.get(avail_from_col))
+                defaults['available_till'] = parse_date(row.get(avail_till_col))
+
+                try:
+                    asset = Asset.objects.get(serial_number=serial)
+                    created = False
+                except Asset.DoesNotExist:
+                    asset = Asset(serial_number=serial)
+                    created = True
+
+                if created:
+                    for k, v in defaults.items():
+                        setattr(asset, k, v)
+                    asset.save()
+                    created_count += 1
+                else:
+                    # Safely update existing records ONLY with new tracking / metadata
+                    # rather than wiping missing columns from custom-made templates.
+                    updated = False
+                    if qr_code_col in df.columns and qr_code_val:
+                        asset.qr_code = qr_code_val
+                        asset.is_barcode_added = barcode_added
+                        updated = True
+                    if barcode_col in df.columns and barcode_val:
+                        asset.barcode = barcode_val
+                        asset.is_barcode_added = barcode_added
+                        updated = True
+                    if barcode_type_col in df.columns and barcode_type_val:
+                        asset.barcode_type = barcode_type_val
+                        updated = True
+                        
+                    if updated:
+                        asset.save()
+                    
+                    skipped_count += 1 # Treat as updated in UI but keep same variable for now
+                    skipped_count += 1 # Treat as updated in UI but keep same variable for now
+
+            except Exception as e:
+                errors.append(f"Row {index+2}: {str(e)}")
+
+        return Response({
+            'created': created_count,
+            'updated': skipped_count, # actually updated now
+            'skipped': skipped_count, # legacy compatibility
+            'errors': errors,
+            'message': f'{created_count} asset(s) created, {skipped_count} updated.'
+        }, status=200)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import permission_classes
+from rest_framework.authtoken.models import Token as AuthToken
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def download_asset_template(request):
+    """
+    Generates an Excel (.xlsx) file containing the template structure for bulk uploading.
+    Provides headers and one example row. Does not export existing data.
+    """
+    # Simply ignore tokens/auth for a generic template download
+    headers = [
+        'SKU', 'Alias Name', 'MAC Address', 'IMEI Number 1', 'IMEI Number 2', 
+        'Serial Number', 'Description', 'Is Barcode added', 'Type', 'Purchased Date', 
+        'Item Price', 'Depreciation Percentage', 'Available from', 'Available till', 
+        'Barcode Type', 'Barcode', 'QR Code'
+    ]
+    
+    data = [
+        [
+            'SKU-EXAMPLE', 'Demo Asset', '00:1A:2B:3C:4D:5E', '123456789012345', '987654321098765', 
+            'SN-EXAMPLE-1', 'Example description for upload', 'Yes', 'IT & Networking', '2024-01-15', 
+            75000, '10%', '2024-01-15', '2026-01-15', 'Code128', '1234567890', 'http://example.com/asset/1'
+        ]
+    ]
+        
+    df = pd.DataFrame(data, columns=headers)
+    
+    # Write to BytesIO and return as an Excel file attachment
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Template')
+    
+    output.seek(0)
+    response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="asset_inventory_template.xlsx"'
+    
+    return response

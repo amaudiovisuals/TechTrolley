@@ -1,0 +1,7 @@
+{
+  "name": "Tech Trolley Asset Tracker",
+  "description": "A high-end Godown and Asset Management system specifically designed for medical conferences and equipment rentals by AM Audiovisuals, featuring real-time tracking, barcode scanning, and delivery challan generation.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
