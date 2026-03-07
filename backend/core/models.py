@@ -112,6 +112,8 @@ class CompanySettings(models.Model):
     website = models.CharField(max_length=100, default="www.amaudiovisuals.in", blank=True)
     logo = models.ImageField(upload_to='company/', null=True, blank=True)
     powered_by_name = models.CharField(max_length=200, default="am audiovisuals")
+    dashboard_config = models.JSONField(default=dict, blank=True, help_text="Config for dashboard cards visibility")
+    theme_template = models.CharField(max_length=20, default='blue', choices=[('blue', 'Blue'), ('green', 'Green')])
 
     def __str__(self):
         return self.name
@@ -129,5 +131,7 @@ class CompanySettings(models.Model):
             if self.logo:
                 existing.logo = self.logo
             existing.powered_by_name = self.powered_by_name
+            existing.dashboard_config = self.dashboard_config
+            existing.theme_template = self.theme_template
             return existing.save()
         return super(CompanySettings, self).save(*args, **kwargs)

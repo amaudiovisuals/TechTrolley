@@ -58,6 +58,7 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [assetView, setAssetView] = useState<AssetView>('List');
   const [companySettings, setCompanySettings] = useState<any>(null);
+  const [isEditingDashboard, setIsEditingDashboard] = useState(false);
 
   // PWA Update Logic
   const {
@@ -107,6 +108,49 @@ const App: React.FC = () => {
     }
     setIsLoading(false);
   }, [isLoggedIn]); // Depend on isLoggedIn to refetch settings if login state changes
+
+  useEffect(() => {
+    if (companySettings?.theme_template) {
+      document.documentElement.setAttribute('data-theme', companySettings.theme_template);
+    } else {
+      document.documentElement.setAttribute('data-theme', 'blue');
+    }
+  }, [companySettings?.theme_template]);
+
+  const toggleCardVisibility = (cardKey: string) => {
+    const currentConfig = companySettings?.dashboard_config || {};
+    const newConfig = {
+      ...currentConfig,
+      [cardKey]: currentConfig[cardKey] === false ? true : false
+    };
+    setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+  };
+
+  const handleSaveDashboardConfig = async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/company-settings/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          dashboard_config: companySettings.dashboard_config,
+          theme_template: companySettings.theme_template
+        })
+      });
+      if (res.ok) {
+        setIsEditingDashboard(false);
+      }
+    } catch (err) {
+      console.error("Failed to save dashboard config", err);
+    }
+  };
+
+  const handleUpdateLabel = (cardKey: string, newLabel: string) => {
+    const currentConfig = companySettings?.dashboard_config || {};
+    const newConfig = {
+      ...currentConfig,
+      [`${cardKey}_label`]: newLabel
+    };
+    setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+  };
 
   const apiFetch = async (url: string, options: any = {}) => {
     const token = localStorage.getItem('token');
@@ -1581,26 +1625,66 @@ const App: React.FC = () => {
 
   const renderDashboard = () => (
     <div className="space-y-12 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter">Dashboard</h2>
-        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-4 mt-2">
-          <span className="flex h-3 w-3 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
-          </span>
-          Terminal Operational • {assets.length} Assets Loaded
-        </p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter">Dashboard</h2>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-4 mt-2">
+            <span className="flex h-3 w-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+            </span>
+            Terminal Operational • {assets.length} Assets Loaded
+          </p>
+        </div>
+        <div className="flex gap-3">
+          {isEditingDashboard ? (
+            <>
+              <select
+                value={companySettings?.theme_template || 'blue'}
+                onChange={(e) => setCompanySettings({ ...companySettings, theme_template: e.target.value })}
+                className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-xs font-black uppercase text-slate-800 outline-none focus:border-sky-500 transition"
+                style={{ color: 'inherit' }}
+              >
+                <option value="blue">Blue Theme</option>
+                <option value="green">Green Theme</option>
+              </select>
+              <button onClick={handleSaveDashboardConfig} className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-black uppercase text-xs hover:bg-emerald-400 transition">Save Changes</button>
+            </>
+          ) : (
+            <button onClick={() => setIsEditingDashboard(true)} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black uppercase text-xs hover:bg-slate-700 transition">Edit Dashboard</button>
+          )}
+        </div>
       </div>
 
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: 'Total Assets', val: stats.total, icon: 'fa-boxes-stacked', color: 'text-sky-400' },
-          { label: 'Currently In Use', val: stats.inUse, icon: 'fa-truck-fast', color: 'text-orange-400' },
-          { label: 'Ready / Available', val: stats.available, icon: 'fa-warehouse', color: 'text-emerald-400' },
-          { label: 'Active Conferences', val: activeConferencesCount, icon: 'fa-calendar-check', color: 'text-violet-400' }
-        ].map((item, i) => (
-          <div key={i} className="bg-slate-900/40 backdrop-blur-xl p-8 rounded-[2rem] border border-slate-800/60 shadow-xl">
+          { key: 'total_assets', label: companySettings?.dashboard_config?.total_assets_label || 'Total Assets', val: stats.total, icon: 'fa-boxes-stacked', color: 'text-sky-400' },
+          { key: 'in_use', label: companySettings?.dashboard_config?.in_use_label || 'Currently In Use', val: stats.inUse, icon: 'fa-truck-fast', color: 'text-orange-400' },
+          { key: 'available', label: companySettings?.dashboard_config?.available_label || 'Ready / Available', val: stats.available, icon: 'fa-warehouse', color: 'text-emerald-400' },
+          { key: 'active_conferences', label: companySettings?.dashboard_config?.active_conferences_label || 'Active Conferences', val: activeConferencesCount, icon: 'fa-calendar-check', color: 'text-violet-400' }
+        ].filter(item => isEditingDashboard || companySettings?.dashboard_config?.[item.key] !== false).map((item, i) => (
+          <div key={i} className={`bg-slate-900/40 backdrop-blur-xl p-8 rounded-[2rem] border border-slate-800/60 shadow-xl relative group ${isEditingDashboard && companySettings?.dashboard_config?.[item.key] === false ? 'opacity-40 grayscale' : ''}`}>
+            {isEditingDashboard && (
+              <div className="absolute top-4 right-4 flex gap-2">
+                <button
+                  onClick={() => {
+                    const nl = prompt("Enter new label for " + item.label, item.label);
+                    if (nl) handleUpdateLabel(item.key, nl);
+                  }}
+                  className="w-8 h-8 rounded-full bg-slate-800/80 flex items-center justify-center text-white hover:bg-sky-500 transition-colors z-10"
+                  title="Edit Label"
+                >
+                  <i className="fa-solid fa-pen text-[10px]" />
+                </button>
+                <button
+                  onClick={() => toggleCardVisibility(item.key)}
+                  className="w-8 h-8 rounded-full bg-slate-800/80 flex items-center justify-center text-white hover:bg-sky-500 transition-colors z-10"
+                >
+                  <i className={`fa-solid ${companySettings?.dashboard_config?.[item.key] === false ? 'fa-eye-slash' : 'fa-eye'} text-xs`} />
+                </button>
+              </div>
+            )}
             <i className={`fa-solid ${item.icon} ${item.color} text-2xl mb-6`}></i>
             <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">{item.label}</p>
             <h3 className="text-4xl font-black text-white">{item.val}</h3>
@@ -1611,84 +1695,131 @@ const App: React.FC = () => {
 
 
       {/* Active Conferences Table */}
-      <div className="bg-slate-900/30 backdrop-blur-xl p-6 md:p-10 rounded-[1.5rem] md:rounded-[2.5rem] border border-slate-800/50 shadow-xl">
-        <h3 className="text-xl md:text-2xl font-black text-white uppercase mb-8">Active Conferences</h3>
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left min-w-[700px]">
-            <thead className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-              <tr>
-                <th className="pb-6">Conference</th>
-                <th className="pb-6">Association</th>
-                <th className="pb-6">Duration</th>
-                <th className="pb-6">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/20">
-              {backendConferences.filter(conf => {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const start = new Date(conf.startDate);
-                const end = new Date(conf.endDate);
-                return today >= start && today <= end;
-              }).map(conf => (
-                <tr key={conf.id} className="text-xs font-bold text-slate-300">
-                  <td className="py-4 text-white uppercase">{conf.name}</td>
-                  <td className="py-4 opacity-70 uppercase">{conf.association}</td>
-                  <td className="py-4 font-mono text-sky-400">{new Date(conf.startDate).toLocaleDateString()} - {new Date(conf.endDate).toLocaleDateString()}</td>
-                  <td className="py-4">
-                    <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase bg-violet-500/10 text-violet-400">Live</span>
-                  </td>
+      {(isEditingDashboard || companySettings?.dashboard_config?.active_conferences_table !== false) && (
+        <div className={`bg-slate-900/30 backdrop-blur-xl p-6 md:p-10 rounded-[1.5rem] md:rounded-[2.5rem] border border-slate-800/50 shadow-xl relative ${isEditingDashboard && companySettings?.dashboard_config?.active_conferences_table === false ? 'opacity-40 grayscale' : ''}`}>
+          {isEditingDashboard && (
+            <div className="absolute top-4 right-4 flex gap-2">
+              <button
+                onClick={() => {
+                  const nl = prompt("Enter new title for this table", companySettings?.dashboard_config?.active_conferences_table_label || "Active Conferences");
+                  if (nl) handleUpdateLabel('active_conferences_table', nl);
+                }}
+                className="w-8 h-8 rounded-full bg-slate-800/80 flex items-center justify-center text-white hover:bg-sky-500 transition-colors z-10"
+              >
+                <i className="fa-solid fa-pen text-[10px]" />
+              </button>
+              <button
+                onClick={() => toggleCardVisibility('active_conferences_table')}
+                className="w-8 h-8 rounded-full bg-slate-800/80 flex items-center justify-center text-white hover:bg-sky-500 transition-colors z-10"
+              >
+                <i className={`fa-solid ${companySettings?.dashboard_config?.active_conferences_table === false ? 'fa-eye-slash' : 'fa-eye'} text-xs`} />
+              </button>
+            </div>
+          )}
+          <h3 className="text-xl md:text-2xl font-black text-white uppercase mb-8">{companySettings?.dashboard_config?.active_conferences_table_label || "Active Conferences"}</h3>
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left min-w-[700px]">
+              <thead className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
+                <tr>
+                  <th className="pb-6">Conference</th>
+                  <th className="pb-6">Association</th>
+                  <th className="pb-6">Duration</th>
+                  <th className="pb-6">Status</th>
                 </tr>
-              ))}
-              {backendConferences.filter(conf => {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const start = new Date(conf.startDate);
-                const end = new Date(conf.endDate);
-                return today >= start && today <= end;
-              }).length === 0 && (
+              </thead>
+              <tbody className="divide-y divide-slate-800/20">
+                {backendConferences.filter(conf => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const start = new Date(conf.startDate);
+                  const end = new Date(conf.endDate);
+                  return today >= start && today <= end;
+                }).map(conf => (
+                  <tr key={conf.id} className="text-xs font-bold text-slate-300">
+                    <td className="py-4 text-white uppercase">{conf.name}</td>
+                    <td className="py-4 opacity-70 uppercase">{conf.association}</td>
+                    <td className="py-4 font-mono text-sky-400">{new Date(conf.startDate).toLocaleDateString()} - {new Date(conf.endDate).toLocaleDateString()}</td>
+                    <td className="py-4">
+                      <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase bg-violet-500/10 text-violet-400">Live</span>
+                    </td>
+                  </tr>
+                ))}
+                {backendConferences.filter(conf => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const start = new Date(conf.startDate);
+                  const end = new Date(conf.endDate);
+                  return today >= start && today <= end;
+                }).length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active conferences</td>
+                    </tr>
+                  )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Active Allocations Table */}
+      {(isEditingDashboard || companySettings?.dashboard_config?.active_allocations_table !== false) && (
+        <div className={`bg-slate-900/30 backdrop-blur-xl p-6 md:p-10 rounded-[1.5rem] md:rounded-[2.5rem] border border-slate-800/50 shadow-xl relative mt-8 ${isEditingDashboard && companySettings?.dashboard_config?.active_allocations_table === false ? 'opacity-40 grayscale' : ''}`}>
+          {isEditingDashboard && (
+            <div className="absolute top-4 right-4 flex gap-2">
+              <button
+                onClick={() => {
+                  const nl = prompt("Enter new title for this table", companySettings?.dashboard_config?.active_allocations_table_label || "Active Allocations");
+                  if (nl) handleUpdateLabel('active_allocations_table', nl);
+                }}
+                className="w-8 h-8 rounded-full bg-slate-800/80 flex items-center justify-center text-white hover:bg-sky-500 transition-colors z-10"
+              >
+                <i className="fa-solid fa-pen text-[10px]" />
+              </button>
+              <button
+                onClick={() => toggleCardVisibility('active_allocations_table')}
+                className="w-8 h-8 rounded-full bg-slate-800/80 flex items-center justify-center text-white hover:bg-sky-500 transition-colors z-10"
+              >
+                <i className={`fa-solid ${companySettings?.dashboard_config?.active_allocations_table === false ? 'fa-eye-slash' : 'fa-eye'} text-xs`} />
+              </button>
+            </div>
+          )}
+          <h3 className="text-xl md:text-2xl font-black text-white uppercase mb-8">{companySettings?.dashboard_config?.active_allocations_table_label || "Active Allocations"}</h3>
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left min-w-[600px]">
+              <thead className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
+                <tr>
+                  <th className="pb-6">Asset</th>
+                  <th className="pb-6">Assigned To</th>
+                  <th className="pb-6">Department</th>
+                  <th className="pb-6">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/20">
+                {assets.filter(a => a.assigned_to).map(asset => {
+                  const emp = employees.find(e => e.id.toString() === asset.assigned_to?.toString());
+                  return (
+                    <tr key={asset.id} className="text-xs font-bold text-slate-300">
+                      <td className="py-4 font-mono text-sky-400">{asset.aliasName || asset.sku} <span className="opacity-50">({asset.serialNumber})</span></td>
+                      <td className="py-4 text-white uppercase">{emp?.name || 'Unknown'}</td>
+                      <td className="py-4 opacity-70 uppercase">{emp?.department || '-'}</td>
+                      <td className="py-4">
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
+                          asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'
+                          }`}>{asset.status}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {assets.filter(a => a.assigned_to).length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active conferences</td>
+                    <td colSpan={4} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active allocations</td>
                   </tr>
                 )}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-      <div className="overflow-x-auto custom-scrollbar mt-8">
-        <table className="w-full text-left min-w-[600px]">
-          <thead className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
-            <tr>
-              <th className="pb-6">Asset</th>
-              <th className="pb-6">Assigned To</th>
-              <th className="pb-6">Department</th>
-              <th className="pb-6">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/20">
-            {assets.filter(a => a.assigned_to).map(asset => {
-              const emp = employees.find(e => e.id.toString() === asset.assigned_to?.toString());
-              return (
-                <tr key={asset.id} className="text-xs font-bold text-slate-300">
-                  <td className="py-4 font-mono text-sky-400">{asset.aliasName || asset.sku} <span className="opacity-50">({asset.serialNumber})</span></td>
-                  <td className="py-4 text-white uppercase">{emp?.name || 'Unknown'}</td>
-                  <td className="py-4 opacity-70 uppercase">{emp?.department || '-'}</td>
-                  <td className="py-4">
-                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
-                      asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'
-                      }`}>{asset.status}</span>
-                  </td>
-                </tr>
-              );
-            })}
-            {assets.filter(a => a.assigned_to).length === 0 && (
-              <tr>
-                <td colSpan={4} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active allocations</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
 
   );
@@ -2216,7 +2347,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-950">
-      <aside className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-[#050A1F] border-r border-slate-900 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-[var(--sidebar-bg)] border-r border-slate-900 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-8">
           <Logo size="sm" companySettings={companySettings} className="mb-12" />
           <nav className="space-y-4">
@@ -2229,7 +2360,7 @@ const App: React.FC = () => {
               { id: 'Settings', icon: 'fa-cog', label: 'Settings' }
             ].map(item => (
               <button key={item.id} onClick={() => handleViewChange(item.id as Page)}
-                className={`w-full flex items-center px-6 py-4 rounded-2xl font-black transition-all ${currentPage === item.id ? 'bg-sky-500 text-white' : 'text-slate-600 hover:text-white'}`}>
+                className={`w-full flex items-center px-6 py-4 rounded-2xl font-black transition-all ${currentPage === item.id ? 'bg-sky-500 text-white' : 'text-white/40 hover:text-white'}`}>
                 <i className={`fa-solid ${item.icon} w-8 text-xl`}></i>
                 <span className="uppercase tracking-widest text-[10px] ml-2">{item.label}</span>
               </button>
@@ -2237,7 +2368,7 @@ const App: React.FC = () => {
           </nav>
         </div>
         <div className="mt-auto p-10">
-          <button onClick={handleLogout} className="w-full py-4 bg-slate-900 text-slate-400 rounded-2xl font-black uppercase text-xs hover:text-red-400 hover:bg-slate-800 transition flex items-center justify-center gap-3">
+          <button onClick={handleLogout} className="w-full py-4 bg-slate-900/50 text-white/30 rounded-2xl font-black uppercase text-xs hover:text-white hover:bg-slate-800 transition flex items-center justify-center gap-3 border border-white/5">
             <i className="fa-solid fa-power-off"></i>
             System Logout
           </button>

@@ -29,13 +29,13 @@
         extend: {
           colors: {
             sky: {
-              400: '#40E0D0', // Cyan Highlight
-              500: '#00AEEF', // Primary Brand Blue
-              600: '#006699', // Darker Brand Blue
+              400: 'var(--color-primary-light)',
+              500: 'var(--color-primary)',
+              600: 'var(--color-primary-dark)',
             },
             orange: {
-              400: '#F15A24', // Brand Orange
-              500: '#F15A24',
+              400: 'var(--color-secondary)',
+              500: 'var(--color-secondary)',
             },
             slate: {
               800: '#cbd5e1', // Light Borders
@@ -52,11 +52,30 @@
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <style>
-    /* @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap'); */
+    :root {
+      --color-primary: #00AEEF;
+      --color-primary-light: #40E0D0;
+      --color-primary-dark: #006699;
+      --color-secondary: #F15A24;
+      --bg-primary: #F0F9FF;
+      --sidebar-bg: #050A1F;
+    }
+
+    [data-theme="green"] {
+      --color-primary: #10b981;
+      --color-primary-light: #34d399;
+      --color-primary-dark: #065f46;
+      --color-secondary: #92400e;
+      /* Brown */
+      --bg-primary: #f0fdf4;
+      /* Very Light Green */
+      --sidebar-bg: #022c22;
+      /* Very Dark Forest Green */
+    }
 
     body {
       font-family: 'Tahoma', sans-serif;
-      background-color: #F0F9FF;
+      background-color: var(--bg-primary);
       /* Very Light Blue */
       margin: 0;
       overflow-x: hidden;

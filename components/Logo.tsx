@@ -40,8 +40,8 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
           </h1>
           <div className="flex flex-col mt-3">
             <div className="flex items-center gap-2">
-              <span className="h-[2px] w-8 bg-slate-400"></span>
-              <p className="text-[9px] font-black text-slate-500 lowercase tracking-[0.3em] leading-none whitespace-nowrap">
+              <span className="h-[2px] w-8 bg-white/20"></span>
+              <p className="text-[9px] font-black text-white/40 lowercase tracking-[0.3em] leading-none whitespace-nowrap">
                 powered by
               </p>
             </div>

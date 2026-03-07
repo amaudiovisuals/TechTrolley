@@ -118,4 +118,6 @@ export interface CompanySettings {
   website: string;
   logo?: string | null;
   powered_by_name?: string;
+  dashboard_config?: Record<string, boolean>;
+  theme_template?: 'blue' | 'green';
 }

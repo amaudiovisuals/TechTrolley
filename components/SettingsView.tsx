@@ -20,7 +20,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
     // Company Settings State
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: '', address: '', phone: '', email: '', gst_number: '', website: '',
-        logo: null, powered_by_name: 'am audiovisuals'
+        logo: null, powered_by_name: 'am audiovisuals',
+        dashboard_config: {}, theme_template: 'blue'
     });
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -78,6 +79,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
             formData.append('gst_number', companySettings.gst_number);
             formData.append('website', companySettings.website);
             formData.append('powered_by_name', companySettings.powered_by_name || 'am audiovisuals');
+            if (companySettings.dashboard_config) {
+                formData.append('dashboard_config', JSON.stringify(companySettings.dashboard_config));
+            }
+            if (companySettings.theme_template) {
+                formData.append('theme_template', companySettings.theme_template);
+            }
 
             if (logoFile) {
                 formData.append('logo', logoFile);
@@ -281,6 +288,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
                             <div>
                                 <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Email</label>
                                 <input disabled={!isEditing} type="email" value={companySettings.email} onChange={e => setCompanySettings({ ...companySettings, email: e.target.value })} className={`w-full bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl p-4 font-bold transition-all`} required />
+                            </div>
+                        </div>
+                        <div className="pt-8 border-t border-slate-800/50 space-y-8">
+                            <div>
+                                <h4 className="text-xl font-black text-white uppercase mb-4">Dashboard & Theme</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div>
+                                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Theme Template</label>
+                                        <select disabled={!isEditing} value={companySettings.theme_template || 'blue'} onChange={e => setCompanySettings({ ...companySettings, theme_template: e.target.value as 'blue' | 'green' })} className={`w-full bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl p-4 font-bold transition-all uppercase text-xs`}>
+                                            <option value="blue">Blue (Default)</option>
+                                            <option value="green">Green (Personalized)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block">Stats & Tables Configuration</label>
+                                        <div className="space-y-3">
+                                            {[
+                                                { key: 'total_assets', label: 'Total Assets', default: 'Total Assets' },
+                                                { key: 'in_use', label: 'In Use', default: 'Currently In Use' },
+                                                { key: 'available', label: 'Available', default: 'Ready / Available' },
+                                                { key: 'active_conferences', label: 'Active Conferences', default: 'Active Conferences' },
+                                                { key: 'active_conferences_table', label: 'Conferences Table', default: 'Active Conferences' },
+                                                { key: 'active_allocations_table', label: 'Allocations Table', default: 'Active Allocations' },
+                                            ].map(item => (
+                                                <div key={item.key} className="flex gap-2 items-center">
+                                                    <button
+                                                        type="button"
+                                                        disabled={!isEditing}
+                                                        onClick={() => {
+                                                            const newConfig = { ...companySettings.dashboard_config, [item.key]: companySettings.dashboard_config?.[item.key] === false ? true : false };
+                                                            setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+                                                        }}
+                                                        className={`w-10 h-10 flex-shrink-0 rounded-lg flex items-center justify-center transition-all border ${companySettings.dashboard_config?.[item.key] !== false ? 'bg-sky-500/10 border-sky-500 text-sky-500' : 'bg-slate-800/50 border-slate-700 text-slate-500'}`}
+                                                    >
+                                                        <i className={`fa-solid ${companySettings.dashboard_config?.[item.key] !== false ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                                                    </button>
+                                                    <input
+                                                        disabled={!isEditing}
+                                                        value={companySettings.dashboard_config?.[`${item.key}_label`] || item.default}
+                                                        onChange={(e) => {
+                                                            const newConfig = { ...companySettings.dashboard_config, [`${item.key}_label`]: e.target.value };
+                                                            setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+                                                        }}
+                                                        placeholder={item.label}
+                                                        className={`flex-1 bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl px-4 py-2 text-xs font-bold transition-all uppercase`}
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
