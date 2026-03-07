@@ -3,10 +3,12 @@ from . import views
 from . import auth_views
 from . import user_views
 from . import conference_views
+from . import profile_view
 
 urlpatterns = [
     # API endpoints or views
     path('login/', auth_views.custom_login, name='api_login'),
+    path('my-profile/', profile_view.get_my_profile, name='get_my_profile'),
     path('change-password/', user_views.change_password, name='change_password'),
     path('system-users/', user_views.system_user_list, name='system_user_list'),
     path('system-users/<int:pk>/', user_views.system_user_delete, name='system_user_delete'),

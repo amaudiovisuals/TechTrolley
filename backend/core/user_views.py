@@ -25,7 +25,7 @@ def change_password(request):
 @permission_classes([IsAuthenticated])
 def system_user_list(request):
     if request.method == 'GET':
-        users = User.objects.all()
+        users = User.objects.filter(is_staff=True)
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
     
@@ -39,8 +39,8 @@ def system_user_list(request):
         if User.objects.filter(username=email).exists():
             return Response({'error': 'User with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # We use email as username for simplicity in this system
-        user = User.objects.create_user(username=email, email=email, password=password)
+        # System Administrators are marked with is_staff=True
+        user = User.objects.create_user(username=email, email=email, password=password, is_staff=True)
         return Response({'message': 'User created successfully.', 'id': user.id, 'email': user.email}, status=status.HTTP_201_CREATED)
 
 @api_view(['DELETE'])

@@ -27,7 +27,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             const data = await response.json();
 
             if (response.ok) {
-                onLogin(data.token, { email: data.email, userId: data.user_id });
+                onLogin(data.token, {
+                    email: data.email,
+                    userId: data.user_id,
+                    is_staff: data.is_staff,
+                    employee_id: data.employee_id
+                });
             } else {
                 setError(data.error || 'Login failed');
             }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 interface SettingsViewProps {
     apiFetch: (url: string, options?: any) => Promise<Response>;
+    user: any;
 }
 
 interface SystemUser {
@@ -10,12 +11,13 @@ interface SystemUser {
     date_joined: string;
 }
 
-import { CompanySettings } from '../types';
+import { CompanySettings, Employee } from '../types';
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) => {
     const API_BASE = '';
-    const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'team'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'team' | 'users'>(user?.is_staff ? 'general' : 'profile');
     const [users, setUsers] = useState<SystemUser[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
 
     // Company Settings State
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
@@ -34,13 +36,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
     const [newPassword, setNewPassword] = useState('');
     const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' });
 
-    // Add User State
+    // Add System Admin State
     const [newUserEmail, setNewUserEmail] = useState('');
     const [newUserPassword, setNewUserPassword] = useState('');
     const [addUserMsg, setAddUserMsg] = useState({ type: '', text: '' });
 
+    // Add Employee State
+    const [newEmployeeName, setNewEmployeeName] = useState('');
+    const [newEmployeeEmail, setNewEmployeeEmail] = useState('');
+    const [newEmployeePassword, setNewEmployeePassword] = useState('');
+    const [addEmployeeMsg, setAddEmployeeMsg] = useState({ type: '', text: '' });
+
     useEffect(() => {
         if (activeTab === 'team') fetchUsers();
+        if (activeTab === 'users') fetchEmployees();
         if (activeTab === 'general') fetchCompanySettings();
     }, [activeTab]);
 
@@ -59,6 +68,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
         try {
             const res = await apiFetch(`${API_BASE}/api/system-users/`);
             if (res.ok) setUsers(await res.json());
+        } catch (e) { console.error(e); }
+    };
+
+    const fetchEmployees = async () => {
+        try {
+            const res = await apiFetch(`${API_BASE}/api/employees/`);
+            if (res.ok) setEmployees(await res.json());
         } catch (e) { console.error(e); }
     };
 
@@ -182,8 +198,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
         }
     };
 
+    const handleAddEmployee = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setAddEmployeeMsg({ type: '', text: '' });
+
+        const mockId = `EMP-${new Date().getTime()}`;
+
+        try {
+            const res = await apiFetch(`${API_BASE}/api/employees/`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: newEmployeeName,
+                    email: newEmployeeEmail,
+                    password: newEmployeePassword,
+                    employee_id: mockId,
+                    department: 'User',
+                    phone: 'N/A'
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setAddEmployeeMsg({ type: 'success', text: 'User added successfully!' });
+                setNewEmployeeName('');
+                setNewEmployeeEmail('');
+                setNewEmployeePassword('');
+                fetchEmployees();
+            } else if (res.status !== 401) {
+                const errorText = data.error || data.detail || (typeof data === 'object' ? Object.values(data).flat().join(', ') : 'Failed to add user.');
+                setAddEmployeeMsg({ type: 'error', text: errorText });
+            }
+        } catch (err) {
+            setAddEmployeeMsg({ type: 'error', text: 'Connection error.' });
+        }
+    };
+
     const handleDeleteUser = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this user?')) return;
+        if (!confirm('Are you sure you want to delete this system administrator?')) return;
         try {
             const res = await apiFetch(`${API_BASE}/api/system-users/${id}/`, {
                 method: 'DELETE'
@@ -193,20 +243,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
         } catch (e) { alert('Connection error'); }
     };
 
+    const handleDeleteEmployee = async (id: number) => {
+        if (!confirm('Are you sure you want to delete this user?')) return;
+        try {
+            const res = await apiFetch(`${API_BASE}/api/employees/${id}/`, {
+                method: 'DELETE'
+            });
+            if (res.ok) fetchEmployees();
+            else if (res.status !== 401) alert('Failed to delete user.');
+        } catch (e) { alert('Connection error'); }
+    };
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-5xl font-black text-orange-500 uppercase">System Settings</h2>
 
             <div className="flex gap-4 border-b border-slate-800 pb-1">
-                <button onClick={() => setActiveTab('general')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'general' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
-                    General
-                </button>
+                {user?.is_staff && (
+                    <button onClick={() => setActiveTab('general')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'general' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
+                        General
+                    </button>
+                )}
                 <button onClick={() => setActiveTab('profile')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'profile' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
                     My Account
                 </button>
-                <button onClick={() => setActiveTab('team')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'team' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
-                    Team Access
-                </button>
+                {user?.is_staff && (
+                    <>
+                        <button onClick={() => setActiveTab('users')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'users' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
+                            Users
+                        </button>
+                        <button onClick={() => setActiveTab('team')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'team' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
+                            System Administrators
+                        </button>
+                    </>
+                )}
             </div>
 
             {activeTab === 'general' && (
@@ -374,21 +444,78 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
                 </div>
             )}
 
+            {activeTab === 'users' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Employee List */}
+                    <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50">
+                        <h3 className="text-2xl font-black text-white uppercase mb-8">Users</h3>
+                        <div className="space-y-4">
+                            {employees.map(emp => (
+                                <div key={emp.id} className="flex items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-teal-500">
+                                            <i className="fa-solid fa-user-tag"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-white uppercase">{emp.name}</p>
+                                            <p className="text-[10px] text-slate-500 font-mono">Login: {emp.email}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleDeleteEmployee(emp.id!)} className="text-slate-600 hover:text-red-500 transition px-4">
+                                        <i className="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            ))}
+                            {employees.length === 0 && (
+                                <div className="text-center py-8">
+                                    <p className="text-slate-500 font-black tracking-widest uppercase text-xs">No users found.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Add Employee Form */}
+                    <div>
+                        <form onSubmit={handleAddEmployee} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                            <h3 className="text-2xl font-black text-white uppercase mb-4">Add New User</h3>
+                            {addEmployeeMsg.text && (
+                                <div className={`p-4 rounded-xl text-xs font-bold uppercase ${addEmployeeMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                    {addEmployeeMsg.text}
+                                </div>
+                            )}
+                            <div>
+                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Name</label>
+                                <input type="text" value={newEmployeeName} onChange={e => setNewEmployeeName(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="User Name" required />
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Login Credential</label>
+                                <input type="text" value={newEmployeeEmail} onChange={e => setNewEmployeeEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="Login ID or Email" required />
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Password</label>
+                                <input type="password" value={newEmployeePassword} onChange={e => setNewEmployeePassword(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="••••••••" required />
+                            </div>
+                            <button type="submit" className="w-full py-4 bg-teal-500 text-white rounded-xl font-black uppercase hover:bg-teal-400 transition">Create User</button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {activeTab === 'team' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* User List */}
                     <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50">
-                        <h3 className="text-2xl font-black text-white uppercase mb-8">System Admins</h3>
+                        <h3 className="text-2xl font-black text-orange-500 uppercase mb-8">System Admins</h3>
                         <div className="space-y-4">
                             {users.map(user => (
                                 <div key={user.id} className="flex items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-slate-500">
-                                            <i className="fa-solid fa-user"></i>
+                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-orange-500">
+                                            <i className="fa-solid fa-crown"></i>
                                         </div>
                                         <div>
                                             <p className="text-sm font-bold text-white uppercase">{user.email}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono">ID: {user.id}</p>
+                                            <p className="text-[10px] text-slate-500 font-mono">Admin ID: {user.id}</p>
                                         </div>
                                     </div>
                                     <button onClick={() => handleDeleteUser(user.id)} className="text-slate-600 hover:text-red-500 transition px-4">
@@ -409,14 +536,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch }) => {
                                 </div>
                             )}
                             <div>
-                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Email ID</label>
-                                <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="colleague@amaudiovisuals.com" required />
+                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Admin Login Email</label>
+                                <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="admin@amaudiovisuals.com" required />
                             </div>
                             <div>
                                 <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Password</label>
                                 <input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="••••••••" required />
                             </div>
-                            <button type="submit" className="w-full py-4 bg-emerald-500 text-white rounded-xl font-black uppercase hover:bg-emerald-400 transition">Create User</button>
+                            <button type="submit" className="w-full py-4 bg-orange-500 text-white rounded-xl font-black uppercase hover:bg-orange-400 transition">Create Admin</button>
                         </form>
                     </div>
                 </div>

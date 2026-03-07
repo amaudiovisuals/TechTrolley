@@ -1,0 +1,107 @@
+%%{init: {"themeVariables": {"fontSize": "28px"}, "flowchart": {"nodeSpacing": 80, "rankSpacing": 80}}}%%
+flowchart TD
+    %% Entry Point
+    Start((Start)) --> Login[Login Page]
+    
+    %% Authentication Flow
+    Login --> AuthCheck{Valid Credentials?}
+    AuthCheck -- No --> Invalid[Show Invalid Login Msg]
+    Invalid --> Login
+    AuthCheck -- Yes --> MainApp[Main Layout Wrapper]
+    
+    %% Navigation Menu
+    MainApp --> Nav(Navigation Menu / Sidebar)
+    
+    Nav -->|Default View| Dashboard[Dashboard]
+    Nav --> Inventory[Inventory / Assets]
+    Nav --> Conference[Conferences / Bookings]
+    Nav --> Employee[Employees]
+    Nav --> Challans[Delivery Challans / Billing]
+    Nav --> Settings[Company Settings]
+    Nav --> PrintMode[Print Challan Mode]
+
+    %% ---------------- Dashboard ----------------
+    Dashboard --> D_Stats[View Total Stats]
+    Dashboard --> D_Charts[Asset Graphs / Condition Charts]
+    Dashboard --> D_ActiveConf[Active Conferences Today]
+    
+    %% ---------------- Inventory (Assets) ----------------
+    Inventory --> I_List[List All Assets]
+    I_List --> I_Search[Search / Scan Barcode]
+    I_Search --> I_Match{Match Found?}
+    I_Match -- No --> I_NotFound[Show Not Found Error]
+    I_Match -- Yes --> I_Details
+    
+    I_List --> I_AddBtn[Add New Asset]
+    I_AddBtn --> I_Form[Asset Form: Add]
+    I_Form --> AssetDB[(Asset Model)]
+    
+    I_List --> I_Details[Asset Details View]
+    I_Details --> I_Edit[Edit Asset]
+    I_Edit --> I_FormEdit[Asset Form: Edit]
+    I_FormEdit --> AssetDB
+    I_Details --> I_Delete[Delete Asset]
+    I_Delete --> AssetDB
+    
+    I_Details --> Sub_Add[Add Sub-Assets / Components]
+    Sub_Add --> AssetDB
+    I_Details --> Assign_Emp[Assign to Employee]
+    Assign_Emp --> AssetDB
+
+    %% ---------------- Conferences ----------------
+    Conference --> C_List[List Conferences]
+    C_List --> C_AddBtn[Create New Conference]
+    C_AddBtn --> C_Form[Conference Form Layout]
+    
+    C_List --> C_Edit[Edit Conference]
+    C_Edit --> C_Form
+    C_List --> C_Delete[Delete Conf & Release Assets]
+    C_Delete --> ConfDB[(Conference Model)]
+    C_List --> C_Generate[Generate Challan]
+    C_Generate --> PrintMode
+    
+    %% Inside Conference Form
+    C_Form --> C_Basic[Basic Info Details]
+    C_Basic --> ConfDB
+    C_Form --> C_AssetTabs{Scan & Assign Assets}
+    C_AssetTabs -- Available Tab --> ScanAdd[Scan to Add Asset: Dispatch]
+    C_AssetTabs -- Assigned Tab --> ScanRemove[Scan to Return Asset: Venue Pickup]
+    C_AssetTabs -- Godown Crosscheck --> CheckReturn[Scan to Verify Return: Warehouse Verification]
+    
+    ScanAdd --> C_SubAssetCheck{Has Sub-Assets?}
+    C_SubAssetCheck -- Yes --> C_ScanAll[Must Scan All Components]
+    C_SubAssetCheck -- No --> C_AssignCommit[Update Status to 'In Use' & Link to Conference]
+    C_AssignCommit --> ConfDB
+    C_ScanAll --> C_AssignCommit
+
+    ScanRemove --> C_SubAssetRetCheck{Has Sub-Assets?}
+    C_SubAssetRetCheck -- Yes --> C_RetScanAll[Must Scan All Components to Return]
+    C_SubAssetRetCheck -- No --> C_RemoveCommit[Update Status to 'Crosscheck' & Move to Godown]
+    C_RetScanAll --> C_RemoveCommit
+    C_RemoveCommit --> ConfDB
+    
+    CheckReturn --> C_VerifyCommit[Release Asset back to 'Available' Shelf]
+    C_VerifyCommit --> ConfDB
+
+    %% ---------------- Employees ----------------
+    Employee --> E_List[List Employees]
+    E_List --> E_Add[Add Employee Form]
+    E_Add --> EmpDB[(Employee Model)]
+    E_List --> E_Edit[Edit Employee]
+    E_Edit --> EmpDB
+    
+    %% ---------------- Challans & Settings ----------------
+    Challans --> CH_List[View Generated Challans]
+    CH_List --> ChallanDB[(DeliveryChallan Model)]
+    
+    Settings --> S_Form[Edit Company Settings]
+    S_Form --> SettingDB[(CompanySettings Model)]
+    
+    PrintMode --> PC_View[Formatted Invoice / Challan Template]
+    PC_View --> PC_PrintAction[Browser Print Command]
+
+    %% ---------------- Database Relationships ----------------
+    ConfDB -. M2M .-> AssetDB
+    AssetDB -. FK .-> EmpDB
+    AssetDB -. Self FK .-> AssetDB
+    ChallanDB -. FK .-> ConfDB

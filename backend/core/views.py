@@ -121,7 +121,11 @@ def generate_pdf_challan(request, conference_id):
     buffer.seek(0)
     return HttpResponse(buffer, content_type='application/pdf')
 
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import permission_classes
+
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def employee_list(request):
     if request.method == 'GET':
         employees = Employee.objects.all()
@@ -130,11 +134,20 @@ def employee_list(request):
     elif request.method == 'POST':
         serializer = EmployeeSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            employee = serializer.save()
+            
+            # Check if an auth.User needs to be provisioned for this Employee
+            password = request.data.get('password')
+            if password and employee.email:
+                from django.contrib.auth.models import User
+                if not User.objects.filter(username=employee.email).exists():
+                    User.objects.create_user(username=employee.email, email=employee.email, password=password, is_staff=False)
+                    
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
 def employee_detail(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
 

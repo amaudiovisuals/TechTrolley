@@ -59,9 +59,11 @@ class ConferenceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         assets_data = validated_data.pop('assets', [])
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
+        employees_data = validated_data.pop('assigned_employees', [])
         conference = Conference.objects.create(**validated_data)
         conference.assets.set(assets_data)
         conference.crosscheck_assets.set(crosscheck_data)
+        conference.assigned_employees.set(employees_data)
         
         # Update status of assigned assets
         for asset in assets_data:
@@ -78,17 +80,10 @@ class ConferenceSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         assets_data = validated_data.pop('assets', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
+        employees_data = validated_data.pop('assigned_employees', None)
         instance = super().update(instance, validated_data)
 
         if assets_data is not None:
-            old_asset_ids = set(instance.assets.values_list('id', flat=True))
-            new_asset_ids = set(a.id for a in assets_data)
-
-            # Assets removed from Assigned → should move to Crosscheck (manual or backend)
-            # However, if they are NOT in the new crosscheck_assets either, they are truly Available
-            # But the logic usually is: Assigned -> Remove -> Crosscheck -> Verify -> Available
-            
-            # Since frontend handles the lists, we just update statuses based on current membership
             instance.assets.set(assets_data)
             for asset in assets_data:
                 if asset.status != 'In Use':
@@ -102,11 +97,8 @@ class ConferenceSerializer(serializers.ModelSerializer):
                     asset.status = 'Crosscheck'
                     asset.save()
 
-        # Cleanup: Assets that are neither in assets nor crosscheck_assets of this conference
-        # and were previously in either should be 'Available' if not used elsewhere
-        # This is a bit complex for a serializer. Typically frontend will dictate the final state.
-        # Simple rule: if asset id not in assets_data and not in crosscheck_data, and we moved it
-        # we can set it to Available here if we know it belongs to this conference.
+        if employees_data is not None:
+            instance.assigned_employees.set(employees_data)
         
         return instance
 
@@ -116,7 +108,7 @@ from django.contrib.auth.models import User
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'date_joined']
+        fields = ['id', 'email', 'date_joined', 'is_staff']
 from .models import CompanySettings
 
 class CompanySettingsSerializer(serializers.ModelSerializer):

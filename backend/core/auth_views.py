@@ -20,10 +20,9 @@ def custom_login(request):
     if not email or not password:
         return Response({'error': 'Please provide both email and password'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Find user by email (since default auth uses username)
-    try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
+    # Find user by email case-insensitively
+    user = User.objects.filter(email__iexact=email).first()
+    if not user:
         return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Check password using the found user instance
@@ -33,8 +32,19 @@ def custom_login(request):
         return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
 
     token, _ = Token.objects.get_or_create(user=user)
+    
+    # Try to find associated employee id if not staff
+    employee_id = None
+    if not user.is_staff:
+        from .models import Employee
+        emp = Employee.objects.filter(email=user.email).first()
+        if emp:
+            employee_id = emp.id
+
     return Response({
         'token': token.key,
         'user_id': user.pk,
-        'email': user.email
+        'email': user.email,
+        'is_staff': user.is_staff,
+        'employee_id': employee_id
     })

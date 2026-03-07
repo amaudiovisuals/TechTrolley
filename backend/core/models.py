@@ -90,6 +90,7 @@ class Conference(models.Model):
     end_date = models.DateField(null=True, blank=True)
     assets = models.ManyToManyField(Asset, blank=True, related_name='assigned_conferences')
     crosscheck_assets = models.ManyToManyField(Asset, blank=True, related_name='crosscheck_conferences')
+    assigned_employees = models.ManyToManyField(Employee, blank=True, related_name='assigned_conferences')
 
     def __str__(self):
         return self.name

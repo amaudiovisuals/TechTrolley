@@ -96,7 +96,27 @@ const App: React.FC = () => {
     const storedUser = localStorage.getItem('user');
     if (token) {
       setIsLoggedIn(true);
-      if (storedUser) setUser(JSON.parse(storedUser));
+
+      // Refresh User Profile from server to avoid stale localStorage permissions
+      fetch(`${API_BASE}/api/my-profile/`, {
+        headers: { 'Authorization': `Token ${token}` }
+      })
+        .then(async res => {
+          if (res.ok) {
+            const profileData = await res.json();
+            const fullUser = { ...profileData, token }; // Ensure token is preserved
+            setUser(fullUser);
+            localStorage.setItem('user', JSON.stringify(fullUser));
+          } else if (res.status === 401) {
+            // Token expired or invalid
+            handleLogout();
+          }
+        })
+        .catch(err => {
+          console.error("Failed to refresh profile", err);
+          // Fallback to stored user if offline or server error, but don't clear if server was just down
+          if (storedUser) setUser(JSON.parse(storedUser));
+        });
 
       // Fetch company settings
       fetch(`${API_BASE}/api/company-settings/`, {
@@ -402,7 +422,8 @@ const App: React.FC = () => {
     end_date: '',
     conference_type: 'Medical Conference',
     assets: [],
-    crosscheck_assets: []
+    crosscheck_assets: [],
+    assigned_employees: []
   });
 
   const fetchConferences = () => {
@@ -431,7 +452,8 @@ const App: React.FC = () => {
             contactEmail: c.contact_email,
             challanNumber: (1000 + parseInt(c.id)).toString(),
             assets: (c.assets || []).map((id: any) => id.toString()),
-            crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString())
+            crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
+            assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10))
           }));
           setBackendConferences(mapped);
 
@@ -481,7 +503,7 @@ const App: React.FC = () => {
           setConferenceFormData({
             name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
             vehicle_number: '', driver_phone: '',
-            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: []
+            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: []
           });
           setAssetTab('available'); // Reset tab for next open
         } else {
@@ -506,20 +528,195 @@ const App: React.FC = () => {
     });
   };
 
+  const handleUpdateLogistics = async (confId: string, vehicleNo: string, driverNo: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          vehicle_number: vehicleNo,
+          driver_phone: driverNo
+        })
+      });
+      if (res.ok) {
+        fetchConferences();
+        setScanToast({ message: "Logistics updated successfully!", type: 'success' });
+      } else {
+        alert("Failed to update logistics.");
+      }
+    } catch (err) {
+      console.error("Logistics Update Error:", err);
+    }
+  };
+
   const openNewConferenceForm = () => {
     setEditingConference(null);
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
-      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: []
+      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], assigned_employees: []
     });
     setConferenceView('Form');
   };
 
+  const renderConferenceDetails = () => {
+    if (!selectedConferenceDetails) return null;
+    const conf = selectedConferenceDetails;
+
+    // Check if mandatory fields are filled
+    const isLogisticsFilled = !!conferenceFormData.vehicle_number && !!conferenceFormData.driver_phone;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(conf.startDate);
+    const end = new Date(conf.endDate);
+    let statusLabel = 'Ongoing';
+    let statusStyle = 'bg-emerald-500/10 text-emerald-400';
+    if (today < start) { statusLabel = 'Upcoming'; statusStyle = 'bg-blue-500/10 text-blue-400'; }
+    else if (today > end) { statusLabel = 'Ended'; statusStyle = 'bg-slate-800/50 text-slate-500'; }
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <button onClick={() => setConferenceView('List')} className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition flex items-center gap-2 mb-4">
+              <i className="fa-solid fa-arrow-left"></i> Back to List
+            </button>
+            <h2 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tighter">{conf.conferenceName || conf.name}</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase mt-2">{conf.association}</p>
+          </div>
+          <div className={`px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest ${statusStyle}`}>
+            {statusLabel}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Logistics Form */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-slate-900/40 p-8 rounded-[2rem] border border-slate-800/50 space-y-6">
+              <h3 className="text-lg font-black text-white uppercase flex items-center gap-3">
+                <i className="fa-solid fa-truck-fast text-sky-500"></i> Logistics Info
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Vehicle Number *</label>
+                  <input
+                    value={conferenceFormData.vehicle_number}
+                    onChange={e => setConferenceFormData({ ...conferenceFormData, vehicle_number: e.target.value })}
+                    onBlur={() => handleUpdateLogistics(conf.id, conferenceFormData.vehicle_number, conferenceFormData.driver_phone)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-bold text-sm focus:border-sky-500 outline-none transition"
+                    placeholder="e.g. DL 01 AB 1234"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Driver Phone *</label>
+                  <input
+                    value={conferenceFormData.driver_phone}
+                    onChange={e => setConferenceFormData({ ...conferenceFormData, driver_phone: e.target.value })}
+                    onBlur={() => handleUpdateLogistics(conf.id, conferenceFormData.vehicle_number, conferenceFormData.driver_phone)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-bold text-sm focus:border-sky-500 outline-none transition"
+                    placeholder="e.g. 9876543210"
+                  />
+                </div>
+              </div>
+
+              {!isLogisticsFilled && (
+                <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl">
+                  <p className="text-[10px] font-black text-orange-400 uppercase leading-relaxed uppercase">
+                    <i className="fa-solid fa-circle-exclamation mr-2"></i>
+                    Please enter vehicle and driver details to enable challan printing.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={() => handlePrintChallan(conf)}
+                disabled={!isLogisticsFilled}
+                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-3 ${isLogisticsFilled ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+              >
+                <i className="fa-solid fa-print"></i> Print Delivery Challan
+              </button>
+            </div>
+          </div>
+
+          {/* Asset Scanning */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-slate-900/40 p-8 rounded-[2rem] border border-slate-800/50">
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="text-lg font-black text-white uppercase flex items-center gap-3">
+                  <i className="fa-solid fa-qrcode text-sky-500"></i> Asset Scanning
+                </h3>
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[10px] font-black uppercase">
+                    {conferenceFormData.assets.length} Scanned
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-4 mb-8">
+                <div className="flex-1 flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 focus-within:border-sky-500 transition-all">
+                  <i className="fa-solid fa-search text-slate-600"></i>
+                  <input
+                    ref={quickAddRef}
+                    value={quickAddInput}
+                    onChange={(e) => setQuickAddInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleScan(quickAddInput);
+                        setQuickAddInput('');
+                      }
+                    }}
+                    placeholder="SCAN OR TYPE SKU..."
+                    className="bg-transparent border-none text-white font-black text-sm w-full outline-none uppercase placeholder:text-slate-700"
+                  />
+                </div>
+                {isMobilePhone && (
+                  <button onClick={() => setShowScanner(true)} className="w-14 h-14 bg-sky-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/20 active:scale-90 transition">
+                    <i className="fa-solid fa-camera text-xl"></i>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {conferenceFormData.assets.length === 0 ? (
+                  <div className="py-20 text-center space-y-4 bg-slate-950/20 rounded-2xl border border-dashed border-slate-800">
+                    <i className="fa-solid fa-box-open text-4xl text-slate-800"></i>
+                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">No assets scanned yet for this conference</p>
+                  </div>
+                ) : (
+                  conferenceFormData.assets.map((assetId: any) => {
+                    const asset = assets.find(a => String(a.id) === String(assetId));
+                    if (!asset) return null;
+                    return (
+                      <div key={assetId} className="flex items-center justify-between p-4 bg-slate-950 rounded-xl border border-slate-900 group animate-in slide-in-from-right-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center text-sky-500">
+                            <i className="fa-solid fa-box"></i>
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-white uppercase">{asset.aliasName || asset.sku}</p>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{asset.type}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                          className="w-8 h-8 rounded-lg bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center hover:bg-red-500 hover:text-white"
+                        >
+                          <i className="fa-solid fa-trash text-[10px]"></i>
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const openEditConferenceForm = (conf: any) => { // Using internal format, needs mapping back to form data keys
-    // We need to find the raw backend data or map the frontend "Booking" type back to form structure
-    // Since we have the mapped object 'conf', we can use it.
-    // Note: conf keys are camelCase from fetchConferences map, but form expects snake_case for backend 
     setEditingConference(conf);
     setConferenceFormData({
       name: conf.name,
@@ -535,8 +732,17 @@ const App: React.FC = () => {
       start_date: conf.startDate,
       end_date: conf.endDate,
       conference_type: conf.type,
-      assets: conf.assets || []
+      assets: conf.assets || [],
+      assigned_employees: conf.assigned_employees || []
     });
+
+    if (!user?.is_staff) {
+      setSelectedConferenceDetails(conf);
+      setConferenceView('Details');
+      setCurrentPage('Conferences');
+      return;
+    }
+
     setConferenceView('Form');
   };
 
@@ -759,7 +965,7 @@ const App: React.FC = () => {
     }
 
     // 2. CONFERENCE FORM LOGIC
-    if (currentPage === 'Conferences' && conferenceView === 'Form') {
+    if (currentPage === 'Conferences' && (conferenceView === 'Form' || conferenceView === 'Details')) {
       if (!asset) {
         // Silent return for Conferences if not found - avoids noise from malformed/duplicate scans
         return;
@@ -1623,11 +1829,29 @@ const App: React.FC = () => {
 
   // --- RENDERERS ---
 
+  const filteredConferences = useMemo(() => {
+    if (user?.is_staff) return backendConferences;
+    return backendConferences.filter(conf =>
+      conf.assigned_employees?.includes(Number(user?.employee_id))
+    );
+  }, [backendConferences, user]);
+
   const renderDashboard = () => (
     <div className="space-y-12 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex flex-col gap-2">
-          <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter">Dashboard</h2>
+          {!user?.is_staff && (
+            <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 px-4 py-2 rounded-full mb-4 w-fit">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+              </span>
+              <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Employee Portal • Assigned Views</p>
+            </div>
+          )}
+          <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter">
+            Dashboard
+          </h2>
           <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-4 mt-2">
             <span className="flex h-3 w-3 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
@@ -1728,7 +1952,7 @@ const App: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/20">
-                {backendConferences.filter(conf => {
+                {filteredConferences.filter(conf => {
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
                   const start = new Date(conf.startDate);
@@ -1744,7 +1968,7 @@ const App: React.FC = () => {
                     </td>
                   </tr>
                 ))}
-                {backendConferences.filter(conf => {
+                {filteredConferences.filter(conf => {
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
                   const start = new Date(conf.startDate);
@@ -2105,7 +2329,7 @@ const App: React.FC = () => {
 
   const renderChallanList = () => {
     // Sort challans by number descending
-    const sortedChallans = [...backendConferences].sort((a, b) =>
+    const sortedChallans = [...filteredConferences].sort((a, b) =>
       parseInt(b.challanNumber) - parseInt(a.challanNumber)
     );
 
@@ -2188,12 +2412,14 @@ const App: React.FC = () => {
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <div className="flex justify-between items-center">
         <h2 className="text-5xl font-black text-orange-500 tracking-tighter uppercase">Conferences</h2>
-        <button onClick={openNewConferenceForm} className="w-full md:w-auto px-8 py-4 bg-violet-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-violet-500/20">Add Conference</button>
+        {user?.is_staff && (
+          <button onClick={openNewConferenceForm} className="w-full md:w-auto px-8 py-4 bg-violet-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-violet-500/20">Add Conference</button>
+        )}
       </div>
 
       {/* Mobile Card View for Conferences */}
       <div className="md:hidden space-y-4">
-        {backendConferences.map((conf) => {
+        {filteredConferences.map((conf) => {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           const start = new Date(conf.startDate);
@@ -2225,7 +2451,9 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex gap-3">
                   <button onClick={(e) => { e.stopPropagation(); handlePrintChallan(conf); }} className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center"><i className="fa-solid fa-print"></i></button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDeleteConference(conf.id); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center"><i className="fa-solid fa-trash"></i></button>
+                  {user?.is_staff && (
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteConference(conf.id); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center"><i className="fa-solid fa-trash"></i></button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2234,7 +2462,7 @@ const App: React.FC = () => {
         {backendConferences.length === 0 && <div className="p-10 bg-slate-900/20 rounded-2xl border border-dashed border-slate-800 text-center text-slate-500 font-black uppercase text-[10px]">No Conferences found</div>}
       </div>
 
-      <div className="hidden md:block bg-slate-900/30 rounded-[2rem] border border-slate-800/50 overflow-hidden">
+      <div className="hidden md:block bg-slate-900/30 rounded-[2rem] border border-slate-800/50 overflow-hidden overflow-x-auto custom-scrollbar">
         <table className="w-full text-left">
           <thead className="bg-slate-950/40 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">
             <tr>
@@ -2243,11 +2471,11 @@ const App: React.FC = () => {
               <th className="px-10 py-6">Duration</th>
               <th className="px-10 py-6">Type</th>
               <th className="px-10 py-6 text-center">Status</th>
-              <th className="px-10 py-6 text-right">Actions</th>
+              {user?.is_staff && <th className="px-10 py-6 text-right">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/20">
-            {backendConferences.map((conf) => {
+            {filteredConferences.map((conf) => {
               const today = new Date();
               today.setHours(0, 0, 0, 0);
               const start = new Date(conf.startDate);
@@ -2284,13 +2512,19 @@ const App: React.FC = () => {
                       <i className="fa-solid fa-box"></i> {(conf.assets || []).length}
                     </span>
                     <button onClick={() => handlePrintChallan(conf)} className="text-emerald-400 hover:text-white" title="Print Challan"><i className="fa-solid fa-print"></i></button>
-                    <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
-                    <button onClick={() => handleDeleteConference(conf.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
+                    {user?.is_staff ? (
+                      <>
+                        <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
+                        <button onClick={() => handleDeleteConference(conf.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
+                      </>
+                    ) : (
+                      <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white text-[10px] font-black uppercase tracking-widest pl-4">View Execution <i className="fa-solid fa-arrow-right ml-1"></i></button>
+                    )}
                   </td>
                 </tr>
               )
             })}
-            {backendConferences.length === 0 && (
+            {filteredConferences.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-10 py-8 text-center text-slate-500 font-bold uppercase text-xs tracking-widest">No conferences found</td>
               </tr>
@@ -2354,7 +2588,9 @@ const App: React.FC = () => {
             {/* ... nav items ... */}
             {[
               { id: 'Dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
-              { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
+              ...(user?.is_staff ? [
+                { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
+              ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
               { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
               { id: 'Settings', icon: 'fa-cog', label: 'Settings' }
@@ -2431,10 +2667,12 @@ const App: React.FC = () => {
         </header>
         <div className="p-6 md:p-12 max-w-7xl mx-auto">
           {currentPage === 'Dashboard' && renderDashboard()}
+          {currentPage === 'Settings' && <SettingsView apiFetch={apiFetch} user={user} />}
           {currentPage === 'Assets' && assetView === 'List' && renderInventory()}
           {currentPage === 'Assets' && assetView === 'Details' && renderAssetDetails()}
           {currentPage === 'Employees' && employeeView === 'List' && renderEmployees()}
           {currentPage === 'Conferences' && conferenceView === 'List' && renderConferences()}
+          {currentPage === 'Conferences' && conferenceView === 'Details' && renderConferenceDetails()}
 
           {currentPage === 'Assets' && assetView === 'Form' && (
             <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -2637,6 +2875,39 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div className="bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">Assigned Employees</label>
+                      <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Select members who can manage this conference</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[10px] font-black uppercase">{conferenceFormData.assigned_employees.length} Selected</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {employees.map(emp => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onClick={() => {
+                          const current = [...(conferenceFormData.assigned_employees || [])];
+                          if (current.includes(emp.id)) {
+                            setConferenceFormData({ ...conferenceFormData, assigned_employees: current.filter(id => id !== emp.id) });
+                          } else {
+                            setConferenceFormData({ ...conferenceFormData, assigned_employees: [...current, emp.id] });
+                          }
+                        }}
+                        className={`flex items-center gap-3 p-3 rounded-xl border text-[10px] font-black uppercase transition-all ${conferenceFormData.assigned_employees?.includes(emp.id) ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-500/20' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'}`}
+                      >
+                        <i className={`fa-solid ${conferenceFormData.assigned_employees?.includes(emp.id) ? 'fa-check-circle' : 'fa-circle-user'}`}></i>
+                        <span className="truncate">{emp.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {employees.length === 0 && <p className="text-[10px] text-slate-600 font-bold uppercase py-4 text-center border border-dashed border-slate-800 rounded-xl">No employees found in system</p>}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
@@ -2943,7 +3214,7 @@ const App: React.FC = () => {
             )
           }
 
-          {currentPage === 'Settings' && <SettingsView apiFetch={apiFetch} />}
+
         </div >
       </main >
 

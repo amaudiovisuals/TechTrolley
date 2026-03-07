@@ -96,6 +96,7 @@ export interface Booking {
   gstNumber?: string;
   vehicleNumber?: string;
   driverPhone?: string;
+  assigned_employees?: number[];
 }
 
 export interface DeliveryChallanRecord {
