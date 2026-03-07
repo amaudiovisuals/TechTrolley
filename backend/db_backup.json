@@ -1,0 +1,3217 @@
+[
+{
+  "model": "admin.logentry",
+  "pk": 1,
+  "fields": {
+    "action_time": "2026-02-17T10:56:31.768Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "4",
+    "object_repr": "arun@amaudiovisuals.com",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 2,
+  "fields": {
+    "action_time": "2026-02-17T10:57:05.146Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "4",
+    "object_repr": "arun@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"First name\", \"Last name\", \"Email address\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 3,
+  "fields": {
+    "action_time": "2026-02-17T10:59:59.572Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "4",
+    "object_repr": "arun@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"Staff status\", \"Superuser status\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 4,
+  "fields": {
+    "action_time": "2026-02-17T11:00:16.749Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "1",
+    "object_repr": "nihal@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"First name\", \"Last name\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 5,
+  "fields": {
+    "action_time": "2026-02-17T11:00:27.764Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "5",
+    "object_repr": "bhavin@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"First name\", \"Last name\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 6,
+  "fields": {
+    "action_time": "2026-02-19T09:00:23.519Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "6",
+    "object_repr": "nihaltest (uu8890)",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 7,
+  "fields": {
+    "action_time": "2026-02-20T10:41:23.149Z",
+    "user": 1,
+    "content_type": 10,
+    "object_id": "1",
+    "object_repr": "Shaneeb",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 8,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "547",
+    "object_repr": "MACBOOK_PRO_M2-1 - M38",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 9,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "546",
+    "object_repr": "MACBOOK_PRO_M2-2 - M47",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 10,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "545",
+    "object_repr": "MACBOOK_PRO_M2-3 - M41",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 11,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "544",
+    "object_repr": "MACBOOK_PRO_M2-4 - M40",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 12,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "543",
+    "object_repr": "LAPTOP_AVITA-1 - AM-177",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 13,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "542",
+    "object_repr": "DELL-P75F905-1 - AM-106",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 14,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "541",
+    "object_repr": "HP_14-EP0340TU-1 - AM-227",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 15,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "540",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-1 - AM-212",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 16,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "539",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-2 - AM-220",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 17,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "538",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-3 - AM-221",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 18,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "537",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-4 - AM-219",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 19,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "536",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-5 - AM-218",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 20,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "535",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-6 - AM-217",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 21,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "534",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-7 - AM-216",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 22,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "533",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-8 - AM-215",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 23,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "532",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-9 - AM-214",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 24,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "531",
+    "object_repr": "MSI_LAPTOP_THIN-15_B13UC-10 - AM-213",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 25,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "530",
+    "object_repr": "MACBOOK_M3PRO-1 - M34",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 26,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "529",
+    "object_repr": "MACBOOK_M3PRO-3 - M37",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 27,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "528",
+    "object_repr": "MACBOOK_M3PRO-4 - M36",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 28,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "527",
+    "object_repr": "MACBOOK_M3PRO-5 - M35",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 29,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "526",
+    "object_repr": "MACBOOK_M3PRO-6 - M39",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 30,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "525",
+    "object_repr": "MACBOOK_M3PRO-12 - M46",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 31,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "524",
+    "object_repr": "MACBOOK_M3PRO-13 - M42",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 32,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "523",
+    "object_repr": "MACBOOK_M3PRO-14 - M45",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 33,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "522",
+    "object_repr": "MACBOOK_M3PRO-15 - M44",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 34,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "521",
+    "object_repr": "MACBOOK_M3PRO-16 - M43",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 35,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "520",
+    "object_repr": "CROMA_GOOGLE_TV_55\"-1 - CR-GOOGLE-55\"-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 36,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "519",
+    "object_repr": "CROMA_GOOGLE_TV_55\"-2 - CR-GOOGLE-55\"-2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 37,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "518",
+    "object_repr": "CROMA_GOOGLE_TV_65\"-1 - Croma Google TV 65\" - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 38,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "517",
+    "object_repr": "ENTER_KEYBOARD_TYPIST_MINI-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 39,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "516",
+    "object_repr": "TP-LINK_GIGABIT_POE+_INJECTOR_TL-POE160S-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 40,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "515",
+    "object_repr": "TP-LINK_AC1200_MESH_WIFI_ROUTER-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 41,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "514",
+    "object_repr": "HOLLYLAND_LARK_M2_WIRELESS_MIC-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 42,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "513",
+    "object_repr": "TENDA_AC1200_GIGABIT_WIFI_ROUTER-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 43,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "512",
+    "object_repr": "TENDA_AC1200_GIGABIT_WIFI_ROUTER-2 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 44,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "511",
+    "object_repr": "LAPCARE_WIRED_KEYBOARD_D-LITE+-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 45,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "510",
+    "object_repr": "LAPCARE_WIRED_KEYBOARD_D-LITE+-2 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 46,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "509",
+    "object_repr": "LAPCARE_WIRED_KEYBOARD_D-LITE+-3 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 47,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "508",
+    "object_repr": "LAPCARE_WIRED_KEYBOARD_D-LITE+-4 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 48,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "507",
+    "object_repr": "LOGI_K380_WIRELESS_KEYBOARD-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 49,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "506",
+    "object_repr": "LOGI_K380_WIRELESS_KEYBOARD-2 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 50,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "505",
+    "object_repr": "LOGI_K380_WIRELESS_KEYBOARD-3 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 51,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "504",
+    "object_repr": "ZEBRONICS_PORTABLE_BT_SPEAKER-1 - Console Speaker-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 52,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "503",
+    "object_repr": "ZEBRONICS_PORTABLE_BT_SPEAKER-2 - Console Speaker-2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 53,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "502",
+    "object_repr": "SERVER-4-1 - Server-4",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 54,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "501",
+    "object_repr": "LENOVO_MOUSE_M110-1 - LN_Mouse",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 55,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "500",
+    "object_repr": "GENIUS_MOUSE_GM-120014-1 - GM_Mouse-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 56,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "499",
+    "object_repr": "IBELL_MOUSE_TURBO-1 - iB_Mouse-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 57,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "498",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-1 - Mouse-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 58,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "497",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-2 - Mouse-2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 59,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "496",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-3 - Mouse-3",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 60,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "495",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-4 - Mouse-4",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 61,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "494",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-5 - Mouse-5",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 62,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "493",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-6 - Mouse-6",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 63,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "492",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-7 - Mouse-7",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 64,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "491",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-8 - Mouse-8",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 65,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "490",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-9 - Mouse-9",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 66,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "489",
+    "object_repr": "LAPCARE_MOUSE_L-60(IND)-10 - Mouse-10",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 67,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "488",
+    "object_repr": "WD_MY_CLOUD_EX2_ULTRA-1 - WD Cloud - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 68,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "487",
+    "object_repr": "HOLLYLAND_PYRO-H_HDMI_WIRELESS_TX_RX-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 69,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "486",
+    "object_repr": "HOLLYLAND_WIRELESS_INTERCOM_SYSTEM_SOLIDCOM_SE_5S-1 - Hollyland Talkback - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 70,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "485",
+    "object_repr": "TUKZER_MOUSE_PAD-1 - Gel Mouse Pad",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 71,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "484",
+    "object_repr": "LOGITECH_WIRED_MOUSE_G402-1 - Server Mouse - 3",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 72,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "483",
+    "object_repr": "ASUS_GAMING_KEYBOARD_RA04-1 - Server Keyboard - 3",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 73,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "482",
+    "object_repr": "HP_LASERJET_P1108-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 74,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "481",
+    "object_repr": "HP_PRINTER_LASERJET_1020_PLUS-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 75,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "480",
+    "object_repr": "HP_PRINTER_LASERJET_1020_PLUS-2 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 76,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "479",
+    "object_repr": "HP_PRINTER_LASERJET_1020_PLUS-3 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 77,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "478",
+    "object_repr": "CANON_PRINTER_LBP_2900B-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 78,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "477",
+    "object_repr": "HP_LASERJET_PRINTER_M1005_MFP-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 79,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "476",
+    "object_repr": "HP_LASERJET_PRINTER_M1005_MFP-2 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 80,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "475",
+    "object_repr": "HP_LASERJET_PRINTER_M1005_MFP-3 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 81,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "474",
+    "object_repr": "CANON_PRINTER_IMAGE_CLASS_LBP6030B-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 82,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "473",
+    "object_repr": "CANON_PRINTER_IMAGE_CLASS_LBP6030B-2 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 83,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "472",
+    "object_repr": "CANON_PRINTER_IMAGE_CLASS_LBP6030B-3 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 84,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "471",
+    "object_repr": "DATAVIDEO_RMC-300A_PTZ_CAMERA_CONTROLLER-1 - PTZ Controller - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 85,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "470",
+    "object_repr": "LG__QHD_CURVED_MONITOR_32GS60QC-1 - Curved Monitor - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 86,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "469",
+    "object_repr": "LG__QHD_CURVED_MONITOR_32GS60QC-2 - Curved Monitor - 2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 87,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "468",
+    "object_repr": "ZEBRONICS_ZEB-NWK-1_WIRELESS_MOUSE/KEYBOARD-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 88,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "467",
+    "object_repr": "LG_ULTRAGEAR_IPS_FHD_MONITOR_27GL650F_1-1 - Server Monitor - 2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 89,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "466",
+    "object_repr": "LG_ULTRAGEAR_QHD_MONITOR_27GN800-1 - Server Monitor - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 90,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "465",
+    "object_repr": "BROTHER_DCP-B7640DWB_LASER_PRINTER-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 91,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "464",
+    "object_repr": "PANASONIC_DIGITAL_AV_MIXER_AG-HMX100-1 - MX100-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 92,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "463",
+    "object_repr": "ATEM_TELEVISION_STUDIO_PRO_4K-1 - BlackMagic 4K Switcher",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 93,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "462",
+    "object_repr": "DATAVIDEO_4K_PTZ_CAMERA_PTC-305-1 - PTZ-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 94,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "461",
+    "object_repr": "APPLE_IMAC_I5-1 - iMac-5",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 95,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "460",
+    "object_repr": "APPLE_IMAC_I5-2 - iMac-3",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 96,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "459",
+    "object_repr": "APPLE_IMAC_I5-3 - iMac-4",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 97,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "458",
+    "object_repr": "SAMSUNG_GALAXY_M05_5G-1 - Preview Phone - 2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 98,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "457",
+    "object_repr": "IQOO_Z9_LITE_5G_SMART_PHONE-1 - Preview Phone - 1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 99,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "456",
+    "object_repr": "APPLE_IMAC_M1-1 - iMac-8",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 100,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "455",
+    "object_repr": "APPLE_IMAC_M1-2 - iMac-7",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 101,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "454",
+    "object_repr": "APPLE_IMAC_M3-1 - iMac-9",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 102,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "453",
+    "object_repr": "APPLE_IMAC_M3-2 - iMac-10",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 103,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "452",
+    "object_repr": "APPLE_IMAC_M3-3 - iMac-11",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 104,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "451",
+    "object_repr": "HP_LAPTOP_14S-DQ2100TU-1 - 176",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 105,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "450",
+    "object_repr": "MACBOOK_AIR_A1466-1 - M12",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 106,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "449",
+    "object_repr": "CANON_4K_XA60_CAMERA-1 - Canon4K-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 107,
+  "fields": {
+    "action_time": "2026-02-28T07:55:01.445Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "448",
+    "object_repr": "SONY_XDCAM_PXW-X70_CAMERA-1 - X70-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 108,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "447",
+    "object_repr": "SONY_4K_PXW-Z90V_CAMERA-1 - nan",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 109,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "446",
+    "object_repr": "SONY_HANDYCAM_HDR-CX405-1 - Handycam-1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 110,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "445",
+    "object_repr": "SONY_HANDYCAM_HDR-CX405-2 - Handycam-2",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 111,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "444",
+    "object_repr": "SONY_HANDYCAM_HDR-CX405-3 - Handycam-3",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 112,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "443",
+    "object_repr": "MACBOOK_PRO_A1278-1 - M1",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 113,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "442",
+    "object_repr": "MACBOOK_PRO_A1502-1 - M10",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 114,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "441",
+    "object_repr": "MACBOOK_PRO_A1502-2 - M4",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 115,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "440",
+    "object_repr": "MACBOOK_PRO_A1708-1 - M13",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 116,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "439",
+    "object_repr": "MACBOOK_PRO_A1708-2 - M15",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 117,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "438",
+    "object_repr": "MACBOOK_PRO_A2289-1 - M16",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 118,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "437",
+    "object_repr": "MACBOOK_PRO_A2779-1 - M26",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 119,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "436",
+    "object_repr": "MACBOOK_PRO_A2779-2 - M32",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 120,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "435",
+    "object_repr": "MACBOOK_PRO_A2918-1 - M31",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 121,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "434",
+    "object_repr": "MACBOOK_PRO_A2918-2 - M25",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 122,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "433",
+    "object_repr": "MACBOOK_PRO_A2918-3 - M29",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 123,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "432",
+    "object_repr": "MACBOOK_PRO_A2338-1 - M20",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 124,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "431",
+    "object_repr": "MACBOOK_PRO_A2338-2 - M21",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 125,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "430",
+    "object_repr": "MACBOOK_PRO_A2338-3 - M22",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 126,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "429",
+    "object_repr": "MACBOOK_PRO_A2338-4 - M23",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 127,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "428",
+    "object_repr": "MACBOOK_PRO_A2338-5 - M24",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 128,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "427",
+    "object_repr": "MACBOOK_PRO_A2338-6 - M17",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 129,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "426",
+    "object_repr": "MACBOOK_PRO_A2338-7 - M18",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 130,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "425",
+    "object_repr": "MACBOOK_PRO_A1990-1 - M14",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 131,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "424",
+    "object_repr": "MACBOOK_PRO_A1990-2 - M19",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 132,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "423",
+    "object_repr": "ASUS_LAPTOP_X554L-1 - 55",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 133,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "422",
+    "object_repr": "ACER_LAPTOP_ASPIRE_A315-56-1 - 174",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 134,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "421",
+    "object_repr": "ASUS_LAPTOP_A555LA-1 - 56",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 135,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "420",
+    "object_repr": "ASUS_LAPTOP_A555LA-2 - 51",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 136,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "419",
+    "object_repr": "DELL_LAPTOP_INSPIRON_P75F905-1 - 101",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 137,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "418",
+    "object_repr": "ACER_LAPTOP_ASPIRE_E5-573G-1 - 56",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 138,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "417",
+    "object_repr": "ASUS_LAPTOP_X541UA-XO217T-1 - 66",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 139,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "416",
+    "object_repr": "ACER_LAPTOP_ASPIRE_A515-54-1 - 108",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 140,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "415",
+    "object_repr": "ACER_TMP246-M-35FW-1 - 48",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 141,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "414",
+    "object_repr": "HP_LAPTOP_15-DA0352TU-1 - 81",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 142,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "413",
+    "object_repr": "HP_LAPTOP_15-DA0352TU-2 - 80",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 143,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "412",
+    "object_repr": "ASUS_LAPTOP_X540NA-1 - 142",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 144,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "411",
+    "object_repr": "DELL_LAPTOP_VOSTRO_P75F109-1 - 105",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 145,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "410",
+    "object_repr": "HP_LAPTOP_15DA0326TU-1 - 75",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 146,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "409",
+    "object_repr": "HP_LAPTOP_15DA0326TU-2 - 70",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 147,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "408",
+    "object_repr": "HP_LAPTOP_15S-DU2067TU-1 - 134",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 148,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "407",
+    "object_repr": "HP_LAPTOP_15-DA0410TU-1 - 91",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 149,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "406",
+    "object_repr": "HP_LAPTOP_15-DA0410TU-2 - 92",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 150,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "405",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_3_15IIL05-1 - 126",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 151,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "404",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_3_15IIL05-2 - 138",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 152,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "403",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_3_15IIL05-3 - 143",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 153,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "402",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_3_15IIL05-4 - 140",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 154,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "401",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-1 - 98",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 155,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "400",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-2 - 97",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 156,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "399",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-3 - 94",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 157,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.134Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "398",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-4 - 158",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 158,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "397",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-5 - 87",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 159,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "396",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-6 - 93",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 160,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "395",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-7 - 163",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 161,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "394",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_S145-15LKB_U-8 - AM-95",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 162,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "393",
+    "object_repr": "ACER_LAPTOP_ONE_14_Z2-485-1 - 171",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 163,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "392",
+    "object_repr": "ACER_LAPTOP_ONE_14_Z2-485-2 - 99",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 164,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "391",
+    "object_repr": "ACER_LAPTOP_ONE_14_Z2-485-3 - 154",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 165,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "390",
+    "object_repr": "ACER_LAPTOP_A315-56-323J-1 - 101",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 166,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "389",
+    "object_repr": "ACER_LAPTOP_A315-56-323J-2 - 116",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 167,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "388",
+    "object_repr": "ACER_LAPTOP_A315-56-323J-3 - 111",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 168,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "387",
+    "object_repr": "ACER_LAPTOP_A315-56-323J-4 - 109",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 169,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "386",
+    "object_repr": "ACER_LAPTOP_A315-56-323J-5 - 144",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 170,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "385",
+    "object_repr": "ACER_LAPTOP_A315-56-323J-6 - 121",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 171,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "384",
+    "object_repr": "DELL_LAPTOP_INSPIRON_P90F105-1 - 170",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 172,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "383",
+    "object_repr": "ACER_LAPTOP_A514-53-316M-1 - 168",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 173,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "382",
+    "object_repr": "ACER_LAPTOP_A514-53-316M-2 - 169",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 174,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "381",
+    "object_repr": "HP_LAPTOP_15-DA1058TU-1 - 79",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 175,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "380",
+    "object_repr": "HP_LAPTOP_15-DA1058TU-2 - 82",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 176,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "379",
+    "object_repr": "HP_LAPTOP_15-BS669TU-1 - 76",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 177,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "378",
+    "object_repr": "DELL_LAPTOP_INSPIRON_15_3000_P90F102-1 - 173",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 178,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "377",
+    "object_repr": "HP_LAPTOP_15-DI2000TU-1 - 84",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 179,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "376",
+    "object_repr": "HP_LAPTOP_15-DI2000TU-2 - 83",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 180,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "375",
+    "object_repr": "LENOVO_LAPTOP_IDEAPAD_3_15ADA05-1 - 161",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 181,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "374",
+    "object_repr": "HP_LAPTOP_15-DB1069AU-1 - 159",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 182,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "373",
+    "object_repr": "HP_LAPTOP_15-DB1069AU-2 - 133",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 183,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "372",
+    "object_repr": "ACER_LAPTOP_ASPIRE_3_A315-23-1 - 135",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 184,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "371",
+    "object_repr": "ACER_LAPTOP_ASPIRE_3_A315-23-2 - 136",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 185,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "370",
+    "object_repr": "DELL_LAPTOP_INSPIRON_15_3000-1 - 184",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 186,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "369",
+    "object_repr": "HP_240_G8-1 - 182",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 187,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "368",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-1 - 195",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 188,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "367",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-2 - 196",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 189,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "366",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-3 - 197",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 190,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "365",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-4 - 198",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 191,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "364",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-5 - 199",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 192,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "363",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-6 - 200",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 193,
+  "fields": {
+    "action_time": "2026-02-28T07:55:12.139Z",
+    "user": 1,
+    "content_type": 7,
+    "object_id": "362",
+    "object_repr": "ASUS_LAPTOP_VIVOBOOK_X1500EA-7 - 201",
+    "action_flag": 3,
+    "change_message": ""
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 194,
+  "fields": {
+    "action_time": "2026-03-06T08:20:44.701Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "9",
+    "object_repr": "riyan@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"First name\", \"Last name\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 195,
+  "fields": {
+    "action_time": "2026-03-06T08:20:59.974Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "9",
+    "object_repr": "riyan@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"Staff status\", \"Superuser status\"]}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 196,
+  "fields": {
+    "action_time": "2026-03-07T07:00:19.412Z",
+    "user": 1,
+    "content_type": 10,
+    "object_id": "2",
+    "object_repr": "Jishnu KP",
+    "action_flag": 1,
+    "change_message": "[{\"added\": {}}]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 197,
+  "fields": {
+    "action_time": "2026-03-07T07:00:26.672Z",
+    "user": 1,
+    "content_type": 10,
+    "object_id": "2",
+    "object_repr": "Jishnu KP",
+    "action_flag": 2,
+    "change_message": "[]"
+  }
+},
+{
+  "model": "admin.logentry",
+  "pk": 198,
+  "fields": {
+    "action_time": "2026-03-07T07:47:46.300Z",
+    "user": 1,
+    "content_type": 4,
+    "object_id": "11",
+    "object_repr": "riyan@amaudiovisuals.com",
+    "action_flag": 2,
+    "change_message": "[{\"changed\": {\"fields\": [\"Staff status\", \"Superuser status\"]}}]"
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 1,
+  "fields": {
+    "password": "pbkdf2_sha256$600000$aTIML9XJUB23IutKRc3MyH$aAzsIl40XdmE/VvjVE12WgFsBbLxy9RVC58dw3QuMXw=",
+    "last_login": "2026-03-07T06:58:22.929Z",
+    "is_superuser": true,
+    "username": "nihal@amaudiovisuals.com",
+    "first_name": "Nihal",
+    "last_name": "Navas",
+    "email": "nihal@amaudiovisuals.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-02-17T08:19:21Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 4,
+  "fields": {
+    "password": "pbkdf2_sha256$1200000$nrbaEHz4wywpazefHsIZPV$wt3RGMx5G0OdyjwVCnOdXyYMUHsADNY/vjf1B8SvXCQ=",
+    "last_login": null,
+    "is_superuser": true,
+    "username": "arun@amaudiovisuals.com",
+    "first_name": "Arun",
+    "last_name": "Kumar",
+    "email": "arun@amaudiovisuals.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-02-17T10:56:31Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 7,
+  "fields": {
+    "password": "pbkdf2_sha256$1200000$dsaPlF4AccHnP02XrwEo82$7J1Z63USOVPBK2Mg3vwQHgVwWjnYbmWbAOJY6iwcZf0=",
+    "last_login": null,
+    "is_superuser": true,
+    "username": "admin",
+    "first_name": "",
+    "last_name": "",
+    "email": "admin@example.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-02-19T06:31:37.975Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 8,
+  "fields": {
+    "password": "pbkdf2_sha256$1200000$3wyZsWjJKx4WeA78ByrXDU$fARqj6nsMsQjTcS6fxbb2MoMpzvKl86YPrUxJb4s2Qk=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "debug_user",
+    "first_name": "",
+    "last_name": "",
+    "email": "",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-02-20T07:49:02.187Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 10,
+  "fields": {
+    "password": "pbkdf2_sha256$600000$6vvScn84dlJwB4BoZ6LCcY$pPut6FlnnzmVDiBSwPLN9YWvki5QoAHqhMR9aT1Hp1k=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "steffin@amaudiovisuals.com",
+    "first_name": "",
+    "last_name": "",
+    "email": "steffin@amaudiovisuals.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-03-07T06:57:26.730Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 11,
+  "fields": {
+    "password": "pbkdf2_sha256$600000$VdJm4VjFdHzJUF1v66OHob$AkiQ6uBaK8E6w9FF4iCCGFN35fwV7PeP48hE5ZmM6fM=",
+    "last_login": null,
+    "is_superuser": true,
+    "username": "riyan@amaudiovisuals.com",
+    "first_name": "",
+    "last_name": "",
+    "email": "riyan@amaudiovisuals.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-03-07T07:12:09Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 15,
+  "fields": {
+    "password": "pbkdf2_sha256$600000$K9S0V59YWozhTQwCHXaYN2$8eBYCk7KD/misQW9UiOiPJXadFHLQc5iemWT1NXgUhI=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "bhavin@amaudiovisuals.com",
+    "first_name": "",
+    "last_name": "",
+    "email": "bhavin@amaudiovisuals.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-03-07T08:10:54.322Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 16,
+  "fields": {
+    "password": "pbkdf2_sha256$600000$yBOz3sPKd5FLYOuo9DgalZ$u3jEWb7WvcxeDcrE/aixJp7v3Q3k+1/NTuzmyh0SOkg=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "testuserlogin@test.com",
+    "first_name": "",
+    "last_name": "",
+    "email": "testuserlogin@test.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-03-07T09:53:30.660Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "auth.user",
+  "pk": 17,
+  "fields": {
+    "password": "pbkdf2_sha256$600000$YPGdLK2UZvn5TXlUxhuBwv$ZY9Af5kplzizJHHgSStKgIQQUuApmqW6obBLrfTI8lA=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "shaneeb@amaudiovisuals.com",
+    "first_name": "",
+    "last_name": "",
+    "email": "shaneeb@amaudiovisuals.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-03-07T10:02:43.898Z",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "sessions.session",
+  "pk": "5lq20x4heitnwqmkvczus2fllrhem6oi",
+  "fields": {
+    "session_data": ".eJxVjEsOwiAUAO_C2hAon1dcuu8ZyHt8pGogKe3KeHdD0oVuZybzZh6Pvfijp82vkV2ZZJdfRhieqQ4RH1jvjYdW920lPhJ-2s6XFtPrdrZ_g4K9jG1MoCUpwAxyAjSzQ3IxqNnqnAnAgRCGgtIandBIqK1BsFNEm5wg9vkC3-w30w:1vylcE:M09zLy7orxtPvUFMBvxLBRbMH0WumW42ce5f-zN3T3g",
+    "expire_date": "2026-03-21T06:58:22.933Z"
+  }
+},
+{
+  "model": "sessions.session",
+  "pk": "f4bkth0ky0nqd9smkiusd46ycjzllspy",
+  "fields": {
+    "session_data": ".eJxVjMsOwiAQRf-FtSGAZRhcuvcbmmEYpGpo0sfK-O-2SRe6veec-1Y9rUvt11mmfsjqoqw6_W6J-CltB_lB7T5qHtsyDUnvij7orG9jltf1cP8OKs11qwkEQzLiDTIDndE4Do5y8ZA8SOy8DYglkjMIQAIYoVjPRrayc6w-X99wN7Y:1vyQWe:SfwVmh_cK_x0N1zWssL8h0XkCk9sa7qUmHjhnSKo5gI",
+    "expire_date": "2026-03-20T08:27:12.152Z"
+  }
+},
+{
+  "model": "sessions.session",
+  "pk": "hozhqoa06b1hxdtfjmzds6lyxid6o4gy",
+  "fields": {
+    "session_data": ".eJxVjDsOwyAQBe9CHSG-ZkmZ3mdACwvBSWRLxq6i3D1YcpG0b-bNmwXctxr2ltcwEbsyyS6_W8T0zPMB6IHzfeFpmbd1ivxQ-EkbHxfKr9vp_gUqttrfWUBO2iJFTaScBKmk0U6DNYBm6CFFkYoRTpQOBrTFSw9OeSALYNnnC9ltNx0:1vsIVa:DkOxUTu4PdsB2TqgLjQOf9IomlV9s1170ZHhARdTOCw",
+    "expire_date": "2026-03-03T10:40:46.717Z"
+  }
+},
+{
+  "model": "sessions.session",
+  "pk": "o4s6jk6zh259tspcv227g759m295lt5l",
+  "fields": {
+    "session_data": ".eJxVjDsOwyAQBe9CHSG-ZkmZ3mdACwvBSWRLxq6i3D1YcpG0b-bNmwXctxr2ltcwEbsyyS6_W8T0zPMB6IHzfeFpmbd1ivxQ-EkbHxfKr9vp_gUqttrfWUBO2iJFTaScBKmk0U6DNYBm6CFFkYoRTpQOBrTFSw9OeSALYNnnC9ltNx0:1vxMh1:ay6ycn_UnYzij8g8ahBT5XxNQgD7XupKwN6Ijnie4wU",
+    "expire_date": "2026-03-17T10:09:31.722Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "281c47cd7462e5389de8b8c2b7cf11eaaff3e31a",
+  "fields": {
+    "user": 11,
+    "created": "2026-03-07T07:12:34.139Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "2fed518671fc6cf4428e297ff591be488d92b570",
+  "fields": {
+    "user": 10,
+    "created": "2026-03-07T07:11:47.240Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "504ab51bcaa64e1b5bae9764b462d10aa1e7e2a2",
+  "fields": {
+    "user": 17,
+    "created": "2026-03-07T10:02:47.044Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "527efd7f89a981bfc4c6d577001681bf484c3927",
+  "fields": {
+    "user": 4,
+    "created": "2026-02-17T10:58:09.912Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "80432eab99f421d77a410597d46ea0d4a056ced9",
+  "fields": {
+    "user": 8,
+    "created": "2026-02-20T07:49:02.846Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "9896556b045b4b7c7ab3aa43e82986fcdb803ba6",
+  "fields": {
+    "user": 15,
+    "created": "2026-03-07T10:01:19.574Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "9eb2a4cc6e66cc7588e7d33ed1cdedfd79c5afa9",
+  "fields": {
+    "user": 7,
+    "created": "2026-02-19T06:32:23.597Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "aab02905e735671c77063c5c37043ea29d721c67",
+  "fields": {
+    "user": 1,
+    "created": "2026-02-17T09:55:58.220Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "eb6e39ea03ea485341b6b502d12e158514e99057",
+  "fields": {
+    "user": 16,
+    "created": "2026-03-07T09:54:33.585Z"
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 548,
+  "fields": {
+    "sku": "HP_VICTUS_15-FA2191TX-5",
+    "alias_name": "AM-222",
+    "mac_address": "F8:ED:FC:71:9B:09",
+    "imei_number_1": "38:8D:3D:FE:A7:84",
+    "imei_number_2": "nan",
+    "serial_number": "5CD52408XB",
+    "description": "i5 13th, Nvidia 3050, 16gb, 512gb 15inch, MSOffice 2024",
+    "is_barcode_added": true,
+    "type": "IT & Networking",
+    "purchased_date": "2025-09-30",
+    "item_price": "56525.42",
+    "depreciation_percentage": "40.00",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-02-28T08:30:35.886Z",
+    "barcode_type": "",
+    "barcode": "5CD52408XB,BT6B4PA#ACJ,15-fa2191TX",
+    "qr_code": "",
+    "status": "In Use",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 549,
+  "fields": {
+    "sku": "APPLE_IMAC_M3-3",
+    "alias_name": "iMac-11",
+    "mac_address": "04:9d:05:1f:c7:d6",
+    "imei_number_1": "nan",
+    "imei_number_2": "nan",
+    "serial_number": "MXRY21FTP",
+    "description": "Chip - Apple M3 Memory - 8GB Storage - 245.11GB MAC2 - 04:9d:05:18:e6:d1",
+    "is_barcode_added": true,
+    "type": "IT & Networking",
+    "purchased_date": "2025-01-07",
+    "item_price": "120000.00",
+    "depreciation_percentage": "40.00",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-02-28T08:53:39.055Z",
+    "barcode_type": "Ean 8",
+    "barcode": "21476969.0",
+    "qr_code": "rKDFthP1cf",
+    "status": "In Use",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 556,
+  "fields": {
+    "sku": "HP_VICTUS_15-FA2191TX-3",
+    "alias_name": "AM-224",
+    "mac_address": "F8:ED:FC:71:93:3E",
+    "imei_number_1": "38:8D:3D:FE:0D:0E",
+    "imei_number_2": "nan",
+    "serial_number": "5CD52409KL",
+    "description": "i5 13th, Nvidia 3050, 16gb, 512gb 15inch, MSOffice 2024",
+    "is_barcode_added": true,
+    "type": "IT & Networking",
+    "purchased_date": "2025-09-30",
+    "item_price": "56525.42",
+    "depreciation_percentage": "40.00",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-03-04T07:22:35.767Z",
+    "barcode_type": "Ean 8",
+    "barcode": "7150784.0",
+    "qr_code": "5CD52409KL,BT6B4PA#ACJ,15-fa2191TX",
+    "status": "Available",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 557,
+  "fields": {
+    "sku": "HAWAII_P2.6_LED_SCREEN_INDOOR-292",
+    "alias_name": "P2-292",
+    "mac_address": "nan",
+    "imei_number_1": "nan",
+    "imei_number_2": "nan",
+    "serial_number": "nan",
+    "description": "MODULE : 49-1-1, 49-1-2, 49-1-3, 49-1-4 HUB : 49-1",
+    "is_barcode_added": false,
+    "type": "Other",
+    "purchased_date": "2025-06-02",
+    "item_price": "45000.00",
+    "depreciation_percentage": "15.00",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-03-04T07:22:35.779Z",
+    "barcode_type": "",
+    "barcode": "",
+    "qr_code": "",
+    "status": "Available",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 563,
+  "fields": {
+    "sku": "HP_LAPTOP_OMEN-16-WF1096TX-1",
+    "alias_name": "AM-209",
+    "mac_address": "30:13:8b:c1:21:80",
+    "imei_number_1": "nan",
+    "imei_number_2": "nan",
+    "serial_number": "CND4220W3T",
+    "description": "i7 14th, 16gb, 1tb ssd MAC1- 30:13:8b:c1:21:80 MAC2- 18:93:41:c2:9f:66",
+    "is_barcode_added": true,
+    "type": "IT & Networking",
+    "purchased_date": "2025-06-04",
+    "item_price": "56000.00",
+    "depreciation_percentage": "0.40",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-03-04T08:00:01.704Z",
+    "barcode_type": "Ean 8",
+    "barcode": "65292655",
+    "qr_code": "KLSPDGNAw3",
+    "status": "Available",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": 556,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 564,
+  "fields": {
+    "sku": "BOSE_S1_PRO_1-12",
+    "alias_name": "BOSE S1 PRO",
+    "mac_address": "nan",
+    "imei_number_1": "nan",
+    "imei_number_2": "nan",
+    "serial_number": "077155Z80310164AE",
+    "description": "nan",
+    "is_barcode_added": true,
+    "type": "Sound System",
+    "purchased_date": "2025-06-04",
+    "item_price": "76000.00",
+    "depreciation_percentage": "14.15",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-03-04T08:13:42.828Z",
+    "barcode_type": "Ean 8",
+    "barcode": "80666745",
+    "qr_code": "QjjpR6amMl",
+    "status": "Available",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 568,
+  "fields": {
+    "sku": "MACBOOK_PRO_A1708-1",
+    "alias_name": "M13",
+    "mac_address": "f8:ff:c2:1a:2f:38",
+    "imei_number_1": "nan",
+    "imei_number_2": "nan",
+    "serial_number": "FVFY84UXHV22",
+    "description": "i5, 8gb, 121.02gb",
+    "is_barcode_added": true,
+    "type": "IT & Networking",
+    "purchased_date": "2025-07-01",
+    "item_price": "65000.00",
+    "depreciation_percentage": "40.00",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-03-06T05:21:06.981Z",
+    "barcode_type": "Ean 8",
+    "barcode": "93447607",
+    "qr_code": "JuiPvGoI4q",
+    "status": "In Use",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.asset",
+  "pk": 569,
+  "fields": {
+    "sku": "MSI_LAPTOP_THIN-15_B13UC-8",
+    "alias_name": "AM 215",
+    "mac_address": "34:5A:60:8E:2D:68",
+    "imei_number_1": "D0:57:7E:04:12:5D",
+    "imei_number_2": "nan",
+    "serial_number": "D2507N0000644",
+    "description": "13th i7,RTX 3050 4gb DDR6, 512gb, 16gb, 14inch",
+    "is_barcode_added": true,
+    "type": "IT & Networking",
+    "purchased_date": "2025-09-27",
+    "item_price": "56525.42",
+    "depreciation_percentage": "40.00",
+    "available_from": null,
+    "available_till": null,
+    "created_at": "2026-03-06T05:32:36.424Z",
+    "barcode_type": "Ean 8",
+    "barcode": "30173149",
+    "qr_code": "CEZ9F0A1Ht",
+    "status": "Available",
+    "condition": "Good",
+    "last_maintained": null,
+    "current_venue": null,
+    "return_date": null,
+    "assigned_to": null,
+    "parent_asset": null,
+    "name": "",
+    "brand": "",
+    "model_number": ""
+  }
+},
+{
+  "model": "core.employee",
+  "pk": 7,
+  "fields": {
+    "name": "Bhavin",
+    "employee_id": "EMP-1772877658323",
+    "department": "User",
+    "email": "bhavin@amaudiovisuals.com",
+    "phone": "N/A",
+    "joined_at": "2026-03-07"
+  }
+},
+{
+  "model": "core.employee",
+  "pk": 8,
+  "fields": {
+    "name": "Shaneeb",
+    "employee_id": "EMP-1772877763884",
+    "department": "User",
+    "email": "shaneeb@amaudiovisuals.com",
+    "phone": "N/A",
+    "joined_at": "2026-03-07"
+  }
+},
+{
+  "model": "core.conference",
+  "pk": 32,
+  "fields": {
+    "name": "DERMACON 2026",
+    "association_name": "Indian Association of Dermatologists, Venereologists & Leprologists",
+    "billing_address": "#238, 3rd Floor , C/O: Roots Institute of Dermatological Sciences, Banaswadi Main Road, OMBR Layout, Banaswadi, Bengaluru-560043",
+    "transport_address": "clarks convention centre\nDevanahalli Road, Hollywood Junction, Sadahalli Post, Swiss Town, Bengaluru, Karnataka 562110, India",
+    "gst_number": "54RRG65434567",
+    "vehicle_number": "KL01HJ5241",
+    "driver_phone": "9021457863",
+    "contact_person": "Dr. Manjunath Shenoy",
+    "contact_phone": "88547471123",
+    "contact_email": "org.secretary@dermacon2026bengaluru.com",
+    "conference_type": "Medical Conference",
+    "start_date": "2026-03-01",
+    "end_date": "2026-04-06",
+    "assets": [
+      549
+    ],
+    "crosscheck_assets": [],
+    "assigned_employees": [
+      8
+    ]
+  }
+},
+{
+  "model": "core.conference",
+  "pk": 34,
+  "fields": {
+    "name": "Test Conference",
+    "association_name": "Test Association",
+    "billing_address": "123 Test St",
+    "transport_address": "456 Deliver Ln",
+    "gst_number": "GST123",
+    "vehicle_number": "",
+    "driver_phone": "",
+    "contact_person": "John Doe",
+    "contact_phone": "1234567890",
+    "contact_email": "john@example.com",
+    "conference_type": "Medical Conference",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-05",
+    "assets": [
+      548,
+      568
+    ],
+    "crosscheck_assets": [],
+    "assigned_employees": [
+      7,
+      8
+    ]
+  }
+},
+{
+  "model": "core.companysettings",
+  "pk": 1,
+  "fields": {
+    "name": "a m audiovisuals Pvt. Ltd.",
+    "address": "98/40, Penta Avenue Road\r\nNear Popular Candles\r\nEdappally P.O, Kochi - 682024",
+    "phone": "+91 9446 544137",
+    "email": "info@amaudiovisuals.com",
+    "gst_number": "32AUPPM2829Q1ZY",
+    "website": "www.amaudiovisuals.com",
+    "logo": "company/logo.png",
+    "powered_by_name": "a m audiovisuals",
+    "dashboard_config": {
+      "total_assets": true,
+      "in_use": true,
+      "available": true,
+      "active_allocations_table": false,
+      "active_conferences_table": true,
+      "active_conferences": true,
+      "active_conferences_label": "Active Conferences",
+      "active_conferences_table_label": "Active Conferences"
+    },
+    "theme_template": "blue"
+  }
+}
+]
