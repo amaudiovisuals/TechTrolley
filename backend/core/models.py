@@ -18,18 +18,20 @@ class Asset(models.Model):
         ('Lighting', 'Lighting'),
         ('Power', 'Power'),
         ('Truss & Rigging', 'Truss & Rigging'),
+        ('Consumables', 'Consumables'),
         ('Other', 'Other'),
     ]
 
-    sku = models.CharField(max_length=100, unique=True)
+    sku = models.CharField(max_length=100)
     alias_name = models.CharField(max_length=200, null=True, blank=True)
     mac_address = models.CharField(max_length=100, null=True, blank=True)
     imei_number_1 = models.CharField(max_length=100, null=True, blank=True)
     imei_number_2 = models.CharField(max_length=100, null=True, blank=True)
-    serial_number = models.CharField(max_length=100, unique=True)
+    serial_number = models.CharField(max_length=100, null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     is_barcode_added = models.BooleanField(default=False)
     type = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default='Other')
+    quantity = models.PositiveIntegerField(default=1)
     purchased_date = models.DateField(null=True, blank=True)
     item_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0.00)
     depreciation_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)

@@ -382,8 +382,69 @@ def bulk_upload_assets(request):
 # from rest_framework.decorators import permission_classes
 from rest_framework.authtoken.models import Token as AuthToken
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def asset_assign_quantity(request, pk):
+    asset = get_object_or_404(Asset, pk=pk)
+    quantity_to_assign = int(request.data.get('quantity', 0))
+    conference_id = request.data.get('conference_id')
+    
+    if quantity_to_assign <= 0:
+        return Response({'error': 'Quantity must be greater than 0'}, status=400)
+    
+    if quantity_to_assign > asset.quantity:
+        return Response({'error': 'Not enough quantity available'}, status=400)
+    
+    conference = get_object_or_404(Conference, pk=conference_id)
+    
+    # If it's a full assignment of an available item, just update status
+    # BUT if it's already "In Use" or "Crosscheck" (somehow scanned again), we might want to split or add.
+    # To keep it simple: always split or create a new "In Use" record if it's coming from "Available".
+    
+    if quantity_to_assign == asset.quantity and asset.status == 'Available':
+        # Full assignment of an Available asset
+        asset.status = 'In Use'
+        asset.save()
+        conference.assets.add(asset)
+        return Response(AssetSerializer(asset).data)
+    else:
+        # Partial assignment: split the record
+        # 1. Create a new record for the assigned portion
+        new_asset = Asset(
+            sku=asset.sku,
+            alias_name=asset.alias_name,
+            mac_address=asset.mac_address,
+            imei_number_1=asset.imei_number_1,
+            imei_number_2=asset.imei_number_2,
+            serial_number=asset.serial_number,
+            description=asset.description,
+            is_barcode_added=asset.is_barcode_added,
+            barcode=asset.barcode,
+            barcode_type=asset.barcode_type,
+            qr_code=asset.qr_code,
+            type=asset.type,
+            quantity=quantity_to_assign,
+            item_price=asset.item_price,
+            depreciation_percentage=asset.depreciation_percentage,
+            status='In Use',
+            condition=asset.condition,
+            parent_asset=asset.parent_asset
+        )
+        new_asset.save()
+        
+        # 2. Update the original record
+        asset.quantity -= quantity_to_assign
+        if asset.quantity == 0:
+            # If we took all from a record that wasn't "Available" initially (unlikely in current flow)
+            # or if we want to delete empty records. Let's keep it for now.
+            pass
+        asset.save()
+        
+        # 3. Add to conference
+        conference.assets.add(new_asset)
+        
+        return Response(AssetSerializer(new_asset).data)
+
 def download_asset_template(request):
     """
     Generates an Excel (.xlsx) file containing the template structure for bulk uploading.

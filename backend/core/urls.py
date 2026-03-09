@@ -21,6 +21,7 @@ urlpatterns = [
     path('assets/<int:pk>/', views.asset_detail, name='asset_detail'),
     path('assets/<int:pk>/sub-assets/', views.asset_sub_assets, name='asset_sub_assets'),
     path('assets/<int:pk>/sub-assets/<int:child_pk>/', views.asset_sub_asset_remove, name='asset_sub_asset_remove'),
+    path('assets/<int:pk>/assign-quantity/', views.asset_assign_quantity, name='asset_assign_quantity'),
     path('employees/', views.employee_list, name='employee_list'),
     path('employees/<int:pk>/', views.employee_detail, name='employee_detail'),
     path('company-settings/', views.company_settings, name='company_settings'),

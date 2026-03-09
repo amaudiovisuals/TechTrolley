@@ -14,6 +14,7 @@ export enum AssetCategory {
   LIGHTING = 'Lighting',
   POWER = 'Power',
   TRUSS = 'Truss & Rigging',
+  CONSUMABLES = 'Consumables',
   OTHER = 'Other'
 }
 
@@ -28,6 +29,7 @@ export interface Asset {
   description: string;
   isBarcodeAdded: boolean;
   type: string;
+  quantity: number;
   purchasedDate: string;
   itemPrice: number;
   depreciationPercentage: number;

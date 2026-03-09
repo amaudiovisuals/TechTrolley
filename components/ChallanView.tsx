@@ -87,7 +87,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
     return price * (1 - dep / 100);
   };
 
-  const totalValue = assets.reduce((sum, a) => sum + getDepreciatedPrice(a), 0);
+  const totalValue = assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0);
 
   return (
     <div className="p-6 bg-white max-w-[210mm] mx-auto shadow-sm border border-gray-200 rounded-md my-4 font-sans print:shadow-none print:m-0 print:p-[10mm] print:w-[210mm] print:min-h-[297mm] print:box-border print:border-none print:rounded-none relative flex flex-col justify-between">
@@ -197,8 +197,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
                 {asset.serialNumber} <span>/</span> {asset.sku}
               </td>
               <td className="py-0.5 px-2 text-right text-gray-900 font-mono print:hidden">₹{Math.round(getDepreciatedPrice(asset)).toLocaleString() || '0'}</td>
-              <td className="py-0.5 px-2 text-right text-gray-900 font-black">1</td>
-              <td className="py-0.5 px-2 text-right text-gray-900 font-bold print:hidden">₹{Math.round(getDepreciatedPrice(asset)).toLocaleString() || '0'}</td>
+              <td className="py-0.5 px-2 text-right text-gray-900 font-black">{(asset.quantity || 1)}</td>
+              <td className="py-0.5 px-2 text-right text-gray-900 font-bold print:hidden">₹{Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1)).toLocaleString() || '0'}</td>
             </tr>
           ))}
           {assets.length === 0 && (
@@ -210,7 +210,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         <tfoot>
           <tr>
             <td colSpan={7} className="pt-1 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest" style={{ borderTop: '2px solid #999' }}>
-              Total Quantity: <span style={{ color: accent }}>{assets.length}</span>
+              Total Quantity: <span style={{ color: accent }}>{assets.reduce((sum, a) => sum + (a.quantity || 1), 0)}</span>
             </td>
           </tr>
           <tr className="bg-gray-50">

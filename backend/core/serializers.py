@@ -14,7 +14,7 @@ class SubAssetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Asset
         fields = [
-            'id', 'sku', 'alias_name', 'serial_number', 'type',
+            'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
             'status', 'condition', 'barcode_type', 'barcode', 'qr_code', 'assigned_to', 'assigned_to_name',
             'parent_asset', 'current_conference_name',
         ]
@@ -37,7 +37,7 @@ class AssetSerializer(serializers.ModelSerializer):
         model = Asset
         fields = [
             'id', 'sku', 'alias_name', 'mac_address', 'imei_number_1', 'imei_number_2', 
-            'serial_number', 'description', 'is_barcode_added', 'type', 
+            'serial_number', 'description', 'is_barcode_added', 'type', 'quantity',
             'purchased_date', 'item_price', 'depreciation_percentage', 
             'available_from', 'available_till', 'created_at',
             'barcode_type', 'barcode', 'qr_code', 'status', 'condition', 'last_maintained', 
@@ -81,6 +81,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         assets_data = validated_data.pop('assets', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
+        old_crosscheck = list(instance.crosscheck_assets.all())
         instance = super().update(instance, validated_data)
 
         if assets_data is not None:
@@ -92,6 +93,15 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
         if crosscheck_data is not None:
             instance.crosscheck_assets.set(crosscheck_data)
+            
+            # Restore Available status for assets verified (removed) from crosscheck
+            removed_crosscheck = [a for a in old_crosscheck if a not in crosscheck_data]
+            for asset in removed_crosscheck:
+                if asset.status == 'Crosscheck':
+                    asset.status = 'Available'
+                    asset.save()
+                    
+            # Set Crosscheck status for newly added crosscheck assets
             for asset in crosscheck_data:
                 if asset.status != 'Crosscheck':
                     asset.status = 'Crosscheck'

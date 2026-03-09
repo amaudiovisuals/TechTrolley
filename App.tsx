@@ -7,8 +7,12 @@ import {
   AssetCategory,
   ConferenceType,
   DeliveryChallanRecord,
-  Employee
+  Employee,
+  CompanySettings
 } from './types';
+import QRCode from 'qrcode';
+
+const GLOBAL_CONSUMABLES_SKU = 'GLOBAL-CONSUMABLES';
 import {
   MOCK_ASSETS,
   MOCK_CLIENTS,
@@ -40,6 +44,20 @@ type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | '
 type AssetView = 'List' | 'Form' | 'Details';
 type EmployeeView = 'List' | 'Form';
 type ConferenceView = 'List' | 'Form' | 'Details';
+
+const GlobalQRPreview: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, GLOBAL_CONSUMABLES_SKU, {
+        width: 120,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      }).catch(console.error);
+    }
+  }, []);
+  return <canvas ref={canvasRef} className="rounded-lg shadow-md" style={{ width: '60px', height: '60px' }} />;
+};
 
 const App: React.FC = () => {
   const API_BASE = '';
@@ -128,6 +146,16 @@ const App: React.FC = () => {
     }
     setIsLoading(false);
   }, [isLoggedIn]); // Depend on isLoggedIn to refetch settings if login state changes
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (registerDropdownRef.current && !registerDropdownRef.current.contains(event.target as Node)) {
+        setIsRegisterDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (companySettings?.theme_template) {
@@ -245,7 +273,18 @@ const App: React.FC = () => {
   const [subAssetSearchQuery, setSubAssetSearchQuery] = useState('');
   const [selectedSubAssetToLink, setSelectedSubAssetToLink] = useState<Asset | null>(null);
 
-  // Quick Create Sub-Asset State
+  const [isRegisterDropdownOpen, setIsRegisterDropdownOpen] = useState(false);
+  const registerDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Partial Quantity Modal State
+  const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [quantityAsset, setQuantityAsset] = useState<Asset | null>(null);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
+
+  // Global Consumables Picker State
+  const [showConsumablesPicker, setShowConsumablesPicker] = useState(false);
+  const [consumablesPickerSearchQuery, setConsumablesPickerSearchQuery] = useState('');
+
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
@@ -260,7 +299,7 @@ const App: React.FC = () => {
     serialNumber: '',
     description: '',
     isBarcodeAdded: false,
-    type: 'Other',
+    type: AssetCategory.OTHER,
     purchasedDate: '',
     itemPrice: 0,
     depreciationPercentage: 0,
@@ -271,6 +310,7 @@ const App: React.FC = () => {
     barcode: '',
     barcodeType: '',
     qrCode: '',
+    quantity: 1,
     assigned_to: undefined
   });
 
@@ -298,6 +338,7 @@ const App: React.FC = () => {
             imeiNumber2: asset.imei_number_2,
             serialNumber: asset.serial_number,
             isBarcodeAdded: asset.is_barcode_added,
+            quantity: parseInt(asset.quantity, 10) || 1,
             itemPrice: parseFloat(asset.item_price),
             depreciationPercentage: parseFloat(asset.depreciation_percentage),
             purchasedDate: asset.purchased_date,
@@ -363,6 +404,8 @@ const App: React.FC = () => {
   const [selectedBookingForChallan, setSelectedBookingForChallan] = useState<Booking | null>(null);
   const [selectedConferenceDetails, setSelectedConferenceDetails] = useState<Booking | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
+  const [challanSearchQuery, setChallanSearchQuery] = useState('');
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
@@ -553,7 +596,7 @@ const App: React.FC = () => {
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
-      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], assigned_employees: []
+      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: []
     });
     setConferenceView('Form');
   };
@@ -719,6 +762,7 @@ const App: React.FC = () => {
   const openEditConferenceForm = (conf: any) => { // Using internal format, needs mapping back to form data keys
     setEditingConference(conf);
     setConferenceFormData({
+      id: conf.id,
       name: conf.name,
       association_name: conf.association,
       billing_address: conf.billingAddress,
@@ -733,6 +777,7 @@ const App: React.FC = () => {
       end_date: conf.endDate,
       conference_type: conf.type,
       assets: conf.assets || [],
+      crosscheck_assets: conf.crosscheckAssets || [],
       assigned_employees: conf.assigned_employees || []
     });
 
@@ -746,12 +791,12 @@ const App: React.FC = () => {
     setConferenceView('Form');
   };
 
-  // Stats derived from total assets
+  // Stats derived from total assets (summing quantities)
   const stats = useMemo(() => {
-    const total = assets.length;
-    const inUse = assets.filter(a => a.status === AssetStatus.IN_USE).length;
-    const available = assets.filter(a => a.status === AssetStatus.AVAILABLE).length;
-    const damaged = assets.filter(a => a.status === AssetStatus.DAMAGED).length;
+    const total = assets.reduce((sum, a) => sum + Number(a.quantity || 1), 0);
+    const inUse = assets.filter(a => a.status === AssetStatus.IN_USE || a.status === AssetStatus.CROSSCHECK).reduce((sum, a) => sum + Number(a.quantity || 1), 0);
+    const available = assets.filter(a => a.status === AssetStatus.AVAILABLE).reduce((sum, a) => sum + Number(a.quantity || 1), 0);
+    const damaged = assets.filter(a => a.status === AssetStatus.DAMAGED).reduce((sum, a) => sum + Number(a.quantity || 1), 0);
     return { total, inUse, available, damaged };
   }, [assets]);
 
@@ -899,6 +944,14 @@ const App: React.FC = () => {
     if (action === 'add') {
       if (existingAssets.includes(assetIdStr)) return;
 
+      // New: Check for Consumables to show Quantity Modal
+      if (asset.type === AssetCategory.CONSUMABLES && asset.status === 'Available') {
+        setQuantityAsset(asset);
+        setSelectedQuantity(asset.quantity); // default to max
+        setShowQuantityModal(true);
+        return;
+      }
+
       if (asset.sub_assets && asset.sub_assets.length > 0) {
         setPendingParentAsset(asset);
         setPendingAction('add');
@@ -939,6 +992,91 @@ const App: React.FC = () => {
     showScanToast(`✅ Verified at Godown: "${asset.aliasName || asset.sku}"`, 'success');
   };
 
+  const submitQuantityAssignment = () => {
+    if (!quantityAsset || !conferenceFormData.id) return;
+
+    apiFetch(`${API_BASE}/api/assets/${quantityAsset.id}/assign-quantity/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        quantity: selectedQuantity,
+        conference_id: conferenceFormData.id
+      })
+    })
+      .then(async res => {
+        const data = await res.json();
+        if (res.ok) {
+          const newAsset = data;
+          showScanToast(`✅ Assigned ${selectedQuantity} unit(s) of "${quantityAsset.aliasName || quantityAsset.sku}"`, 'success');
+
+          // Update current conference details so challan reflects it immediately
+          if (selectedConferenceDetails && Number(selectedConferenceDetails.id) === Number(conferenceFormData.id)) {
+            setSelectedConferenceDetails((prev: any) => prev ? {
+              ...prev,
+              assets: [...(prev.assets || []), newAsset.id.toString()]
+            } : null);
+          }
+
+          // Also update conferenceFormData which is used for scanning list
+          setConferenceFormData((prev: any) => ({
+            ...prev,
+            assets: [...(prev.assets || []), newAsset.id.toString()]
+          }));
+
+          // Instantly update local assets state for perfectly real-time feedback
+          setAssets(prevAssets => {
+            if (newAsset.id.toString() === quantityAsset.id) {
+              return prevAssets.map(a => a.id.toString() === quantityAsset.id ? { ...a, ...newAsset, id: newAsset.id.toString(), quantity: selectedQuantity } : a);
+            }
+            const updated = prevAssets.map(a => {
+              if (a.id.toString() === quantityAsset.id) {
+                return { ...a, quantity: a.quantity - selectedQuantity };
+              }
+              return a;
+            });
+            return [...updated, {
+              id: newAsset.id.toString(),
+              sku: newAsset.sku,
+              aliasName: newAsset.alias_name,
+              serialNumber: newAsset.serial_number,
+              type: newAsset.type,
+              quantity: newAsset.quantity,
+              status: newAsset.status,
+              barcode: newAsset.barcode,
+              qrCode: newAsset.qr_code,
+              itemPrice: parseFloat(newAsset.item_price || '0'),
+              depreciationPercentage: parseFloat(newAsset.depreciation_percentage || '0')
+            } as Asset];
+          });
+
+          // FORCE SAVE CONFERENCE to ensure the new asset ID is persisted to this conference immediately
+          const updatedAssetsList = [...(conferenceFormData.assets || []), newAsset.id.toString()];
+          const payload = {
+            ...conferenceFormData,
+            start_date: conferenceFormData.start_date || null,
+            end_date: conferenceFormData.end_date || null,
+            assets: updatedAssetsList.map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+            crosscheck_assets: (conferenceFormData.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
+          };
+
+          apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+          }).then(confRes => {
+            if (!confRes.ok) {
+              console.error("Failed to automatically save conference after assigning partial quantity");
+            }
+          });
+
+          fetchAssets(); // Refresh inventory
+          fetchConferences(); // Refresh conferences list
+          setShowQuantityModal(false);
+        } else {
+          showScanToast(`❌ ${data.error || 'Failed to assign quantity'}`, 'error');
+        }
+      })
+      .catch(() => showScanToast('❌ Network error during quantity assignment', 'error'));
+  };
+
   const handleScan = (decodedText: string) => {
     setShowScanner(false);
     const scanned = (decodedText || '').trim();
@@ -955,6 +1093,20 @@ const App: React.FC = () => {
     lastScannedTime.current = now;
 
     console.log('--- Handle Scan ---', scanned, 'Page:', currentPage);
+
+    // New: Global Consumables QR Logic
+    if (scanned === GLOBAL_CONSUMABLES_SKU) {
+      if (currentPage === 'Conferences' && (conferenceView === 'Form' || conferenceView === 'Details')) {
+        setConsumablesPickerSearchQuery('');
+        setShowConsumablesPicker(true);
+        showScanToast('📦 Global Consumables QR Scanned', 'success');
+        return;
+      } else {
+        showScanToast('📦 This is the Global Consumables QR. Use it inside a Conference/Challan.', 'warning');
+        return;
+      }
+    }
+
     const asset = findAssetFromScan(scanned);
 
     // 1. ASSET LINKING MODAL (Only for Assets Page)
@@ -1116,13 +1268,24 @@ const App: React.FC = () => {
     setFormErrors({});
 
     const isNew = !editingAsset;
+    const isConsumable = assetFormData.type === AssetCategory.CONSUMABLES;
+
+    // Auto-generate SKU/Serial for consumables if blank
+    const finalSku = (isConsumable && !assetFormData.sku)
+      ? `CONS-${(assetFormData.aliasName || 'ITEM').toUpperCase().replace(/\s+/g, '-')}-${Date.now().toString().slice(-4)}`
+      : assetFormData.sku;
+
+    const finalSerial = (isConsumable && !assetFormData.serialNumber)
+      ? finalSku
+      : assetFormData.serialNumber;
+
     const payload = {
-      sku: assetFormData.sku,
+      sku: finalSku,
       alias_name: assetFormData.aliasName,
       mac_address: assetFormData.macAddress,
       imei_number_1: assetFormData.imeiNumber1,
       imei_number_2: assetFormData.imeiNumber2,
-      serial_number: assetFormData.serialNumber,
+      serial_number: finalSerial,
       description: assetFormData.description,
       is_barcode_added: assetFormData.isBarcodeAdded,
       type: assetFormData.type,
@@ -1133,9 +1296,10 @@ const App: React.FC = () => {
       available_till: assetFormData.availableTill || null,
       status: assetFormData.status,
       condition: assetFormData.condition || 'Good',
-      barcode: assetFormData.barcode || assetFormData.sku,
-      barcode_type: assetFormData.barcodeType || '',
-      qr_code: assetFormData.qrCode || '',
+      barcode: assetFormData.barcode || finalSku,
+      barcode_type: assetFormData.barcodeType || 'CODE128',
+      qr_code: isConsumable ? GLOBAL_CONSUMABLES_SKU : (assetFormData.qrCode || ''),
+      quantity: assetFormData.quantity || 1,
       assigned_to: assetFormData.assigned_to
     };
 
@@ -1157,7 +1321,7 @@ const App: React.FC = () => {
             setQrTarget({ sku: assetFormData.sku as string, name: assetFormData.aliasName || assetFormData.sku as string });
           }
           setEditingAsset(null);
-          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: 'Other', purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', availableTill: '', status: AssetStatus.AVAILABLE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', assigned_to: undefined });
+          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', availableTill: '', status: AssetStatus.AVAILABLE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined });
         } else {
           const errorData = await res.json();
           setFormErrors(errorData);
@@ -1218,6 +1382,7 @@ const App: React.FC = () => {
       barcode: asset.barcode,
       barcodeType: asset.barcodeType || '',
       qrCode: asset.qrCode || '',
+      quantity: asset.quantity,
       assigned_to: asset.assigned_to
     });
     setAssetView('Form');
@@ -1235,19 +1400,42 @@ const App: React.FC = () => {
       imeiNumber2: '',
       serialNumber: '',
       description: '',
-      isBarcodeAdded: false,
-      type: 'Other',
-      purchasedDate: '',
+      purchasedDate: new Date().toISOString().split('T')[0],
       itemPrice: 0,
       depreciationPercentage: 0,
       availableFrom: '',
       availableTill: '',
       status: AssetStatus.AVAILABLE,
       condition: 'Good',
-      barcode: '',
-      barcodeType: '',
-      qrCode: '',
-      assigned_to: undefined
+      type: AssetCategory.OTHER,
+      isBarcodeAdded: false,
+      quantity: 1
+    });
+    setAssetView('Form');
+    setFormErrors({});
+  };
+
+  const openConsumableForm = () => {
+    if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
+    setEditingAsset(null);
+    setAssetFormData({
+      sku: '',
+      aliasName: '',
+      macAddress: '',
+      imeiNumber1: '',
+      imeiNumber2: '',
+      serialNumber: '', // will be same as SKU or blank
+      description: '',
+      purchasedDate: new Date().toISOString().split('T')[0],
+      itemPrice: 0,
+      depreciationPercentage: 0,
+      availableFrom: '',
+      availableTill: '',
+      status: AssetStatus.AVAILABLE,
+      condition: 'Good',
+      type: AssetCategory.CONSUMABLES,
+      isBarcodeAdded: false,
+      quantity: 1
     });
     setAssetView('Form');
     setFormErrors({});
@@ -1536,7 +1724,10 @@ const App: React.FC = () => {
               <div className={`px-6 py-2 rounded-full font-black uppercase text-xs ${viewingAsset.isBarcodeAdded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
                 Barcode: {viewingAsset.isBarcodeAdded ? 'Yes' : 'No'}
               </div>
-              <div className={`px-6 py-2 rounded-full font-black uppercase text-xs ${(viewingAsset.status === AssetStatus.AVAILABLE || viewingAsset.status === AssetStatus.CROSSCHECK) ? 'bg-emerald-500/10 text-emerald-400' : viewingAsset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'}`}>
+              <div className={`px-6 py-2 rounded-full font-black uppercase text-xs ${viewingAsset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
+                viewingAsset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' :
+                  viewingAsset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
+                    'bg-red-500/10 text-red-400'}`}>
                 {viewingAsset.status}
               </div>
             </div>
@@ -2072,7 +2263,34 @@ const App: React.FC = () => {
           >
             <i className="fa-solid fa-file-csv" /> Import
           </button>
-          <button onClick={openNewAssetForm} className="w-full md:w-auto px-6 md:px-8 py-3 md:py-4 bg-emerald-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-400 transition">Register New</button>
+          <div className="flex gap-2">
+            <div className="relative" ref={registerDropdownRef}>
+              <button
+                onClick={() => setIsRegisterDropdownOpen(!isRegisterDropdownOpen)}
+                className="px-4 md:px-6 py-3 md:py-4 bg-emerald-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-400 transition flex items-center gap-2"
+              >
+                Register New <i className={`fa-solid fa-chevron-${isRegisterDropdownOpen ? 'up' : 'down'} text-[8px]`} />
+              </button>
+
+              {isRegisterDropdownOpen && (
+                <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <button
+                    onClick={() => { openNewAssetForm(); setIsRegisterDropdownOpen(false); }}
+                    className="w-full text-left px-6 py-4 text-xs font-black text-white uppercase hover:bg-slate-800 transition flex items-center gap-3"
+                  >
+                    <i className="fa-solid fa-plus-circle text-emerald-500" /> Standard Asset
+                  </button>
+                  <div className="h-[1px] bg-slate-800" />
+                  <button
+                    onClick={() => { openConsumableForm(); setIsRegisterDropdownOpen(false); }}
+                    className="w-full text-left px-6 py-4 text-xs font-black text-white uppercase hover:bg-slate-800 transition flex items-center gap-3"
+                  >
+                    <i className="fa-solid fa-cubes text-amber-500" /> Consumable
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2174,7 +2392,9 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
-                    asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'
+                    asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' :
+                      asset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
+                        'bg-red-500/10 text-red-400'
                     }`}>{asset.status}</span>
                   {asset.current_conference_name && (
                     <span className="text-[7px] font-black text-orange-500/70 uppercase tracking-tighter truncate max-w-[80px]">
@@ -2203,6 +2423,7 @@ const App: React.FC = () => {
                 <th className="px-6 py-6">Serial Number</th>
                 <th className="px-6 py-6">Description</th>
                 <th className="px-6 py-6">Type</th>
+                <th className="px-6 py-6 text-center">Qty</th>
                 <th className="px-6 py-6 text-center">Status</th>
                 <th className="px-6 py-6 text-right">Actions</th>
               </tr>
@@ -2248,9 +2469,14 @@ const App: React.FC = () => {
                     <p className="text-[10px] text-slate-500 font-black uppercase">{asset.type}</p>
                   </td>
                   <td className="px-6 py-6 text-center">
+                    <p className="text-xs font-black text-white">{asset.quantity || 1}</p>
+                  </td>
+                  <td className="px-6 py-6 text-center">
                     <div className="flex flex-col items-center gap-1">
                       <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
-                        asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'
+                        asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' :
+                          asset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
+                            'bg-red-500/10 text-red-400'
                         }`}>{asset.status}</span>
                       {asset.current_conference_name && (
                         <span className="text-[8px] font-black text-orange-500/70 uppercase tracking-tight">
@@ -2281,7 +2507,7 @@ const App: React.FC = () => {
       <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
         <div className="p-4 md:p-8 border-b border-slate-800/40">
           <input
-            type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            type="text" value={employeeSearchQuery} onChange={(e) => setEmployeeSearchQuery(e.target.value)}
             placeholder="Search employees..."
             className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-800 bg-slate-950/40 text-white font-black text-[10px] md:text-xs uppercase"
           />
@@ -2297,7 +2523,11 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/20">
-              {employees.map((emp) => (
+              {employees.filter(emp => !employeeSearchQuery ||
+                (emp.name && emp.name.toLowerCase().includes(employeeSearchQuery.toLowerCase())) ||
+                (emp.department && emp.department.toLowerCase().includes(employeeSearchQuery.toLowerCase())) ||
+                (emp.employee_id && emp.employee_id.toLowerCase().includes(employeeSearchQuery.toLowerCase()))
+              ).map((emp) => (
                 <tr key={emp.id} className="hover:bg-slate-800/10 transition">
                   <td className="px-6 py-6">
                     <p className="font-black text-white text-base uppercase">{emp.name}</p>
@@ -2329,9 +2559,15 @@ const App: React.FC = () => {
 
   const renderChallanList = () => {
     // Sort challans by number descending
-    const sortedChallans = [...filteredConferences].sort((a, b) =>
-      parseInt(b.challanNumber) - parseInt(a.challanNumber)
-    );
+    const sortedChallans = [...filteredConferences]
+      .filter(conf => !challanSearchQuery ||
+        (conf.challanNumber && conf.challanNumber.toString().toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
+        (conf.conferenceName && conf.conferenceName.toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
+        (conf.associationName && conf.associationName.toLowerCase().includes(challanSearchQuery.toLowerCase()))
+      )
+      .sort((a, b) =>
+        parseInt(b.challanNumber) - parseInt(a.challanNumber)
+      );
 
     return (
       <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
@@ -2341,7 +2577,7 @@ const App: React.FC = () => {
         <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
           <div className="p-4 md:p-8 border-b border-slate-800/40">
             <input
-              type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              type="text" value={challanSearchQuery} onChange={(e) => setChallanSearchQuery(e.target.value)}
               placeholder="Search challans..."
               className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-800 bg-slate-950/40 text-white font-black text-[10px] md:text-xs uppercase"
             />
@@ -2676,7 +2912,9 @@ const App: React.FC = () => {
 
           {currentPage === 'Assets' && assetView === 'Form' && (
             <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <h2 className="text-5xl font-black text-white uppercase">{editingAsset ? 'Edit' : 'Register'} Asset</h2>
+              <h2 className="text-5xl font-black text-white uppercase">
+                {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CONSUMABLES ? 'Register Consumable' : 'Register Asset')}
+              </h2>
               <form onSubmit={handleSaveAsset} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8">
                 {formErrors.non_field_errors && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs font-bold uppercase">
@@ -2684,105 +2922,156 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
-                    <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required />
-                    {formErrors.sku && <p className="text-red-500 text-xs mt-1">{formErrors.sku}</p>}
+                {assetFormData.type === AssetCategory.CONSUMABLES ? (
+                  /* Simplified Consumables Form */
+                  <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                      <div className="md:col-span-1">
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Item Name (Alias)</label>
+                        <input value={assetFormData.aliasName} onChange={e => setAssetFormData({ ...assetFormData, aliasName: e.target.value })} className="form-input-night" placeholder="e.g. Batteries AAA" required />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Quantity</label>
+                        <input type="number" min="1" value={assetFormData.quantity} onChange={e => setAssetFormData({ ...assetFormData, quantity: parseInt(e.target.value) || 1 })} className="form-input-night" required />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Unit Rate / Price</label>
+                        <input type="number" value={assetFormData.itemPrice} onChange={e => setAssetFormData({ ...assetFormData, itemPrice: parseFloat(e.target.value) || 0 })} className="form-input-night" required />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Short Description</label>
+                      <input value={assetFormData.description} onChange={e => setAssetFormData({ ...assetFormData, description: e.target.value })} className="form-input-night" placeholder="Optional notes..." />
+                    </div>
+                    <div className="bg-sky-500/10 border border-sky-500/20 p-6 rounded-3xl flex items-center gap-6 animate-in fade-in slide-in-from-top-2 duration-500">
+                      <div className="shrink-0 p-2 bg-white rounded-2xl">
+                        <GlobalQRPreview />
+                      </div>
+                      <div className="flex-1 space-y-3">
+                        <div>
+                          <p className="text-[11px] font-black text-white uppercase tracking-wider">Shared Global QR Identity</p>
+                          <p className="text-[10px] font-bold text-sky-400/80 uppercase tracking-widest leading-relaxed">
+                            All consumables reuse this QR code: <span className="text-white font-mono bg-white/10 px-2 py-0.5 rounded">{GLOBAL_CONSUMABLES_SKU}</span>.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setQrTarget({ sku: GLOBAL_CONSUMABLES_SKU, name: 'Global Consumables QR' })}
+                          className="px-4 py-2.5 bg-sky-500/10 border border-sky-500/20 text-sky-400 rounded-xl text-[10px] font-black uppercase hover:bg-sky-500 hover:text-white transition flex items-center gap-2"
+                        >
+                          <i className="fa-solid fa-print"></i> Print QR Label
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
-                    <input value={assetFormData.aliasName} onChange={e => setAssetFormData({ ...assetFormData, aliasName: e.target.value })} className="form-input-night" />
-                  </div>
-                </div>
+                ) : (
+                  /* Standard Asset Form */
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
+                        <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required />
+                        {formErrors.sku && <p className="text-red-500 text-xs mt-1">{formErrors.sku}</p>}
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
+                        <input value={assetFormData.aliasName} onChange={e => setAssetFormData({ ...assetFormData, aliasName: e.target.value })} className="form-input-night" />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">MAC Address</label>
-                    <input value={assetFormData.macAddress} onChange={e => setAssetFormData({ ...assetFormData, macAddress: e.target.value })} className="form-input-night" placeholder="e.g. 00:1A:2B..." />
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">IMEI Number 1</label>
-                    <input value={assetFormData.imeiNumber1} onChange={e => setAssetFormData({ ...assetFormData, imeiNumber1: e.target.value })} className="form-input-night" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">IMEI Number 2</label>
-                    <input value={assetFormData.imeiNumber2} onChange={e => setAssetFormData({ ...assetFormData, imeiNumber2: e.target.value })} className="form-input-night" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">MAC Address</label>
+                        <input value={assetFormData.macAddress} onChange={e => setAssetFormData({ ...assetFormData, macAddress: e.target.value })} className="form-input-night" placeholder="e.g. 00:1A:2B..." />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">IMEI Number 1</label>
+                        <input value={assetFormData.imeiNumber1} onChange={e => setAssetFormData({ ...assetFormData, imeiNumber1: e.target.value })} className="form-input-night" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">IMEI Number 2</label>
+                        <input value={assetFormData.imeiNumber2} onChange={e => setAssetFormData({ ...assetFormData, imeiNumber2: e.target.value })} className="form-input-night" />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Serial Number</label>
-                    <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" required />
-                    {formErrors.serial_number && <p className="text-red-500 text-xs mt-1">{formErrors.serial_number}</p>}
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Type / Category</label>
-                    <select value={assetFormData.type} onChange={e => setAssetFormData({ ...assetFormData, type: e.target.value })} className="form-input-night" required>
-                      {Object.values(AssetCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                    {formErrors.type && <p className="text-red-500 text-xs mt-1">{formErrors.type}</p>}
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                      <div className="md:col-span-1">
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Serial Number</label>
+                        <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" required />
+                        {formErrors.serial_number && <p className="text-red-500 text-xs mt-1">{formErrors.serial_number}</p>}
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Type / Category</label>
+                        <select value={assetFormData.type} onChange={e => setAssetFormData({ ...assetFormData, type: e.target.value })} className="form-input-night" required>
+                          {Object.values(AssetCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                        </select>
+                        {formErrors.type && <p className="text-red-500 text-xs mt-1">{formErrors.type}</p>}
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Quantity</label>
+                        <input type="number" min="1" value={assetFormData.quantity} onChange={e => setAssetFormData({ ...assetFormData, quantity: parseInt(e.target.value) || 1 })} className="form-input-night" required />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Description</label>
-                  <textarea value={assetFormData.description} onChange={e => setAssetFormData({ ...assetFormData, description: e.target.value })} className="form-input-night h-24 resize-none" placeholder="Brand, Model, and other details..." />
-                </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Description</label>
+                      <textarea value={assetFormData.description} onChange={e => setAssetFormData({ ...assetFormData, description: e.target.value })} className="form-input-night h-24 resize-none" placeholder="Brand, Model, and other details..." />
+                    </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Purchased Date</label>
-                    <input type="date" value={assetFormData.purchasedDate} onChange={e => setAssetFormData({ ...assetFormData, purchasedDate: e.target.value })} className="form-input-night" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Item Price</label>
-                    <input type="number" value={assetFormData.itemPrice} onChange={e => setAssetFormData({ ...assetFormData, itemPrice: parseFloat(e.target.value) })} className="form-input-night" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Depreciation %</label>
-                    <input type="number" value={assetFormData.depreciationPercentage} onChange={e => setAssetFormData({ ...assetFormData, depreciationPercentage: parseFloat(e.target.value) })} className="form-input-night" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Purchased Date</label>
+                        <input type="date" value={assetFormData.purchasedDate} onChange={e => setAssetFormData({ ...assetFormData, purchasedDate: e.target.value })} className="form-input-night" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Item Price</label>
+                        <input type="number" value={assetFormData.itemPrice} onChange={e => setAssetFormData({ ...assetFormData, itemPrice: parseFloat(e.target.value) })} className="form-input-night" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Depreciation %</label>
+                        <input type="number" value={assetFormData.depreciationPercentage} onChange={e => setAssetFormData({ ...assetFormData, depreciationPercentage: parseFloat(e.target.value) })} className="form-input-night" />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Available From</label>
-                    <input type="date" value={assetFormData.availableFrom} onChange={e => setAssetFormData({ ...assetFormData, availableFrom: e.target.value })} className="form-input-night" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Available Till</label>
-                    <input type="date" value={assetFormData.availableTill} onChange={e => setAssetFormData({ ...assetFormData, availableTill: e.target.value })} className="form-input-night" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Available From</label>
+                        <input type="date" value={assetFormData.availableFrom} onChange={e => setAssetFormData({ ...assetFormData, availableFrom: e.target.value })} className="form-input-night" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Available Till</label>
+                        <input type="date" value={assetFormData.availableTill} onChange={e => setAssetFormData({ ...assetFormData, availableTill: e.target.value })} className="form-input-night" />
+                      </div>
+                    </div>
 
-                <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
-                  <div className="flex-1">
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">Barcode Status</label>
-                    <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Has a physical barcode sticker been added?</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAssetFormData({ ...assetFormData, isBarcodeAdded: !assetFormData.isBarcodeAdded })}
-                    className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.isBarcodeAdded ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}
-                  >
-                    {assetFormData.isBarcodeAdded ? 'Yes, Added' : 'Not Added'}
-                  </button>
-                </div>
+                    <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
+                      <div className="flex-1">
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">Barcode Status</label>
+                        <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Has a physical barcode sticker been added?</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAssetFormData({ ...assetFormData, isBarcodeAdded: !assetFormData.isBarcodeAdded })}
+                        className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.isBarcodeAdded ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}
+                      >
+                        {assetFormData.isBarcodeAdded ? 'Yes, Added' : 'Not Added'}
+                      </button>
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">System Status</label>
-                    <select value={assetFormData.status} onChange={e => setAssetFormData({ ...assetFormData, status: e.target.value as AssetStatus })} className="form-input-night">
-                      {Object.values(AssetStatus).map(stat => <option key={stat} value={stat}>{stat}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Internal Condition</label>
-                    <input value={assetFormData.condition} onChange={e => setAssetFormData({ ...assetFormData, condition: e.target.value })} className="form-input-night" />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">System Status</label>
+                        <select value={assetFormData.status} onChange={e => setAssetFormData({ ...assetFormData, status: e.target.value as AssetStatus })} className="form-input-night">
+                          {Object.values(AssetStatus).map(stat => <option key={stat} value={stat}>{stat}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Internal Condition</label>
+                        <input value={assetFormData.condition} onChange={e => setAssetFormData({ ...assetFormData, condition: e.target.value })} className="form-input-night" />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="flex gap-4 pt-4">
                   <button type="button" onClick={() => handleViewChange('Assets', 'List')} className="flex-1 py-6 bg-slate-800 text-white rounded-2xl font-black uppercase hover:bg-slate-700 transition">Cancel</button>
@@ -3074,7 +3363,7 @@ const App: React.FC = () => {
                     const bookedElsewhereStr = new Set([...bookedElsewhere].map(id => String(id)));
 
                     const availableAssets = assets.filter(a => {
-                      const q = searchQuery.toLowerCase();
+                      const q = quickAddInput.toLowerCase();
                       const matchesSearch = !q ||
                         (a.sku && a.sku.toLowerCase().includes(q)) ||
                         (a.aliasName && a.aliasName.toLowerCase().includes(q)) ||
@@ -3421,6 +3710,158 @@ const App: React.FC = () => {
               >
                 Confirm Linkage
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Consumables Picker Modal */}
+      {showConsumablesPicker && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300"></div>
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-8 border-b border-slate-800 bg-slate-950/30 flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Select Consumable</h3>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1 underline decoration-amber-500 underline-offset-4">
+                  Picking from global stock
+                </p>
+              </div>
+              <button onClick={() => setShowConsumablesPicker(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:text-white transition">
+                <i className="fa-solid fa-times text-xl"></i>
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6">
+              <div className="relative">
+                <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                <input
+                  type="text"
+                  placeholder="SEARCH CONSUMABLES..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-14 pr-6 text-xs font-black text-white uppercase tracking-widest focus:border-amber-500 outline-none transition"
+                  value={consumablesPickerSearchQuery}
+                  onChange={(e) => setConsumablesPickerSearchQuery(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="max-h-[40vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                {assets
+                  .filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0)
+                  .filter(a =>
+                    (a.aliasName || a.sku).toLowerCase().includes(consumablesPickerSearchQuery.toLowerCase())
+                  )
+                  .map(a => (
+                    <button
+                      key={a.id}
+                      onClick={() => {
+                        setQuantityAsset(a);
+                        setSelectedQuantity(a.quantity);
+                        setShowConsumablesPicker(false);
+                        setShowQuantityModal(true);
+                      }}
+                      className="w-full flex items-center justify-between p-6 bg-slate-950/50 border border-slate-800 rounded-2xl hover:border-amber-500 group transition animate-in fade-in slide-in-from-left-4"
+                    >
+                      <div className="text-left">
+                        <p className="text-sm font-black text-white uppercase group-hover:text-amber-500 transition">{a.aliasName || a.sku}</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Stock Level: <span className="text-slate-300">{a.quantity} Units</span></p>
+                      </div>
+                      <i className="fa-solid fa-chevron-right text-slate-700 group-hover:text-amber-500 group-hover:translate-x-1 transition"></i>
+                    </button>
+                  ))}
+
+                {assets.filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0).length === 0 && (
+                  <div className="py-12 text-center space-y-4">
+                    <i className="fa-solid fa-box-open text-4xl text-slate-800"></i>
+                    <p className="text-xs font-black text-slate-600 uppercase tracking-widest">No available consumables found.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-8 border-t border-slate-800 bg-slate-950/50">
+              <button
+                onClick={() => setShowConsumablesPicker(false)}
+                className="w-full py-4 bg-slate-800 text-slate-400 rounded-2xl font-black uppercase text-xs hover:bg-slate-700 hover:text-white transition"
+              >
+                Close Picker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Partial Quantity Selection Modal */}
+      {showQuantityModal && quantityAsset && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300"></div>
+          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-8 border-b border-slate-800 bg-slate-950/30 flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Select Quantity</h3>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                  Item: <span className="text-amber-500">{quantityAsset.aliasName || quantityAsset.sku}</span>
+                </p>
+              </div>
+              <button onClick={() => setShowQuantityModal(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:text-white transition">
+                <i className="fa-solid fa-times text-xl"></i>
+              </button>
+            </div>
+
+            <div className="p-10 space-y-10">
+              <div className="bg-slate-950/50 p-8 rounded-3xl border border-slate-800 text-center space-y-4">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Items</p>
+                <p className="text-6xl font-black text-white tracking-widest">{quantityAsset.quantity}</p>
+              </div>
+
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Taking to Conference</label>
+                  <span className="px-4 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[10px] font-black uppercase">
+                    Splitting stock
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-6">
+                  <button
+                    onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))}
+                    className="w-20 h-20 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-2xl border border-slate-700 transition text-2xl"
+                  >
+                    <i className="fa-solid fa-minus"></i>
+                  </button>
+
+                  <input
+                    type="number"
+                    min="1"
+                    max={quantityAsset.quantity}
+                    value={selectedQuantity}
+                    onChange={(e) => setSelectedQuantity(Math.min(quantityAsset.quantity, Math.max(1, parseInt(e.target.value) || 1)))}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-3xl p-6 text-center text-4xl font-black text-white outline-none focus:border-amber-500 transition"
+                  />
+
+                  <button
+                    onClick={() => setSelectedQuantity(Math.min(quantityAsset.quantity, selectedQuantity + 1))}
+                    className="w-20 h-20 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-2xl border border-slate-700 transition text-2xl"
+                  >
+                    <i className="fa-solid fa-plus"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button
+                  onClick={() => setShowQuantityModal(false)}
+                  className="flex-1 py-5 bg-slate-800 text-slate-400 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-700 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitQuantityAssignment}
+                  className="flex-[2] py-5 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-amber-400 transition shadow-lg shadow-amber-500/20"
+                >
+                  Add <span className="mx-1 opacity-50">•</span> {selectedQuantity} {selectedQuantity === 1 ? 'Unit' : 'Units'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
