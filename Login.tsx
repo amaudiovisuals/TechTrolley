@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Logo } from './components/Logo';
+import { CompanySettings } from './types';
 
 interface LoginProps {
     onLogin: (token: string, user: any) => void;
@@ -11,6 +12,22 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/company-settings/`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setCompanySettings(data);
+                }
+            } catch (e) {
+                console.error('Failed to fetch company settings:', e);
+            }
+        };
+        fetchSettings();
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -47,7 +64,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
             <div className="w-full max-w-md space-y-12">
                 <div className="text-center space-y-4 flex flex-col items-center">
-                    <Logo size="lg" />
+                    <Logo size="lg" companySettings={companySettings} showText={true} variant="login" />
                 </div>
 
                 <form onSubmit={handleSubmit} className="bg-slate-900/30 backdrop-blur-xl p-10 rounded-[2.5rem] border border-slate-800/50 shadow-2xl space-y-6">

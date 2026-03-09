@@ -96,7 +96,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
       <div className="flex justify-between items-start pb-2 mb-2" style={{ borderBottom: `2px solid ${accent}` }}>
         {/* Left: Company info */}
         <div>
-          <Logo size="sm" companySettings={companySettings} />
+          <Logo size="sm" companySettings={companySettings} variant="challan" />
           <div className="mt-1 text-[9px] text-gray-900 font-medium leading-snug">
             <p className="font-black text-gray-900 uppercase tracking-tighter text-[10px]">{companySettings?.name || 'TECH TROLLEY'}</p>
             <p className="whitespace-pre-wrap">{companySettings?.address || 'Warehouse Complex 7, Industrial Area Phase II, New Delhi - 110020.'}</p>

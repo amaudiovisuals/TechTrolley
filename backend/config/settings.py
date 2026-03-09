@@ -124,7 +124,7 @@ STATIC_URL = 'static/'
 # CORS and CSRF Settings
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ORIGIN_ALLOW_ALL = True
-CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost:3000', 'http://*.local']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://localhost:3000', 'https://127.0.0.1:3000', 'http://*.local']
 CORS_ALLOW_ALL_ORIGINS = True
 
 # Security Relaxations for Local Dev

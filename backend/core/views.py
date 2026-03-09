@@ -121,8 +121,8 @@ def generate_pdf_challan(request, conference_id):
     buffer.seek(0)
     return HttpResponse(buffer, content_type='application/pdf')
 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import permission_classes
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.decorators import permission_classes, api_view
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
@@ -169,6 +169,7 @@ def employee_detail(request, pk):
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
 def company_settings(request):
     from .serializers import CompanySettingsSerializer
     # Ensure there's at least one settings object
@@ -179,6 +180,10 @@ def company_settings(request):
         return Response(serializer.data)
     
     elif request.method == 'POST':
+        # ONLY Authenticated users can change settings
+        if not request.user or not request.user.is_authenticated:
+             return Response({"detail": "Authentication credentials were not provided."}, status=401)
+        
         try:
             # Use partial update if needed, but here we usually want to update all fields provided
             data = request.data.copy()
@@ -373,8 +378,8 @@ def bulk_upload_assets(request):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
-from rest_framework.permissions import AllowAny
-from rest_framework.decorators import permission_classes
+# from rest_framework.permissions import AllowAny
+# from rest_framework.decorators import permission_classes
 from rest_framework.authtoken.models import Token as AuthToken
 
 @api_view(['GET'])
