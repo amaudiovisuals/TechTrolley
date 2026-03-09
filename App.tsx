@@ -592,7 +592,10 @@ const App: React.FC = () => {
   };
 
   const openNewConferenceForm = () => {
+    fetchAssets();      // Always get fresh statuses before interacting with conference
+    fetchConferences(); // Refresh backend conference data too
     setEditingConference(null);
+    setAssetTab('available'); // Always start on available tab
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
@@ -759,8 +762,11 @@ const App: React.FC = () => {
     );
   };
 
-  const openEditConferenceForm = (conf: any) => { // Using internal format, needs mapping back to form data keys
+  const openEditConferenceForm = (conf: any) => {
+    fetchAssets();      // Always get fresh statuses before interacting with conference
+    fetchConferences(); // Refresh backend conference data too
     setEditingConference(conf);
+    setAssetTab('available'); // Always reset to available tab
     setConferenceFormData({
       id: conf.id,
       name: conf.name,
@@ -940,14 +946,45 @@ const App: React.FC = () => {
   const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove') => {
     const assetIdStr = asset.id.toString();
     const existingAssets = conferenceFormData.assets.map((id: any) => id.toString());
+    const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => id.toString()));
+    const currentConfId = editingConference?.id ? String(editingConference.id) : null;
 
     if (action === 'add') {
-      if (existingAssets.includes(assetIdStr)) return;
+      // LOCK 1: Already assigned to THIS conference
+      if (existingAssets.includes(assetIdStr)) {
+        showScanToast(`⚠️ Already Assigned: "${asset.aliasName || asset.sku}" is already in this conference.`, 'warning');
+        return;
+      }
 
-      // New: Check for Consumables to show Quantity Modal
-      if (asset.type === AssetCategory.CONSUMABLES && asset.status === 'Available') {
+      // LOCK 2: Asset is in Godown Crosscheck (returning from a conference, not yet verified)
+      // Check BOTH local status AND backendConferences crosscheck data for reliability
+      const isInCrosscheck = asset.status === AssetStatus.CROSSCHECK ||
+        backendConferences.some(c => String(c.id) !== currentConfId && (c.crosscheckAssets || []).some(id => String(id) === assetIdStr));
+      if (isInCrosscheck) {
+        const confName = asset.current_conference_name ? ` (from ${asset.current_conference_name})` : '';
+        showScanToast(`🔒 Locked — Crosscheck Pending: "${asset.aliasName || asset.sku}"${confName}. Godown Incharge must verify first.`, 'error');
+        return;
+      }
+
+      // LOCK 3: Asset is In Use — check BOTH local status AND backendConferences assets data
+      const isInUseElsewhere = asset.status === AssetStatus.IN_USE ||
+        backendConferences.some(c => String(c.id) !== currentConfId && (c.assets || []).some(id => String(id) === assetIdStr));
+      if (isInUseElsewhere) {
+        const confName = asset.current_conference_name ? ` — locked by: ${asset.current_conference_name}` : '';
+        showScanToast(`🔒 In Use: "${asset.aliasName || asset.sku}"${confName}. Cannot assign until released.`, 'error');
+        return;
+      }
+
+      // LOCK 4: Asset is in Crosscheck queue of THIS conference already (pending move-back)
+      if (crosscheckIds.has(assetIdStr)) {
+        showScanToast(`⚠️ "${asset.aliasName || asset.sku}" is awaiting Godown Crosscheck for this conference. Verify it first.`, 'warning');
+        return;
+      }
+
+      // Check for Consumables to show Quantity Modal
+      if (asset.type === AssetCategory.CONSUMABLES && asset.status === AssetStatus.AVAILABLE) {
         setQuantityAsset(asset);
-        setSelectedQuantity(asset.quantity); // default to max
+        setSelectedQuantity(asset.quantity);
         setShowQuantityModal(true);
         return;
       }
@@ -965,7 +1002,10 @@ const App: React.FC = () => {
         showScanToast(`✅ Added Successfully: "${asset.aliasName || asset.sku}"`, 'success');
       }
     } else if (action === 'remove') {
-      if (!existingAssets.includes(assetIdStr)) return;
+      if (!existingAssets.includes(assetIdStr)) {
+        showScanToast(`⚠️ Not In Conference: "${asset.aliasName || asset.sku}" is not currently assigned to this conference.`, 'warning');
+        return;
+      }
 
       if (asset.sub_assets && asset.sub_assets.length > 0) {
         setPendingParentAsset(asset);
@@ -985,11 +1025,16 @@ const App: React.FC = () => {
 
   const verifyCrosscheckAsset = (asset: Asset) => {
     const assetIdStr = asset.id.toString();
+    const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => id.toString()));
+    if (!crosscheckIds.has(assetIdStr)) {
+      showScanToast(`❌ "${asset.aliasName || asset.sku}" is not in the Godown Crosscheck queue for this conference.`, 'error');
+      return;
+    }
     setConferenceFormData((prev: any) => ({
       ...prev,
       crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => id.toString() !== assetIdStr)
     }));
-    showScanToast(`✅ Verified at Godown: "${asset.aliasName || asset.sku}"`, 'success');
+    showScanToast(`✅ Verified at Godown: "${asset.aliasName || asset.sku}" — save conference to confirm.`, 'success');
   };
 
   const submitQuantityAssignment = () => {
@@ -1077,7 +1122,7 @@ const App: React.FC = () => {
       .catch(() => showScanToast('❌ Network error during quantity assignment', 'error'));
   };
 
-  const handleScan = (decodedText: string) => {
+  const handleScan = (decodedText: string, showUnknownError = false) => {
     setShowScanner(false);
     const scanned = (decodedText || '').trim();
     if (!scanned) return;
@@ -1119,13 +1164,24 @@ const App: React.FC = () => {
     // 2. CONFERENCE FORM LOGIC
     if (currentPage === 'Conferences' && (conferenceView === 'Form' || conferenceView === 'Details')) {
       if (!asset) {
-        // Silent return for Conferences if not found - avoids noise from malformed/duplicate scans
+        if (showUnknownError) {
+          showScanToast(`❌ Unknown scan: "${scanned}" — no matching asset found.`, 'error');
+        }
         return;
       }
 
       if (pendingParentAsset) {
         const isSubAsset = pendingParentAsset.sub_assets?.some(sub => String(sub.id) === String(asset.id));
         if (isSubAsset) {
+          // Check locks for sub-assets too
+          if (asset.status === AssetStatus.IN_USE) {
+            showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is In Use and cannot be added.`, 'error');
+            return;
+          }
+          if (asset.status === AssetStatus.CROSSCHECK) {
+            showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is in Crosscheck and cannot be added.`, 'error');
+            return;
+          }
           const subAssetIdStr = asset.id.toString();
           if (!scannedSubAssetIds.includes(subAssetIdStr)) {
             const newScanned = [...scannedSubAssetIds, subAssetIdStr];
@@ -1156,6 +1212,8 @@ const App: React.FC = () => {
               setPendingAction(null);
               setScannedSubAssetIds([]);
             }
+          } else {
+            showScanToast(`⚠️ Component "${asset.aliasName || asset.sku}" already scanned.`, 'warning');
           }
         } else {
           showScanToast(`❌ "${asset.aliasName || asset.sku}" is not a required component`, 'error');
@@ -2747,6 +2805,11 @@ const App: React.FC = () => {
                     <span className="inline-flex items-center gap-2 mr-2 text-[10px] font-black text-violet-400">
                       <i className="fa-solid fa-box"></i> {(conf.assets || []).length}
                     </span>
+                    {(conf.crosscheckAssets || []).length > 0 && (
+                      <span className="inline-flex items-center gap-1.5 mr-2 text-[10px] font-black text-indigo-400" title="Awaiting Godown Crosscheck">
+                        <i className="fa-solid fa-arrows-to-dot"></i> {(conf.crosscheckAssets || []).length}
+                      </span>
+                    )}
                     <button onClick={() => handlePrintChallan(conf)} className="text-emerald-400 hover:text-white" title="Print Challan"><i className="fa-solid fa-print"></i></button>
                     {user?.is_staff ? (
                       <>
@@ -3285,7 +3348,7 @@ const App: React.FC = () => {
                               // Auto-detect full matches (Vital for PDAs that don't send Enter)
                               const asset = findAssetFromScan(val);
                               if (asset) {
-                                handleScan(val);
+                                handleScan(val, false); // silent: partial input is expected
                                 setQuickAddInput('');
                               }
                             }}
@@ -3296,7 +3359,7 @@ const App: React.FC = () => {
                                 const valFromTarget = (e.target as HTMLInputElement).value;
                                 const code = (valFromTarget || quickAddInput).trim();
                                 if (code && code !== lastScannedCode.current) {
-                                  handleScan(code);
+                                  handleScan(code, true); // explicit: show error if not found
                                 }
                                 setQuickAddInput('');
                               }
@@ -3320,7 +3383,7 @@ const App: React.FC = () => {
                               // Auto-detect full matches (Vital for PDAs that don't send Enter)
                               const asset = findAssetFromScan(val);
                               if (asset) {
-                                handleScan(val);
+                                handleScan(val, false); // silent: partial input is expected
                                 setQuickRemoveInput('');
                               }
                             }}
@@ -3331,7 +3394,7 @@ const App: React.FC = () => {
                                 const valFromTarget = (e.target as HTMLInputElement).value;
                                 const code = (valFromTarget || quickRemoveInput).trim();
                                 if (code && code !== lastScannedCode.current) {
-                                  handleScan(code);
+                                  handleScan(code, true); // explicit: show error if not found
                                 }
                                 setQuickRemoveInput('');
                               }
@@ -3353,14 +3416,17 @@ const App: React.FC = () => {
                   {/* Available Tab */}
                   {assetTab === 'available' && (() => {
                     const currentConferenceId = editingConference?.id;
-                    const bookedElsewhere = new Set<number>(
+                    // bookedInOtherConferences: assets AND crosscheckAssets locked in any other conference
+                    const bookedInOtherConferences = new Set<string>(
                       backendConferences
-                        .filter(c => c.id !== currentConferenceId)
-                        .flatMap(c => (c as any).assets || [])
+                        .filter(c => String(c.id) !== String(currentConferenceId))
+                        .flatMap(c => [
+                          ...((c as any).assets || []).map(String),
+                          ...((c.crosscheckAssets || []).map(String))
+                        ])
                     );
                     const selectedIds = new Set(conferenceFormData.assets.map((id: any) => String(id)));
                     const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
-                    const bookedElsewhereStr = new Set([...bookedElsewhere].map(id => String(id)));
 
                     const availableAssets = assets.filter(a => {
                       const q = quickAddInput.toLowerCase();
@@ -3370,7 +3436,7 @@ const App: React.FC = () => {
                         (a.type && a.type.toLowerCase().includes(q)) ||
                         (a.description && a.description.toLowerCase().includes(q)) ||
                         (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
-                      return matchesSearch && !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id)) && !bookedElsewhereStr.has(String(a.id));
+                      return matchesSearch && a.status === AssetStatus.AVAILABLE && !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id)) && !bookedInOtherConferences.has(String(a.id));
                     });
 
                     return (
