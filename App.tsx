@@ -3323,14 +3323,14 @@ const App: React.FC = () => {
                         onClick={() => setAssetTab('assigned')}
                         className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${assetTab === 'assigned' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:text-white'}`}
                       >
-                        Assigned ({conferenceFormData.assets.length})
+                        Assigned ({assets.filter(a => conferenceFormData.assets.map(String).includes(String(a.id))).length})
                       </button>
                       <button
                         type="button"
                         onClick={() => setAssetTab('crosscheck')}
                         className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${assetTab === 'crosscheck' ? 'bg-orange-500 text-white' : 'text-slate-500 hover:text-white'}`}
                       >
-                        Crosscheck ({(conferenceFormData.crosscheck_assets || []).length})
+                        Crosscheck ({assets.filter(a => (conferenceFormData.crosscheck_assets || []).map(String).includes(String(a.id))).length})
                       </button>
                     </div>
                     <div className="flex gap-3">
@@ -3436,7 +3436,13 @@ const App: React.FC = () => {
                         (a.type && a.type.toLowerCase().includes(q)) ||
                         (a.description && a.description.toLowerCase().includes(q)) ||
                         (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
-                      return matchesSearch && a.status === AssetStatus.AVAILABLE && !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id)) && !bookedInOtherConferences.has(String(a.id));
+                      // Base availability purely on M2M data, not the `status` field which can go stale.
+                      // An asset is available if it is NOT locked in any conference (current or other).
+                      const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
+                      const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
+                      // Additionally, skip Damaged assets — they should never be assignable.
+                      const notDamaged = a.status !== AssetStatus.DAMAGED;
+                      return matchesSearch && notInCurrentConf && notInOtherConf && notDamaged;
                     });
 
                     return (

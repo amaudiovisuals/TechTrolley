@@ -198,6 +198,14 @@ def company_settings(request):
                      settings.logo = None
                 del data['logo']
 
+            # Fix for dashboard_config being sent as string in FormData (QueryDict)
+            import json
+            if 'dashboard_config' in data and isinstance(data['dashboard_config'], str):
+                try:
+                    data['dashboard_config'] = json.loads(data['dashboard_config'])
+                except (ValueError, TypeError):
+                    pass
+
             serializer = CompanySettingsSerializer(settings, data=data, partial=True, context={'request': request})
             if serializer.is_valid():
                 serializer.save()
@@ -217,7 +225,6 @@ from rest_framework.parsers import MultiPartParser, FormParser
 def bulk_upload_assets(request):
     """
     Handle bulk upload of assets via CSV or Excel.
-    Expected columns: Name, Brand, Model Number, Category, Serial Number, SKU, Barcode, Status, Condition, Unit Price, QR Code
     Re-uploading the same file skips existing records (matched by Serial Number) — no errors on duplicates.
     """
     if 'file' not in request.FILES:
@@ -233,150 +240,166 @@ def bulk_upload_assets(request):
         else:
             return Response({'error': 'Unsupported file format. Please upload CSV or Excel.'}, status=400)
 
+        import math, traceback
+
+        # ── Helpers (defined ONCE outside the row loop) ────────────────────
+        def col(candidates, fallback):
+            """Find the first matching column name from candidates list."""
+            for c in df.columns:
+                if str(c).strip().lower() in candidates:
+                    return c
+            return fallback
+
+        from decimal import Decimal, InvalidOperation as DecimalInvalidOperation, ROUND_HALF_UP
+
+        def safe_decimal(val, default=Decimal('0.00')):
+            """Return a Decimal object. Django 6 DecimalField on SQLite needs Decimal, not float.
+            Float values get stored as REAL and cause InvalidOperation on read-back."""
+            try:
+                v = float(val)
+                if math.isnan(v) or math.isinf(v):
+                    return default
+                # Quantize to 2dp — matches DecimalField(decimal_places=2)
+                return Decimal(str(round(v, 2))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            except (TypeError, ValueError, DecimalInvalidOperation):
+                return default
+
+
+        def safe_str(val):
+            """Convert to string, returning '' for nan/None."""
+            s = str(val).strip()
+            return '' if s.lower() in ('nan', 'none', 'nat') else s
+
+        def parse_date(val):
+            if not val or str(val).lower() in ('nan', 'none', 'nat', ''):
+                return None
+            try:
+                return pd.to_datetime(val).date()
+            except Exception:
+                return None
+
+        # ── Resolve column names ONCE ───────────────────────────────────────
+        sku_col        = col(['sku'], 'SKU')
+        alias_col      = col(['alias name', 'alias_name'], 'Alias Name')
+        mac_col        = col(['mac address', 'mac_address'], 'MAC Address')
+        imei1_col      = col(['imei number 1', 'imei1'], 'IMEI Number 1')
+        imei2_col      = col(['imei number 2', 'imei2'], 'IMEI Number 2')
+        serial_col     = col(['serial number', 'serial'], 'Serial Number')
+        desc_col       = col(['description'], 'Description')
+        bc_added_col   = col(['is barcode added', 'barcode_added'], 'Is Barcode added')
+        type_col       = col(['type', 'category'], 'Type')
+        purchase_col   = col(['purchased date', 'purchased_date'], 'Purchased Date')
+        price_col      = col(['item price', 'price'], 'Item Price')
+        deprec_col     = col(['depreciation percentage', 'depreciation'], 'Depreciation Percentage')
+        avail_from_col = col(['available from', 'available_from'], 'Available from')
+        avail_till_col = col(['available till', 'available_till'], 'Available till')
+        bc_type_col    = col(['barcode type'], 'Barcode Type')
+        barcode_col    = col(['barcode'], 'Barcode')
+        qr_code_col    = col(['qr code'], 'QR Code')
+
+        type_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
+
+        # ── Process rows ─────────────────────────────────────────────────────
         created_count = 0
-        skipped_count = 0
+        updated_count = 0
         errors = []
 
         for index, row in df.iterrows():
             try:
-                # Exact column mapping from user spreadsheet
-                sku_col = next((c for c in df.columns if str(c).strip().lower() in ['sku']), 'SKU')
-                alias_col = next((c for c in df.columns if str(c).strip().lower() in ['alias name', 'alias_name']), 'Alias Name')
-                mac_col = next((c for c in df.columns if str(c).strip().lower() in ['mac address', 'mac_address']), 'MAC Address')
-                imei1_col = next((c for c in df.columns if str(c).strip().lower() in ['imei number 1', 'imei1']), 'IMEI Number 1')
-                imei2_col = next((c for c in df.columns if str(c).strip().lower() in ['imei number 2', 'imei2']), 'IMEI Number 2')
-                serial_col = next((c for c in df.columns if str(c).strip().lower() in ['serial number', 'serial']), 'Serial Number')
-                desc_col = next((c for c in df.columns if str(c).strip().lower() in ['description']), 'Description')
-                barcode_added_col = next((c for c in df.columns if str(c).strip().lower() in ['is barcode added', 'barcode_added']), 'Is Barcode added')
-                type_col = next((c for c in df.columns if str(c).strip().lower() in ['type', 'category']), 'Type')
-                purchase_col = next((c for c in df.columns if str(c).strip().lower() in ['purchased date', 'purchased_date']), 'Purchased Date')
-                price_col = next((c for c in df.columns if str(c).strip().lower() in ['item price', 'price']), 'Item Price')
-                deprec_col = next((c for c in df.columns if str(c).strip().lower() in ['depreciation percentage', 'depreciation']), 'Depreciation Percentage')
-                avail_from_col = next((c for c in df.columns if str(c).strip().lower() in ['available from', 'available_from']), 'Available from')
-                avail_till_col = next((c for c in df.columns if str(c).strip().lower() in ['available till', 'available_till']), 'Available till')
-                barcode_type_col = next((c for c in df.columns if str(c).strip().lower() == 'barcode type'), 'Barcode Type')
-                barcode_col = next((c for c in df.columns if str(c).strip().lower() == 'barcode'), 'Barcode')
-                qr_code_col = next((c for c in df.columns if str(c).strip().lower() == 'qr code'), 'QR Code')
-
-                serial = str(row.get(serial_col, '')).strip()
-                if not serial or pd.isna(serial):
-                    # Fallback to SKU if serial is missing but SKU exists
-                    sku_val = str(row.get(sku_col, '')).strip()
-                    if sku_val and not pd.isna(sku_val):
+                serial = safe_str(row.get(serial_col, ''))
+                if not serial:
+                    sku_val = safe_str(row.get(sku_col, ''))
+                    if sku_val:
                         serial = sku_val
                     else:
                         errors.append(f"Row {index+2}: Missing Serial Number — skipped")
                         continue
 
-                # Normalize Category/Type
-                raw_type = str(row.get(type_col, 'Other')).strip()
-                # Case-insensitive mapping to valid choices
-                type_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
+                # Normalize type
+                raw_type = safe_str(row.get(type_col, 'Other'))
                 normalized_type = type_map.get(raw_type.lower(), 'Other')
 
-                raw_barcode_type = str(row.get(barcode_type_col, '')).strip()
-                barcode_type_val = raw_barcode_type if raw_barcode_type.lower() != 'nan' else ''
-                
-                raw_barcode = str(row.get(barcode_col, '')).strip()
-                barcode_val = raw_barcode if raw_barcode.lower() != 'nan' else ''
-                
-                raw_qr_code = str(row.get(qr_code_col, '')).strip()
-                qr_code_val = raw_qr_code if raw_qr_code.lower() != 'nan' else ''
-                
-                # Check if barcode or QR code is explicitly provided in the new columns
-                barcode_added = True if (qr_code_val or barcode_val) else str(row.get(barcode_added_col, '')).lower() in ['yes', 'true', '1', 'y']
+                barcode_type_val = safe_str(row.get(bc_type_col, ''))
+                barcode_val      = safe_str(row.get(barcode_col, ''))
+                qr_code_val      = safe_str(row.get(qr_code_col, ''))
+                barcode_added    = bool(qr_code_val or barcode_val) or \
+                                   safe_str(row.get(bc_added_col, '')).lower() in ['yes', 'true', '1', 'y']
+                desc             = safe_str(row.get(desc_col, ''))
 
-                desc = str(row.get(desc_col, '')).strip()
-
-                # Parse depreciation percentage: handle string "%" and Excel decimal multipliers
+                # Depreciation — handle "%" strings and Excel 0-1 float representation
                 raw_deprec = row.get(deprec_col, 0)
-                deprec_val = 0.0
                 if isinstance(raw_deprec, str):
-                    deprec_val = float(raw_deprec.replace('%', '') or 0)
+                    deprec_val = safe_decimal(raw_deprec.replace('%', '').strip() or 0)
                 elif isinstance(raw_deprec, (int, float)):
-                    # If it's a float between 0 and 1, it's likely an Excel percentage (e.g. 0.4 for 40%)
-                    # Exception: if it's 0, it stays 0.
-                    if 0 < raw_deprec <= 1.0:
-                        deprec_val = float(raw_deprec * 100)
-                    else:
-                        deprec_val = float(raw_deprec)
-                
+                    deprec_val = safe_decimal(raw_deprec * 100) if 0 < raw_deprec <= 1.0 else safe_decimal(raw_deprec)
+                else:
+                    deprec_val = 0.0
+
                 defaults = {
-                    'sku': str(row.get(sku_col, serial)).strip(),
-                    'alias_name': str(row.get(alias_col, '')).strip(),
-                    'mac_address': str(row.get(mac_col, '')).strip(),
-                    'imei_number_1': str(row.get(imei1_col, '')).strip(),
-                    'imei_number_2': str(row.get(imei2_col, '')).strip(),
-                    'serial_number': serial,
-                    'description': desc,
-                    'is_barcode_added': barcode_added,
-                    'barcode': barcode_val,
-                    'barcode_type': barcode_type_val,
-                    'qr_code': qr_code_val,
-                    'type': normalized_type,
-                    'item_price': float(row.get(price_col, 0) or 0),
+                    'sku':                    safe_str(row.get(sku_col, serial)) or serial,
+                    'alias_name':             safe_str(row.get(alias_col, '')),
+                    'mac_address':            safe_str(row.get(mac_col, '')),
+                    'imei_number_1':          safe_str(row.get(imei1_col, '')),
+                    'imei_number_2':          safe_str(row.get(imei2_col, '')),
+                    'serial_number':          serial,
+                    'description':            desc,
+                    'is_barcode_added':       barcode_added,
+                    'barcode':                barcode_val,
+                    'barcode_type':           barcode_type_val,
+                    'qr_code':                qr_code_val,
+                    'type':                   normalized_type,
+                    'item_price':             safe_decimal(row.get(price_col, 0)),
                     'depreciation_percentage': deprec_val,
-                    'status': 'Available',
-                    'condition': 'Good'
+                    'purchased_date':         parse_date(row.get(purchase_col)),
+                    'available_from':         parse_date(row.get(avail_from_col)),
+                    'available_till':         parse_date(row.get(avail_till_col)),
+                    'status':                 'Available',
+                    'condition':              'Good',
                 }
 
-                # Date parsing helpers
-                def parse_date(val):
-                    if not val or pd.isna(val) or str(val).lower() == 'nan': return None
-                    try: return pd.to_datetime(val).date()
-                    except: return None
+                # Use only('id') to avoid reading back bad decimal fields on existing rows
+                existing = Asset.objects.filter(serial_number=serial).values_list('id', flat=True).first()
 
-                defaults['purchased_date'] = parse_date(row.get(purchase_col))
-                defaults['available_from'] = parse_date(row.get(avail_from_col))
-                defaults['available_till'] = parse_date(row.get(avail_till_col))
-
-                try:
-                    asset = Asset.objects.get(serial_number=serial)
-                    created = False
-                except Asset.DoesNotExist:
-                    asset = Asset(serial_number=serial)
-                    created = True
-
-                if created:
-                    for k, v in defaults.items():
-                        setattr(asset, k, v)
+                if existing is None:
+                    # CREATE new asset
+                    asset = Asset(**defaults)
                     asset.save()
                     created_count += 1
                 else:
-                    # Safely update existing records ONLY with new tracking / metadata
-                    # rather than wiping missing columns from custom-made templates.
-                    updated = False
-                    if qr_code_col in df.columns and qr_code_val:
-                        asset.qr_code = qr_code_val
-                        asset.is_barcode_added = barcode_added
-                        updated = True
-                    if barcode_col in df.columns and barcode_val:
-                        asset.barcode = barcode_val
-                        asset.is_barcode_added = barcode_added
-                        updated = True
-                    if barcode_type_col in df.columns and barcode_type_val:
-                        asset.barcode_type = barcode_type_val
-                        updated = True
-                        
-                    if updated:
-                        asset.save()
-                    
-                    skipped_count += 1 # Treat as updated in UI but keep same variable for now
-                    skipped_count += 1 # Treat as updated in UI but keep same variable for now
+                    # UPDATE only tracking metadata (barcode/QR) via raw SQL to avoid ORM decimal read
+                    update_fields = {}
+                    if qr_code_val:
+                        update_fields['qr_code'] = qr_code_val
+                        update_fields['is_barcode_added'] = True
+                    if barcode_val:
+                        update_fields['barcode'] = barcode_val
+                        update_fields['is_barcode_added'] = True
+                    if barcode_type_val:
+                        update_fields['barcode_type'] = barcode_type_val
+                    if update_fields:
+                        Asset.objects.filter(id=existing).update(**update_fields)
+                    updated_count += 1
+
 
             except Exception as e:
+                tb = traceback.format_exc()
+                print(f"[bulk_upload] Row {index+2} error: {tb}")
                 errors.append(f"Row {index+2}: {str(e)}")
 
         return Response({
             'created': created_count,
-            'updated': skipped_count, # actually updated now
-            'skipped': skipped_count, # legacy compatibility
+            'updated': updated_count,
+            'skipped': updated_count,
             'errors': errors,
-            'message': f'{created_count} asset(s) created, {skipped_count} updated.'
+            'message': f'{created_count} asset(s) created, {updated_count} updated.'
         }, status=200)
 
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[bulk_upload] Top-level error: {tb}")
+        return Response({'error': str(e), 'detail': tb}, status=500)
+
 
 # from rest_framework.permissions import AllowAny
 # from rest_framework.decorators import permission_classes

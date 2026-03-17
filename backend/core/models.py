@@ -1,6 +1,7 @@
 
 from django.db import models
 from django.core.validators import MinValueValidator
+from decimal import Decimal
 
 class Asset(models.Model):
     STATUS_CHOICES = [
@@ -33,8 +34,8 @@ class Asset(models.Model):
     type = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default='Other')
     quantity = models.PositiveIntegerField(default=1)
     purchased_date = models.DateField(null=True, blank=True)
-    item_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)], default=0.00)
-    depreciation_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    item_price = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True, default=Decimal('0.00'))
+    depreciation_percentage = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True, default=Decimal('0.00'))
     available_from = models.DateField(null=True, blank=True)
     available_till = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)

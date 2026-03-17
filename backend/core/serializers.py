@@ -81,11 +81,26 @@ class ConferenceSerializer(serializers.ModelSerializer):
         assets_data = validated_data.pop('assets', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
+        old_assets = list(instance.assets.all())
         old_crosscheck = list(instance.crosscheck_assets.all())
         instance = super().update(instance, validated_data)
 
         if assets_data is not None:
+            # Detect assets removed from this conference
+            new_asset_ids = set(a.pk for a in assets_data)
+            removed_assets = [a for a in old_assets if a.pk not in new_asset_ids]
+
             instance.assets.set(assets_data)
+
+            # Reset removed assets to Available — only if they are not in ANY other conference
+            for asset in removed_assets:
+                still_in_use = Conference.objects.filter(assets=asset).exclude(pk=instance.pk).exists()
+                in_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
+                if not still_in_use and not in_crosscheck:
+                    asset.status = 'Available'
+                    asset.save()
+
+            # Mark newly confirmed In Use assets
             for asset in assets_data:
                 if asset.status != 'In Use':
                     asset.status = 'In Use'
@@ -93,14 +108,16 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
         if crosscheck_data is not None:
             instance.crosscheck_assets.set(crosscheck_data)
-            
+
             # Restore Available status for assets verified (removed) from crosscheck
             removed_crosscheck = [a for a in old_crosscheck if a not in crosscheck_data]
             for asset in removed_crosscheck:
-                if asset.status == 'Crosscheck':
+                still_in_use = Conference.objects.filter(assets=asset).exists()
+                still_in_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exclude(pk=instance.pk).exists()
+                if not still_in_use and not still_in_crosscheck and asset.status == 'Crosscheck':
                     asset.status = 'Available'
                     asset.save()
-                    
+
             # Set Crosscheck status for newly added crosscheck assets
             for asset in crosscheck_data:
                 if asset.status != 'Crosscheck':
@@ -109,7 +126,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
         if employees_data is not None:
             instance.assigned_employees.set(employees_data)
-        
+
         return instance
 
 

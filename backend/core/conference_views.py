@@ -44,5 +44,8 @@ def conference_detail(request, pk):
     elif request.method == 'DELETE':
         # Release all assets assigned to this conference back to Available
         conference.assets.update(status='Available')
+        # Also release any assets pending Godown Crosscheck back to Available
+        conference.crosscheck_assets.update(status='Available')
         conference.delete()
         return Response(status=204)
+
