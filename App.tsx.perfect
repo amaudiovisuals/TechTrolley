@@ -1,0 +1,1776 @@
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import {
+  Asset,
+  AssetStatus,
+  Booking,
+  Client,
+  AssetCategory,
+  ConferenceType,
+  DeliveryChallanRecord,
+  Employee,
+  CompanySettings
+} from './types';
+import QRCode from 'qrcode';
+
+const GLOBAL_CONSUMABLES_SKU = 'GLOBAL-CONSUMABLES';
+import {
+  MOCK_ASSETS,
+  MOCK_CLIENTS,
+  MOCK_BOOKINGS
+} from './constants';
+import { Scanner } from './components/Scanner';
+import { ChallanView } from './components/ChallanView';
+import { Logo } from './components/Logo';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend
+} from 'recharts';
+
+import Login from './Login';
+import { SettingsView } from './components/SettingsView';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+import { QRLabelModal } from './components/QRLabelModal';
+
+type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Settings';
+type AssetView = 'List' | 'Form' | 'Details';
+type EmployeeView = 'List' | 'Form';
+type ConferenceView = 'List' | 'Form' | 'Details';
+
+const GlobalQRPreview: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, GLOBAL_CONSUMABLES_SKU, {
+        width: 120,
+        margin: 2,
+        color: { dark: '#000000', light: '#ffffff' },
+      }).catch(console.error);
+    }
+  }, []);
+  return <canvas ref={canvasRef} className="rounded-lg shadow-md" style={{ width: '60px', height: '60px' }} />;
+};
+
+const App: React.FC = () => {
+
+  const API_BASE = '';
+  const isMobilePhone = useMemo(() => {
+    const ua = navigator.userAgent;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isPDA = /Zebra|TC21|TC26|MC33|MC93|Scanner|Honeywell|Datalogic/i.test(ua);
+    return isMobile && !isPDA;
+  }, []);
+
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Core Search & Pagination State (moved up to fix hoisting)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const itemsPerPage = 50;
+
+  // State placeholders (now moved up)
+
+  const [currentPage, setCurrentPage] = useState<Page>('Dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [assetView, setAssetView] = useState<AssetView>('List');
+  const [companySettings, setCompanySettings] = useState<any>(null);
+  const [isEditingDashboard, setIsEditingDashboard] = useState(false);
+
+  // Debounced Search State
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setInventoryPage(1); // Reset to page 1 on new search
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // PWA Update Logic
+  const {
+    offlineReady: [offlineReady, setOfflineReady],
+    needRefresh: [needRefresh, setNeedRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegistered(r) {
+      console.log('SW Registered: ' + r);
+    },
+    onRegisterError(error) {
+      console.log('SW registration error', error);
+    },
+  });
+
+  
+
+  // --- RELOCATED FUNCTIONS ---
+const fetchAssets = () => {
+    return apiFetch(`${API_BASE}/api/assets/`)
+      .then(async res => {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const mappedAssets: Asset[] = data.map((asset: any) => ({
+            ...asset,
+            id: asset.id.toString(),
+            aliasName: asset.alias_name,
+            macAddress: asset.mac_address,
+            imeiNumber1: asset.imei_number_1,
+            imeiNumber2: asset.imei_number_2,
+            serialNumber: asset.serial_number,
+            isBarcodeAdded: asset.is_barcode_added,
+            quantity: parseInt(asset.quantity, 10) || 1,
+            itemPrice: parseFloat(asset.item_price),
+            depreciationPercentage: parseFloat(asset.depreciation_percentage),
+            purchasedDate: asset.purchased_date,
+            availableFrom: asset.available_from,
+            available_till: asset.available_till,
+            createdAt: asset.created_at,
+            barcode: asset.barcode,
+            barcodeType: asset.barcode_type,
+            qrCode: asset.qr_code,
+            lastMaintained: asset.last_maintained,
+            returnDate: asset.return_date,
+            currentVenue: asset.current_venue,
+            assigned_to: asset.assigned_to,
+            assigned_to_name: asset.assigned_to_name,
+            parent_asset: asset.parent_asset,
+            current_conference_name: asset.current_conference_name,
+            sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+          }));
+          setAssets(mappedAssets);
+        } else if (res.status !== 401) {
+          console.error("Failed to fetch assets: Invalid data format", data);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to fetch assets:", err);
+      });
+  }
+
+const fetchConferences = () => {
+    apiFetch(`${API_BASE}/api/conferences/`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const mapped = data.map((c: any) => ({
+            id: c.id.toString(),
+            name: c.name, // Keep for legacy
+            conferenceName: c.name,
+            association: c.association_name, // Keep for legacy
+            associationName: c.association_name,
+            billingAddress: c.billing_address,
+            transportAddress: c.transport_address,
+            venue: c.transport_address, // Map transport to venue
+            gstNumber: c.gst_number,
+            vehicleNumber: c.vehicle_number,
+            driverPhone: c.driver_phone,
+            startDate: c.start_date,
+            endDate: c.end_date,
+            type: c.conference_type as any,
+            conferenceType: c.conference_type as any,
+            contactPerson: c.contact_person,
+            contactPhone: c.contact_phone,
+            contactEmail: c.contact_email,
+            challanNumber: (1000 + parseInt(c.id)).toString(),
+            assets: (c.assets || []).map((id: any) => id.toString()),
+            crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
+            assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10))
+          }));
+          setBackendConferences(mapped);
+
+          // If in print mode, set the selected booking immediately after fetching
+          if (isPrintMode && printConfId) {
+            const found = mapped.find((b: { id: string; }) => b.id === printConfId);
+            if (found) {
+              setSelectedBookingForChallan(found);
+            }
+          }
+        } else {
+          console.error("Failed to fetch conferences: Invalid data format", data);
+          setBackendConferences([]);
+        }
+      })
+      .catch(err => console.error("Failed to fetch conferences", err));
+  }
+
+const fetchEmployees = () => {
+    return apiFetch(`${API_BASE}/api/employees/`)
+      .then(async res => {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setEmployees(data);
+        } else if (res.status !== 401) {
+          console.error("Failed to fetch employees: Invalid data format", data);
+          setEmployees([]);
+        }
+      })
+      .catch(err => console.error("Failed to fetch employees:", err));
+  }
+
+const handleClickOutside = (event: MouseEvent) => {
+      if (registerDropdownRef.current && !registerDropdownRef.current.contains(event.target as Node)) {
+        setIsRegisterDropdownOpen(false);
+      }
+    }
+
+const handleDeleteAsset = (id: string) => {
+    if (!confirm("Are you sure you want to delete this asset?")) return;
+
+    console.log("Attempting to delete asset with ID:", id);
+    const url = `${API_BASE}/api/assets/${id}/`;
+    console.log("DELETE URL:", url);
+
+    apiFetch(url, {
+      method: 'DELETE'
+    })
+      .then(async res => {
+        if (res.ok) {
+          fetchAssets();
+        } else {
+          let errText = res.statusText;
+          try {
+            const errData = await res.json();
+            errText = JSON.stringify(errData);
+          } catch (e) { }
+          console.error("Delete failed:", res.status, errText);
+          alert(`Failed to delete asset. Server responded with: ${res.status} ${errText}`);
+        }
+      })
+      .catch(err => {
+        console.error("Network error deleting asset:", err);
+        alert(`Failed to connect to server for deletion: ${err.message}`);
+      });
+  }
+
+const handleDeleteConference = (id: string) => {
+    if (!confirm("Are you sure you want to delete this conference?")) return;
+    apiFetch(`${API_BASE}/api/conferences/${id}/`, {
+      method: 'DELETE'
+    }).then(res => {
+      if (res.ok) {
+        fetchConferences();
+        fetchAssets(); // Refresh asset statuses — deleted conf releases its assets
+      } else {
+        alert("Failed to delete conference.");
+      }
+    });
+  }
+
+const handleDeleteEmployee = (id: string) => {
+    if (!confirm("Are you sure you want to delete this employee?")) return;
+    apiFetch(`${API_BASE}/api/employees/${id}/`, {
+      method: 'DELETE'
+    })
+      .then(res => {
+        if (res.ok) fetchEmployees();
+        else if (res.status !== 401) alert("Failed to delete employee.");
+      });
+  }
+
+const handleDownloadTemplate = () => {
+    // Ultimate fallback for strict Windows PC browsers: fetch the raw bytes,
+    // construct an explicit Excel Blob, encode it into a Base64 Data URI, 
+    // and force the download attribute. This completely bypasses the browser's 
+    // network router handling of file extensions.
+    const token = localStorage.getItem('token');
+    apiFetch(`${API_BASE}/api/download-template/?token=${encodeURIComponent(token || '')}`)
+      .then(res => res.arrayBuffer())
+      .then(buffer => {
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => {
+          const base64data = reader.result as string;
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = base64data;
+          a.download = 'asset_inventory_template.xlsx';
+
+          document.body.appendChild(a);
+          a.click();
+
+          setTimeout(() => {
+            document.body.removeChild(a);
+          }, 300);
+        };
+      })
+      .catch(err => {
+        console.error('Failed to download template', err);
+        alert('Failed to download template. Please try again.');
+      });
+  }
+
+const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    apiFetch(`${API_BASE}/api/upload-assets/`, {
+      method: 'POST',
+      body: formData
+    })
+      .then(async res => {
+        const data = await res.json();
+        if (res.ok || data.created !== undefined) {
+          setUploadResult({ created: data.created ?? 0, skipped: data.skipped ?? 0, errors: data.errors ?? [] });
+          fetchAssets();
+        } else {
+          setUploadResult({ created: 0, skipped: 0, errors: [data.error || 'Upload failed'] });
+        }
+      })
+      .catch(() => setUploadResult({ created: 0, skipped: 0, errors: ['Could not connect to server'] }));
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+const handleLinkQR = () => {
+    if (!unrecognizedScan || !linkingAsset) return;
+
+    apiFetch(`${API_BASE}/api/assets/${linkingAsset.id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        barcode: unrecognizedScan,
+        is_barcode_added: true
+      })
+    })
+      .then(res => {
+        if (res.ok) {
+          showScanToast(`✅ Linked QR to ${linkingAsset.aliasName || linkingAsset.sku}`, 'success');
+          fetchAssets();
+          setUnrecognizedScan(null);
+          setLinkingAsset(null);
+        } else if (res.status !== 401) {
+          alert('Failed to link QR code.');
+        }
+      })
+      .catch(() => alert('Network error while linking QR.'));
+  }
+
+const handleLinkSubAsset = () => {
+    if (!viewingAsset || !selectedSubAssetToLink) return;
+
+    apiFetch(`${API_BASE}/api/assets/${viewingAsset.id}/sub-assets/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        child_id: selectedSubAssetToLink.id
+      })
+    })
+      .then(res => {
+        if (res.ok) {
+          showScanToast(`✅ Added ${selectedSubAssetToLink.aliasName || selectedSubAssetToLink.sku} as component`, 'success');
+          fetchAssets();
+          setAddingSubAssetMode(false);
+          setSelectedSubAssetToLink(null);
+          setSubAssetSearchQuery('');
+
+          // Re-fetch this specific asset to update the detailed view immediately
+          apiFetch(`${API_BASE}/api/assets/${viewingAsset.id}/`)
+            .then(aRes => aRes.json())
+            .then(data => {
+              const mapped = {
+                ...data,
+                id: data.id.toString(),
+                aliasName: data.alias_name,
+                macAddress: data.mac_address,
+                imeiNumber1: data.imei_number_1,
+                imeiNumber2: data.imei_number_2,
+                serialNumber: data.serial_number,
+                isBarcodeAdded: data.is_barcode_added,
+                itemPrice: parseFloat(data.item_price),
+                depreciationPercentage: parseFloat(data.depreciation_percentage),
+                purchasedDate: data.purchased_date,
+                availableFrom: data.available_from,
+                availableTill: data.available_till,
+                createdAt: data.created_at,
+                barcode: data.barcode,
+                barcodeType: data.barcode_type,
+                qrCode: data.qr_code,
+                lastMaintained: data.last_maintained,
+                returnDate: data.return_date,
+                currentVenue: data.current_venue,
+                assigned_to: data.assigned_to,
+                assigned_to_name: data.assigned_to_name,
+                current_conference_name: data.current_conference_name,
+                sub_assets: data.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+              };
+              setViewingAsset(mapped);
+            });
+        } else if (res.status !== 401) {
+          alert('Failed to add component.');
+        }
+      })
+      .catch(() => alert('Network error while adding component.'));
+  }
+
+const handleLogin = (token: string, userData: any) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    setIsLoggedIn(true);
+    setUser(userData);
+  }
+
+const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setIsLoggedIn(false);
+    setUser(null);
+  }
+
+const handleQuickCreateSubAsset = () => {
+    if (!viewingAsset || !quickSubAssetData.sku) return;
+
+    const payload = {
+      sku: quickSubAssetData.sku,
+      alias_name: quickSubAssetData.sku,
+      serial_number: quickSubAssetData.serialNumber,
+      type: quickSubAssetData.type,
+      item_price: quickSubAssetData.itemPrice,
+      status: AssetStatus.AVAILABLE,
+      condition: 'Good',
+      barcode: quickSubAssetData.sku,
+      parent_asset: viewingAsset.id
+    };
+
+    apiFetch(`${API_BASE}/api/assets/`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
+      .then(async res => {
+        if (res.ok) {
+          showScanToast(`✅ Successfully created and linked "${quickSubAssetData.sku}"`, 'success');
+          fetchAssets();
+          setCreatingSubAssetMode(false);
+          setQuickSubAssetData({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
+
+          // Show QR Modal if requested
+          if (quickSubAssetData.generateQR) {
+            setQrTarget({
+              sku: payload.sku,
+              name: payload.alias_name
+            });
+          }
+
+          // Re-fetch to update details view
+          apiFetch(`${API_BASE}/api/assets/${viewingAsset.id}/`)
+            .then(aRes => aRes.json())
+            .then(data => {
+              const mapped = {
+                ...data,
+                id: data.id.toString(),
+                aliasName: data.alias_name,
+                macAddress: data.mac_address,
+                imeiNumber1: data.imei_number_1,
+                imeiNumber2: data.imei_number_2,
+                serialNumber: data.serial_number,
+                isBarcodeAdded: data.is_barcode_added,
+                itemPrice: parseFloat(data.item_price),
+                depreciationPercentage: parseFloat(data.depreciation_percentage),
+                purchasedDate: data.purchased_date,
+                availableFrom: data.available_from,
+                availableTill: data.available_till,
+                createdAt: data.created_at,
+                barcode: data.barcode,
+                barcodeType: data.barcode_type,
+                qrCode: data.qr_code,
+                lastMaintained: data.last_maintained,
+                returnDate: data.return_date,
+                currentVenue: data.current_venue,
+                assigned_to: data.assigned_to,
+                assigned_to_name: data.assigned_to_name,
+                current_conference_name: data.current_conference_name,
+                sub_assets: data.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+              };
+              setViewingAsset(mapped);
+            });
+        } else {
+          const errData = await res.json();
+          alert(`Failed to create component: ${JSON.stringify(errData)}`);
+        }
+      })
+      .catch(() => alert('Network error while creating component.'));
+  }
+
+const handleSaveAsset = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormErrors({});
+
+    const isNew = !editingAsset;
+    const isConsumable = assetFormData.type === AssetCategory.CONSUMABLES;
+
+    // Auto-generate SKU/Serial for consumables if blank
+    const finalSku = (isConsumable && !assetFormData.sku)
+      ? `CONS-${(assetFormData.aliasName || 'ITEM').toUpperCase().replace(/\s+/g, '-')}-${Date.now().toString().slice(-4)}`
+      : assetFormData.sku;
+
+    const finalSerial = (isConsumable && !assetFormData.serialNumber)
+      ? finalSku
+      : assetFormData.serialNumber;
+
+    const payload = {
+      sku: finalSku,
+      alias_name: assetFormData.aliasName,
+      mac_address: assetFormData.macAddress,
+      imei_number_1: assetFormData.imeiNumber1,
+      imei_number_2: assetFormData.imeiNumber2,
+      serial_number: finalSerial,
+      description: assetFormData.description,
+      is_barcode_added: assetFormData.isBarcodeAdded,
+      type: assetFormData.type,
+      purchased_date: assetFormData.purchasedDate || null,
+      item_price: isNaN(Number(assetFormData.itemPrice)) ? 0 : Number(assetFormData.itemPrice),
+      depreciation_percentage: isNaN(Number(assetFormData.depreciationPercentage)) ? 0 : Number(assetFormData.depreciationPercentage),
+      available_from: assetFormData.availableFrom || null,
+      available_till: assetFormData.availableTill || null,
+      status: assetFormData.status,
+      condition: assetFormData.condition || 'Good',
+      barcode: assetFormData.barcode || finalSku,
+      barcode_type: assetFormData.barcodeType || 'CODE128',
+      qr_code: isConsumable ? GLOBAL_CONSUMABLES_SKU : (assetFormData.qrCode || ''),
+      quantity: assetFormData.quantity || 1,
+      assigned_to: assetFormData.assigned_to
+    };
+
+    const url = editingAsset
+      ? `${API_BASE}/api/assets/${editingAsset.id}/`
+      : `${API_BASE}/api/assets/`;
+
+    const method = editingAsset ? 'PUT' : 'POST';
+
+    apiFetch(url, {
+      method: method,
+      body: JSON.stringify(payload)
+    })
+      .then(async res => {
+        if (res.ok) {
+          fetchAssets();
+          handleViewChange('Assets', 'List');
+          if (isNew && assetFormData.sku) {
+            setQrTarget({ sku: assetFormData.sku as string, name: assetFormData.aliasName || assetFormData.sku as string });
+          }
+          setEditingAsset(null);
+          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', availableTill: '', status: AssetStatus.AVAILABLE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined });
+        } else {
+          const errorData = await res.json();
+          setFormErrors(errorData);
+        }
+      })
+      .catch(() => alert('Failed to connect to server.'));
+  }
+
+const handleSaveConference = (e: React.FormEvent) => {
+    e.preventDefault();
+    const url = editingConference
+      ? `${API_BASE}/api/conferences/${editingConference.id}/`
+      : `${API_BASE}/api/conferences/`;
+
+    const method = editingConference ? 'PUT' : 'POST';
+    const token = localStorage.getItem('token');
+
+    // Coerce asset IDs to integers and handle empty strings for optional fields
+    const payload = {
+      ...conferenceFormData,
+      start_date: conferenceFormData.start_date || null,
+      end_date: conferenceFormData.end_date || null,
+      assets: (conferenceFormData.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+      crosscheck_assets: (conferenceFormData.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
+    };
+
+    apiFetch(url, {
+      method: method,
+      body: JSON.stringify(payload)
+    })
+      .then(async res => {
+        if (res.ok) {
+          fetchConferences();
+          fetchAssets(); // Refresh asset statuses on dashboard and inventory
+          setConferenceView('List');
+          setEditingConference(null);
+          setConferenceFormData({
+            name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
+            vehicle_number: '', driver_phone: '',
+            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: []
+          });
+          setAssetTab('available'); // Reset tab for next open
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert(`Failed to save conference. Status: ${res.status}\n${JSON.stringify(errData)}`);
+        }
+      })
+      .catch(err => alert(`Failed to connect to server: ${err}`));
+  }
+
+const handleSaveDashboardConfig = async () => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/company-settings/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          dashboard_config: companySettings.dashboard_config,
+          theme_template: companySettings.theme_template
+        })
+      });
+      if (res.ok) {
+        setIsEditingDashboard(false);
+      }
+    } catch (err) {
+      console.error("Failed to save dashboard config", err);
+    }
+  }
+
+const handleSaveEmployee = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormErrors({});
+
+    const url = editingEmployee
+      ? `${API_BASE}/api/employees/${editingEmployee.id}/`
+      : `${API_BASE}/api/employees/`;
+
+    const method = editingEmployee ? 'PUT' : 'POST';
+
+    apiFetch(url, {
+      method: method,
+      body: JSON.stringify(employeeFormData)
+    })
+      .then(async res => {
+        if (res.ok) {
+          fetchEmployees();
+          setEmployeeView('List');
+          setEditingEmployee(null);
+          setEmployeeFormData({ name: '', employee_id: '', department: '', email: '', phone: '' });
+        } else if (res.status !== 401) {
+          const errorData = await res.json();
+          setFormErrors(errorData);
+        }
+      })
+      .catch(err => alert("Failed to connect to server."));
+  }
+
+const handleScan = (decodedText: string, showUnknownError = false) => {
+    setShowScanner(false);
+    const scanned = (decodedText || '').trim();
+    if (!scanned) return;
+
+    // 0. DEDUPLICATION (Safety for hardware scanners that send Enter immediately after typing)
+    const now = Date.now();
+    const upperScanned = scanned.toUpperCase();
+    if (upperScanned === lastScannedCode.current.toUpperCase() && (now - lastScannedTime.current) < 2000) {
+      console.log('Skipping duplicate hardware scan:', scanned);
+      return;
+    }
+    lastScannedCode.current = upperScanned;
+    lastScannedTime.current = now;
+
+    console.log('--- Handle Scan ---', scanned, 'Page:', currentPage);
+
+    // New: Global Consumables QR Logic
+    if (scanned === GLOBAL_CONSUMABLES_SKU) {
+      if (currentPage === 'Conferences' && (conferenceView === 'Form' || conferenceView === 'Details')) {
+        setConsumablesPickerSearchQuery('');
+        setShowConsumablesPicker(true);
+        showScanToast('📦 Global Consumables QR Scanned', 'success');
+        return;
+      } else {
+        showScanToast('📦 This is the Global Consumables QR. Use it inside a Conference/Challan.', 'warning');
+        return;
+      }
+    }
+
+    const asset = findAssetFromScan(scanned);
+
+    // 1. ASSET LINKING MODAL (Only for Assets Page)
+    if (!asset && currentPage === 'Assets' && scanned.length > 3) {
+      console.warn('No match for:', scanned);
+      setUnrecognizedScan(scanned);
+      return;
+    }
+
+    // 2. CONFERENCE FORM LOGIC
+    if (currentPage === 'Conferences' && (conferenceView === 'Form' || conferenceView === 'Details')) {
+      if (!asset) {
+        if (showUnknownError) {
+          showScanToast(`❌ Unknown scan: "${scanned}" — no matching asset found.`, 'error');
+        }
+        return;
+      }
+
+      if (pendingParentAsset) {
+        const isSubAsset = pendingParentAsset.sub_assets?.some(sub => String(sub.id) === String(asset.id));
+        if (isSubAsset) {
+          // Check locks for sub-assets too
+          if (asset.status === AssetStatus.IN_USE) {
+            showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is In Use and cannot be added.`, 'error');
+            return;
+          }
+          if (asset.status === AssetStatus.CROSSCHECK) {
+            showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is in Crosscheck and cannot be added.`, 'error');
+            return;
+          }
+          const subAssetIdStr = asset.id.toString();
+          if (!scannedSubAssetIds.includes(subAssetIdStr)) {
+            const newScanned = [...scannedSubAssetIds, subAssetIdStr];
+            setScannedSubAssetIds(newScanned);
+            showScanToast(`✅ Scanned Component: "${asset.aliasName || asset.sku}"`, 'success');
+
+            if (newScanned.length >= (pendingParentAsset.sub_assets?.length || 0)) {
+              // All components scanned! Execute the action.
+              const allIdsToProcess = [pendingParentAsset.id, ...(pendingParentAsset.sub_assets?.map(s => s.id.toString()) || [])];
+
+              if (pendingAction === 'add') {
+                setConferenceFormData((prev: any) => ({
+                  ...prev,
+                  assets: Array.from(new Set([...prev.assets, ...allIdsToProcess]))
+                }));
+                showScanToast(`✅ Successfully added "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components`, 'success');
+              } else if (pendingAction === 'remove') {
+                setConferenceFormData((prev: any) => ({
+                  ...prev,
+                  assets: prev.assets.filter((id: any) => !allIdsToProcess.includes(id.toString())),
+                  crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess]))
+                }));
+                showScanToast(`✅ Moved "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components to Crosscheck`, 'success');
+              }
+
+              // Reset pending state
+              setPendingParentAsset(null);
+              setPendingAction(null);
+              setScannedSubAssetIds([]);
+            }
+          } else {
+            showScanToast(`⚠️ Component "${asset.aliasName || asset.sku}" already scanned.`, 'warning');
+          }
+        } else {
+          showScanToast(`❌ "${asset.aliasName || asset.sku}" is not a required component`, 'error');
+        }
+        return;
+      }
+
+      if (assetTab === 'assigned') {
+        triggerAssetConferenceAction(asset, 'remove');
+      } else if (assetTab === 'crosscheck') {
+        verifyCrosscheckAsset(asset);
+      } else {
+        triggerAssetConferenceAction(asset, 'add');
+      }
+    }
+    // 3. INVENTORY SEARCH LOGIC
+    else if (currentPage === 'Assets') {
+      setSearchQuery(scanned);
+      if (asset) {
+        openAssetDetails(asset);
+        showScanToast(`[Inv] ✅ Found: ${asset.aliasName || asset.sku}`, 'success');
+      } else {
+        showScanToast(`[Inv] ❌ No asset found with ID "${scanned}"`, 'error');
+      }
+    }
+
+    // Re-focus after tiny delay
+    setTimeout(() => {
+      if (currentPage === 'Assets') inventorySearchRef.current?.focus();
+      if (currentPage === 'Conferences' && conferenceView === 'Form') {
+        if (assetTab === 'available') quickAddRef.current?.focus();
+        else if (assetTab === 'assigned') quickRemoveRef.current?.focus();
+      }
+    }, 150);
+  }
+
+const handleScroll = () => {
+      setShowScrollTop(main.scrollTop > 400);
+    }
+
+const handleUnlinkSubAsset = (childId: string) => {
+    if (!viewingAsset) return;
+    if (!confirm("Remove this component from the main asset?")) return;
+
+    apiFetch(`${API_BASE}/api/assets/${viewingAsset.id}/sub-assets/${childId}/`, {
+      method: 'DELETE'
+    })
+      .then(res => {
+        if (res.ok) {
+          showScanToast(`✅ Component removed`, 'success');
+          fetchAssets();
+          apiFetch(`${API_BASE}/api/assets/${viewingAsset.id}/`)
+            .then(aRes => aRes.json())
+            .then(data => {
+              const mapped = {
+                ...data,
+                id: data.id.toString(),
+                aliasName: data.alias_name,
+                macAddress: data.mac_address,
+                imeiNumber1: data.imei_number_1,
+                imeiNumber2: data.imei_number_2,
+                serialNumber: data.serial_number,
+                isBarcodeAdded: data.is_barcode_added,
+                itemPrice: parseFloat(data.item_price),
+                depreciationPercentage: parseFloat(data.depreciation_percentage),
+                purchasedDate: data.purchased_date,
+                availableFrom: data.available_from,
+                availableTill: data.available_till,
+                createdAt: data.created_at,
+                barcode: data.barcode,
+                barcodeType: data.barcode_type,
+                qrCode: data.qr_code,
+                lastMaintained: data.last_maintained,
+                returnDate: data.return_date,
+                currentVenue: data.current_venue,
+                assigned_to: data.assigned_to,
+                assigned_to_name: data.assigned_to_name,
+                current_conference_name: data.current_conference_name,
+                sub_assets: data.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+              };
+              setViewingAsset(mapped);
+            });
+        } else if (res.status !== 401) {
+          alert('Failed to remove component.');
+        }
+      })
+      .catch(() => alert('Network error while removing component.'));
+  }
+
+const handleUpdateLabel = (cardKey: string, newLabel: string) => {
+    const currentConfig = companySettings?.dashboard_config || {};
+    const newConfig = {
+      ...currentConfig,
+      [`${cardKey}_label`]: newLabel
+    };
+    setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+  }
+
+const handleUpdateLogistics = async (confId: string, vehicleNo: string, driverNo: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          vehicle_number: vehicleNo,
+          driver_phone: driverNo
+        })
+      });
+      if (res.ok) {
+        fetchConferences();
+        setScanToast({ message: "Logistics updated successfully!", type: 'success' });
+      } else {
+        alert("Failed to update logistics.");
+      }
+    } catch (err) {
+      console.error("Logistics Update Error:", err);
+    }
+  }
+
+const handleViewChange = (newPage: Page, newAssetView: AssetView = 'List') => {
+    if (currentPage === 'Assets' && assetView === 'List' && mainRef.current) {
+      inventoryScrollPos.current = mainRef.current.scrollTop;
+    }
+    setCurrentPage(newPage);
+    setAssetView(newAssetView);
+    setEmployeeView('List');
+    setIsMobileMenuOpen(false);
+  }
+
+const openAssetDetails = (asset: Asset) => {
+    if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
+    setViewingAsset(asset);
+    setAssetView('Details');
+  }
+
+const openConsumableForm = () => {
+    if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
+    setEditingAsset(null);
+    setAssetFormData({
+      sku: '',
+      aliasName: '',
+      macAddress: '',
+      imeiNumber1: '',
+      imeiNumber2: '',
+      serialNumber: '', // will be same as SKU or blank
+      description: '',
+      purchasedDate: new Date().toISOString().split('T')[0],
+      itemPrice: 0,
+      depreciationPercentage: 0,
+      availableFrom: '',
+      availableTill: '',
+      status: AssetStatus.AVAILABLE,
+      condition: 'Good',
+      type: AssetCategory.CONSUMABLES,
+      isBarcodeAdded: false,
+      quantity: 1
+    });
+    setAssetView('Form');
+    setFormErrors({});
+  }
+
+const openEditAssetForm = (asset: Asset) => {
+    if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
+    setEditingAsset(asset);
+    setAssetFormData({
+      sku: asset.sku,
+      aliasName: asset.aliasName,
+      macAddress: asset.macAddress,
+      imeiNumber1: asset.imeiNumber1,
+      imeiNumber2: asset.imeiNumber2,
+      serialNumber: asset.serialNumber,
+      description: asset.description,
+      isBarcodeAdded: asset.isBarcodeAdded,
+      type: asset.type,
+      purchasedDate: asset.purchasedDate,
+      itemPrice: asset.itemPrice,
+      depreciationPercentage: asset.depreciationPercentage,
+      availableFrom: asset.availableFrom,
+      availableTill: asset.availableTill,
+      status: asset.status,
+      condition: asset.condition,
+      barcode: asset.barcode,
+      barcodeType: asset.barcodeType || '',
+      qrCode: asset.qrCode || '',
+      quantity: asset.quantity,
+      assigned_to: asset.assigned_to
+    });
+    setAssetView('Form');
+    setFormErrors({});
+  }
+
+const openEditConferenceForm = (conf: any) => {
+    fetchAssets();      // Always get fresh statuses before interacting with conference
+    fetchConferences(); // Refresh backend conference data too
+    setEditingConference(conf);
+    setAssetTab('available'); // Always reset to available tab
+    setConferenceFormData({
+      id: conf.id,
+      name: conf.name,
+      association_name: conf.association,
+      billing_address: conf.billingAddress,
+      transport_address: conf.transportAddress || '',
+      gst_number: conf.gstNumber || '',
+      vehicle_number: conf.vehicleNumber || '',
+      driver_phone: conf.driverPhone || '',
+      contact_person: conf.contactPerson || '',
+      contact_phone: conf.contactPhone || '',
+      contact_email: conf.contactEmail || '',
+      start_date: conf.startDate,
+      end_date: conf.endDate,
+      conference_type: conf.type,
+      assets: conf.assets || [],
+      crosscheck_assets: conf.crosscheckAssets || [],
+      assigned_employees: conf.assigned_employees || []
+    });
+
+    if (!user?.is_staff) {
+      setSelectedConferenceDetails(conf);
+      setConferenceView('Details');
+      setCurrentPage('Conferences');
+      return;
+    }
+
+    setConferenceView('Form');
+  }
+
+const openEditEmployeeForm = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEmployeeFormData(emp);
+    setEmployeeView('Form');
+    setFormErrors({});
+  }
+
+const openNewAssetForm = () => {
+    if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
+    setEditingAsset(null);
+    setAssetFormData({
+      sku: '',
+      aliasName: '',
+      macAddress: '',
+      imeiNumber1: '',
+      imeiNumber2: '',
+      serialNumber: '',
+      description: '',
+      purchasedDate: new Date().toISOString().split('T')[0],
+      itemPrice: 0,
+      depreciationPercentage: 0,
+      availableFrom: '',
+      availableTill: '',
+      status: AssetStatus.AVAILABLE,
+      condition: 'Good',
+      type: AssetCategory.OTHER,
+      isBarcodeAdded: false,
+      quantity: 1
+    });
+    setAssetView('Form');
+    setFormErrors({});
+  }
+
+const openNewConferenceForm = () => {
+    fetchAssets();      // Always get fresh statuses before interacting with conference
+    fetchConferences(); // Refresh backend conference data too
+    setEditingConference(null);
+    setAssetTab('available'); // Always start on available tab
+    setConferenceFormData({
+      name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
+      vehicle_number: '', driver_phone: '',
+      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: []
+    });
+    setConferenceView('Form');
+  }
+
+const openNewEmployeeForm = () => {
+    setEditingEmployee(null);
+    setEmployeeFormData({ name: '', employee_id: '', department: '', email: '', phone: '' });
+    setEmployeeView('Form');
+    setFormErrors({});
+  }
+
+const renderAssetDetails = () => {
+    if (!viewingAsset) return null;
+    return (
+      <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="flex justify-between items-center">
+          <h2 className="text-5xl font-black text-white uppercase tracking-tighter">Asset Details</h2>
+          <button onClick={() => { handleViewChange('Assets', 'List'); setSearchQuery(''); }} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-black uppercase text-xs hover:bg-slate-700 transition">Back to List</button>
+        </div>
+
+        <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8 shadow-2xl">
+          <div className="flex items-start justify-between border-b border-slate-800/50 pb-8">
+            <div>
+              <h3 className="text-3xl font-black text-white uppercase">{viewingAsset.aliasName || viewingAsset.sku}</h3>
+              <p className="text-sky-400 font-mono text-sm mt-2">{viewingAsset.type}</p>
+            </div>
+            <div className="flex gap-4">
+              <div className={`px-6 py-2 rounded-full font-black uppercase text-xs ${viewingAsset.isBarcodeAdded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                Barcode: {viewingAsset.isBarcodeAdded ? 'Yes' : 'No'}
+              </div>
+              <div className={`px-6 py-2 rounded-full font-black uppercase text-xs ${viewingAsset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
+                viewingAsset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' :
+                  viewingAsset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
+                    'bg-red-500/10 text-red-400'}`}>
+                {viewingAsset.status}
+              </div>
+            </div>
+          </div>
+          {viewingAsset.current_conference_name && (
+            <div className="bg-orange-500/5 border border-orange-500/10 px-6 py-3 rounded-2xl flex items-center gap-3">
+              <i className="fa-solid fa-calendar-check text-orange-400 text-xs"></i>
+              <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Currently at: {viewingAsset.current_conference_name}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
+            <div className="space-y-8">
+              <div>
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Description</label>
+                <p className="text-lg text-white font-bold leading-relaxed">{viewingAsset.description || '-'}</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Serial Number</label>
+                  <p className="text-base text-white font-mono font-bold">{viewingAsset.serialNumber}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">MAC Address</label>
+                  <p className="text-base text-white font-mono font-bold">{viewingAsset.macAddress || '-'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">IMEI 1</label>
+                  <p className="text-base text-white font-mono font-bold">{viewingAsset.imeiNumber1 || '-'}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">IMEI 2</label>
+                  <p className="text-base text-white font-mono font-bold">{viewingAsset.imeiNumber2 || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div className="bg-slate-950/40 p-6 rounded-2xl border border-slate-800/50 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Item Price</label>
+                    <p className="text-xl text-emerald-400 font-black">₹{viewingAsset.itemPrice.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Depreciation</label>
+                    <p className="text-xl text-orange-400 font-black">{viewingAsset.depreciationPercentage}%</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Purchased Date</label>
+                  <p className="text-base text-white font-bold">{viewingAsset.purchasedDate ? new Date(viewingAsset.purchasedDate).toLocaleDateString('en-GB') : '-'}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Available From</label>
+                  <p className="text-sm text-slate-300 font-bold">{viewingAsset.availableFrom ? new Date(viewingAsset.availableFrom).toLocaleDateString('en-GB') : '-'}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Available Till</label>
+                  <p className="text-sm text-slate-300 font-bold">{viewingAsset.availableTill ? new Date(viewingAsset.availableTill).toLocaleDateString('en-GB') : '-'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-8 border-t border-slate-800/50">
+            <div className="flex justify-between items-center mb-4">
+              <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Tracked Components</label>
+              {!addingSubAssetMode && !creatingSubAssetMode && (
+                <div className="flex gap-2">
+                  <button onClick={() => setCreatingSubAssetMode(true)} className="text-[10px] bg-emerald-500/10 px-3 py-1.5 rounded-lg font-black uppercase tracking-wider text-emerald-400 hover:bg-emerald-500 hover:text-white transition flex items-center gap-1">
+                    <i className="fa-solid fa-plus" /> New
+                  </button>
+                  <button onClick={() => setAddingSubAssetMode(true)} className="text-[10px] bg-sky-500/10 px-3 py-1.5 rounded-lg font-black uppercase tracking-wider text-sky-400 hover:bg-sky-500 hover:text-white transition flex items-center gap-1">
+                    <i className="fa-solid fa-link" /> Link
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {creatingSubAssetMode && (
+              <div className="bg-slate-950/50 p-6 rounded-2xl border border-emerald-500/30 mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-xs text-emerald-400 font-bold uppercase tracking-wider">Create & Link New Component</p>
+                  <button onClick={() => setCreatingSubAssetMode(false)} className="text-slate-500 hover:text-white transition">
+                    <i className="fa-solid fa-xmark text-lg" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-2">Name / SKU *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Charger For Laptop 1"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold text-sm focus:border-emerald-500 outline-none transition"
+                      value={quickSubAssetData.sku}
+                      onChange={(e) => setQuickSubAssetData({ ...quickSubAssetData, sku: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-2">Serial Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. CHG88921"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white font-mono text-sm focus:border-emerald-500 outline-none transition"
+                      value={quickSubAssetData.serialNumber}
+                      onChange={(e) => setQuickSubAssetData({ ...quickSubAssetData, serialNumber: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-2">Type</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold text-sm focus:border-emerald-500 outline-none transition appearance-none"
+                      value={quickSubAssetData.type}
+                      onChange={(e) => setQuickSubAssetData({ ...quickSubAssetData, type: e.target.value })}
+                    >
+                      <option value="Laptop">Laptop</option>
+                      <option value="Mobile">Mobile</option>
+                      <option value="Tablet">Tablet</option>
+                      <option value="Monitor">Monitor</option>
+                      <option value="Printer">Printer</option>
+                      <option value="Scanner">Scanner</option>
+                      <option value="Network">Network</option>
+                      <option value="Audio">Audio</option>
+                      <option value="Video">Video</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-2">Est. Price (₹)</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold text-sm focus:border-emerald-500 outline-none transition flex-1"
+                      value={quickSubAssetData.itemPrice}
+                      onChange={(e) => setQuickSubAssetData({ ...quickSubAssetData, itemPrice: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Generate QR Label?</label>
+                    <button
+                      type="button"
+                      onClick={() => setQuickSubAssetData({ ...quickSubAssetData, generateQR: !quickSubAssetData.generateQR })}
+                      className={`w-full py-3 rounded-xl border font-black text-[10px] uppercase tracking-widest transition ${quickSubAssetData.generateQR ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                    >
+                      {quickSubAssetData.generateQR ? <><i className="fa-solid fa-check-circle mr-2"></i> Yes, Generate</> : <><i className="fa-solid fa-circle mr-2"></i> No, Skip</>}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  disabled={!quickSubAssetData.sku}
+                  onClick={handleQuickCreateSubAsset}
+                  className="w-full py-4 bg-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl font-black uppercase text-xs hover:bg-emerald-400 transition"
+                >
+                  Create & Link Component
+                </button>
+              </div>
+            )}
+
+            {addingSubAssetMode && (
+              <div className="bg-slate-950/50 p-6 rounded-2xl border border-sky-500/30 mb-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-xs text-slate-400 font-bold uppercase">Search & Assign Component</p>
+                  <button onClick={() => { setAddingSubAssetMode(false); setSelectedSubAssetToLink(null); }} className="text-slate-500 hover:text-white transition">
+                    <i className="fa-solid fa-xmark text-lg" />
+                  </button>
+                </div>
+
+                <div className="relative mb-4">
+                  <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                  <input
+                    type="text"
+                    placeholder="SEARCH FOR ASSET TO LINK..."
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white uppercase font-black text-xs tracking-wider focus:border-sky-500 outline-none transition"
+                    onChange={(e) => setSubAssetSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 mb-4">
+                  {assets
+                    .filter(a => a.id !== viewingAsset.id && !viewingAsset.sub_assets?.some(sub => sub.id === a.id))
+                    .filter(a => !subAssetSearchQuery ||
+                      (a.aliasName && a.aliasName.toLowerCase().includes(subAssetSearchQuery.toLowerCase())) ||
+                      (a.sku && a.sku.toLowerCase().includes(subAssetSearchQuery.toLowerCase())) ||
+                      (a.serialNumber && a.serialNumber.toLowerCase().includes(subAssetSearchQuery.toLowerCase()))
+                    )
+                    .slice(0, 5)
+                    .map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => setSelectedSubAssetToLink(a)}
+                        className={`w-full p-3 rounded-xl border text-left transition flex items-center justify-between ${selectedSubAssetToLink?.id === a.id
+                          ? 'bg-sky-500/10 border-sky-500'
+                          : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                          }`}
+                      >
+                        <div>
+                          <p className="text-xs font-black text-white uppercase">{a.aliasName || a.sku}</p>
+                          <p className="text-[10px] text-slate-500">SN: {a.serialNumber}</p>
+                        </div>
+                        {selectedSubAssetToLink?.id === a.id && <i className="fa-solid fa-circle-check text-sky-500"></i>}
+                      </button>
+                    ))}
+                </div>
+
+                <button
+                  disabled={!selectedSubAssetToLink}
+                  onClick={handleLinkSubAsset}
+                  className="w-full py-4 bg-sky-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl font-black uppercase text-xs hover:bg-sky-400 transition"
+                >
+                  Confirm Linkage
+                </button>
+              </div>
+            )}
+
+            {viewingAsset.sub_assets && viewingAsset.sub_assets.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {viewingAsset.sub_assets.map(sub => (
+                  <div key={sub.id} className="bg-slate-950/40 p-5 rounded-2xl border border-emerald-500/20 flex justify-between items-center group transition hover:border-emerald-500/50 shadow-lg shadow-emerald-500/5">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                        <i className="fa-solid fa-microchip text-xs" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Component</p>
+                        <p className="text-sm font-black text-white uppercase">{sub.alias_name || sub.sku}</p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-1">SN: {sub.serial_number}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleUnlinkSubAsset(sub.id)}
+                      className="w-10 h-10 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-red-500 hover:text-white"
+                      title="Unlink Component"
+                    >
+                      <i className="fa-solid fa-link-slash" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-slate-950/20 p-6 rounded-2xl border border-dashed border-slate-800 text-center">
+                <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">No Components Linked</p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-8 border-t border-slate-800/50">
+            <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-4">Current Assignment</label>
+            {viewingAsset.assigned_to_name ? (
+              <div className="bg-slate-950/50 p-6 rounded-2xl flex items-center gap-6 border border-slate-800">
+                <div className="w-12 h-12 rounded-full bg-indigo-500 flex items-center justify-center text-white font-black text-lg">
+                  {viewingAsset.assigned_to_name.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-white font-bold uppercase">{viewingAsset.assigned_to_name}</p>
+                  <p className="text-slate-400 text-xs uppercase tracking-wider">Assigned User</p>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-950/20 p-6 rounded-2xl border border-dashed border-slate-800 text-center">
+                <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">Currently Unassigned</p>
+              </div>
+            )}
+            <div className="pt-8 flex flex-col sm:flex-row gap-4 border-t border-slate-800/50">
+              <button
+                onClick={() => viewingAsset.sku && setQrTarget({ sku: viewingAsset.sku, name: viewingAsset.aliasName || viewingAsset.sku })}
+                className="flex-1 py-5 bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-xl font-black uppercase text-xs hover:bg-violet-500 hover:text-white transition flex items-center justify-center gap-2"
+              >
+                <i className="fa-solid fa-qrcode" /> Print QR
+              </button>
+              <button onClick={() => openEditAssetForm(viewingAsset)} className="flex-1 py-5 bg-sky-500 text-white rounded-xl font-black uppercase text-xs hover:bg-sky-400 transition">Edit Asset</button>
+              <button
+                onClick={() => { if (confirm('Delete this asset?')) { handleDeleteAsset(viewingAsset.id); handleViewChange('Assets', 'List'); setSearchQuery(''); } }}
+                className="flex-1 py-5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl font-black uppercase text-xs hover:bg-red-500 hover:text-white transition">Delete Asset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+const renderChallanList = () => {
+    // Sort challans by number descending
+    const sortedChallans = [...filteredConferences]
+      .filter(conf => !challanSearchQuery ||
+        (conf.challanNumber && conf.challanNumber.toString().toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
+        (conf.conferenceName && conf.conferenceName.toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
+        (conf.associationName && conf.associationName.toLowerCase().includes(challanSearchQuery.toLowerCase()))
+      )
+      .sort((a, b) =>
+        parseInt(b.challanNumber) - parseInt(a.challanNumber)
+      );
+
+    return (
+      <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+          <h2 className="text-4xl md:text-5xl font-black text-orange-500 tracking-tighter uppercase">Delivery Challans</h2>
+        </div>
+        <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
+          <div className="p-4 md:p-8 border-b border-slate-800/40">
+            <input
+              type="text" value={challanSearchQuery} onChange={(e) => setChallanSearchQuery(e.target.value)}
+              placeholder="Search challans..."
+              className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-800 bg-slate-950/40 text-white font-black text-[10px] md:text-xs uppercase"
+            />
+          </div>
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left min-w-[1000px]">
+              <thead className="bg-slate-950/40 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">
+                <tr>
+                  <th className="px-6 py-6">Challan #</th>
+                  <th className="px-6 py-6">Date</th>
+                  <th className="px-6 py-6">Conference</th>
+                  <th className="px-6 py-6">Assets</th>
+                  <th className="px-6 py-6 text-center">Status</th>
+                  <th className="px-6 py-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/20">
+                {sortedChallans.map((conf) => {
+                  const hasAssets = conf.assets && conf.assets.length > 0;
+                  return (
+                    <tr key={conf.id} className="hover:bg-slate-800/10 transition">
+                      <td className="px-10 py-6">
+                        <p className="font-black text-white text-base uppercase">#{conf.challanNumber}</p>
+                      </td>
+                      <td className="px-10 py-6">
+                        <p className="text-xs text-slate-300 font-bold uppercase">{new Date().toLocaleDateString('en-GB')}</p>
+                      </td>
+                      <td className="px-10 py-6">
+                        <p className="font-bold text-white text-xs uppercase">{conf.conferenceName}</p>
+                        <p className="text-[10px] text-slate-500 uppercase mt-1">{conf.associationName}</p>
+                      </td>
+                      <td className="px-10 py-6">
+                        <p className={`text-[10px] font-black uppercase ${hasAssets ? 'text-emerald-400' : 'text-slate-600'}`}>
+                          {conf.assets ? conf.assets.length : 0} Items
+                        </p>
+                      </td>
+                      <td className="px-10 py-6 text-center">
+                        <span className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${hasAssets ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                          {hasAssets ? 'Generated' : 'Draft'}
+                        </span>
+                      </td>
+                      <td className="px-10 py-6 text-right space-x-4">
+                        <button
+                          onClick={() => { setSelectedBookingForChallan(conf); setChallanViewMode('Detail'); }}
+                          className="text-sky-400 hover:text-white text-[10px] font-black uppercase tracking-widest"
+                        >
+                          <i className="fa-solid fa-eye mr-2"></i> View
+                        </button>
+                        <button
+                          onClick={() => handlePrintChallan(conf)}
+                          className="text-violet-400 hover:text-white text-[10px] font-black uppercase tracking-widest"
+                        >
+                          <i className="fa-solid fa-print mr-2"></i> Print
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+const renderConferenceDetails = () => {
+    if (!selectedConferenceDetails) return null;
+    const conf = selectedConferenceDetails;
+
+    // Check if mandatory fields are filled
+    const isLogisticsFilled = !!conferenceFormData.vehicle_number && !!conferenceFormData.driver_phone;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(conf.startDate);
+    const end = new Date(conf.endDate);
+    let statusLabel = 'Ongoing';
+    let statusStyle = 'bg-emerald-500/10 text-emerald-400';
+    if (today < start) { statusLabel = 'Upcoming'; statusStyle = 'bg-blue-500/10 text-blue-400'; }
+    else if (today > end) { statusLabel = 'Ended'; statusStyle = 'bg-slate-800/50 text-slate-500'; }
+
+    return (
+      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <button onClick={() => setConferenceView('List')} className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition flex items-center gap-2 mb-4">
+              <i className="fa-solid fa-arrow-left"></i> Back to List
+            </button>
+            <h2 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tighter">{conf.conferenceName || conf.name}</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase mt-2">{conf.association}</p>
+          </div>
+          <div className={`px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest ${statusStyle}`}>
+            {statusLabel}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Logistics Form */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-slate-900/40 p-8 rounded-[2rem] border border-slate-800/50 space-y-6">
+              <h3 className="text-lg font-black text-white uppercase flex items-center gap-3">
+                <i className="fa-solid fa-truck-fast text-sky-500"></i> Logistics Info
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Vehicle Number *</label>
+                  <input
+                    value={conferenceFormData.vehicle_number}
+                    onChange={e => setConferenceFormData({ ...conferenceFormData, vehicle_number: e.target.value })}
+                    onBlur={() => handleUpdateLogistics(conf.id, conferenceFormData.vehicle_number, conferenceFormData.driver_phone)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-bold text-sm focus:border-sky-500 outline-none transition"
+                    placeholder="e.g. DL 01 AB 1234"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Driver Phone *</label>
+                  <input
+                    value={conferenceFormData.driver_phone}
+                    onChange={e => setConferenceFormData({ ...conferenceFormData, driver_phone: e.target.value })}
+                    onBlur={() => handleUpdateLogistics(conf.id, conferenceFormData.vehicle_number, conferenceFormData.driver_phone)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white font-bold text-sm focus:border-sky-500 outline-none transition"
+                    placeholder="e.g. 9876543210"
+                  />
+                </div>
+              </div>
+
+              {!isLogisticsFilled && (
+                <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl">
+                  <p className="text-[10px] font-black text-orange-400 uppercase leading-relaxed uppercase">
+                    <i className="fa-solid fa-circle-exclamation mr-2"></i>
+                    Please enter vehicle and driver details to enable challan printing.
+                  </p>
+                </div>
+              )}
+
+              <button
+                onClick={() => handlePrintChallan(conf)}
+                disabled={!isLogisticsFilled}
+                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-3 ${isLogisticsFilled ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+              >
+                <i className="fa-solid fa-print"></i> Print Delivery Challan
+              </button>
+            </div>
+          </div>
+
+          {/* Asset Scanning */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-slate-900/40 p-8 rounded-[2rem] border border-slate-800/50">
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="text-lg font-black text-white uppercase flex items-center gap-3">
+                  <i className="fa-solid fa-qrcode text-sky-500"></i> Asset Scanning
+                </h3>
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[10px] font-black uppercase">
+                    {conferenceFormData.assets.length} Scanned
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-4 mb-8">
+                <div className="flex-1 flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 focus-within:border-sky-500 transition-all">
+                  <i className="fa-solid fa-search text-slate-600"></i>
+                  <input
+                    ref={quickAddRef}
+                    value={quickAddInput}
+                    onChange={(e) => setQuickAddInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleScan(quickAddInput);
+                        setQuickAddInput('');
+                      }
+                    }}
+                    placeholder="SCAN OR TYPE SKU..."
+                    className="bg-transparent border-none text-white font-black text-sm w-full outline-none uppercase placeholder:text-slate-700"
+                  />
+                </div>
+                {isMobilePhone && (
+                  <button onClick={() => setShowScanner(true)} className="w-14 h-14 bg-sky-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-sky-500/20 active:scale-90 transition">
+                    <i className="fa-solid fa-camera text-xl"></i>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {conferenceFormData.assets.length === 0 ? (
+                  <div className="py-20 text-center space-y-4 bg-slate-950/20 rounded-2xl border border-dashed border-slate-800">
+                    <i className="fa-solid fa-box-open text-4xl text-slate-800"></i>
+                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">No assets scanned yet for this conference</p>
+                  </div>
+                ) : (
+                  conferenceFormData.assets.map((assetId: any) => {
+                    const asset = assets.find(a => String(a.id) === String(assetId));
+                    if (!asset) return null;
+                    return (
+                      <div key={assetId} className="flex items-center justify-between p-4 bg-slate-950 rounded-xl border border-slate-900 group animate-in slide-in-from-right-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center text-sky-500">
+                            <i className="fa-solid fa-box"></i>
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-white uppercase">{asset.aliasName || asset.sku}</p>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{asset.type}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                          className="w-8 h-8 rounded-lg bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center hover:bg-red-500 hover:text-white"
+                        >
+                          <i className="fa-solid fa-trash text-[10px]"></i>
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+const renderInventory = () => {
+    const filteredAssets = assets.filter(a =>
+      (a.aliasName || '').toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+      (a.description || '').toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+      (a.serialNumber && a.serialNumber.toLowerCase().includes(debouncedSearchQuery.toLowerCase())) ||
+      (a.sku && a.sku.toLowerCase().includes(debouncedSearchQuery.toLowerCase())) ||
+      (a.barcode && a.barcode.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
+    );
+
+    const totalPages = Math.ceil(filteredAssets.length / itemsPerPage);
+    const paginatedAssets = filteredAssets.slice((inventoryPage - 1) * itemsPerPage, inventoryPage * itemsPerPage);
+
+    return (
+      <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+          <h2 className="text-4xl md:text-5xl font-black text-orange-500 tracking-tighter uppercase">Inventory</h2>
+          <div className="flex flex-wrap gap-2 md:gap-3">
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
+            <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-slate-800/60 text-slate-300 border border-slate-700 rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-slate-700 transition flex items-center justify-center gap-2">
+              <i className="fa-solid fa-file-arrow-down" /> Template
+            </button>
+            <button onClick={() => { setUploadResult(null); fileInputRef.current?.click(); }} className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-slate-800 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-slate-700 transition flex items-center justify-center gap-2">
+              <i className="fa-solid fa-file-csv" /> Import
+            </button>
+            <div className="flex gap-2">
+              <div className="relative" ref={registerDropdownRef}>
+                <button onClick={() => setIsRegisterDropdownOpen(!isRegisterDropdownOpen)} className="px-4 md:px-6 py-3 md:py-4 bg-emerald-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-400 transition flex items-center gap-2">
+                  Register New <i className={`fa-solid fa-chevron-${isRegisterDropdownOpen ? 'up' : 'down'} text-[8px]`} />
+                </button>
+                {isRegisterDropdownOpen && (
+                  <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button onClick={() => { openNewAssetForm(); setIsRegisterDropdownOpen(false); }} className="w-full text-left px-6 py-4 text-xs font-black text-white uppercase hover:bg-slate-800 transition flex items-center gap-3">
+                      <i className="fa-solid fa-plus-circle text-emerald-500" /> Standard Asset
+                    </button>
+                    <div className="h-[1px] bg-slate-800" />
+                    <button onClick={() => { openConsumableForm(); setIsRegisterDropdownOpen(false); }} className="w-full text-left px-6 py-4 text-xs font-black text-white uppercase hover:bg-slate-800 transition flex items-center gap-3">
+                      <i className="fa-solid fa-cubes text-amber-500" /> Consumable
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {uploadResult && (
+          <div className={`rounded-2xl border p-5 flex items-start gap-4 ${uploadResult.errors.length > 0 && uploadResult.created === 0 ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-900/60 border-slate-800'}`}>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-4 flex-wrap">
+                {uploadResult.created > 0 && <span className="text-xs font-black text-emerald-400">✅ {uploadResult.created} asset{uploadResult.created !== 1 ? 's' : ''} created</span>}
+                {uploadResult.skipped > 0 && <span className="text-xs font-black text-amber-400">⏭️ {uploadResult.skipped} skipped (already exist)</span>}
+                {uploadResult.errors.length > 0 && <span className="text-xs font-black text-red-400">❌ {uploadResult.errors.length} error{uploadResult.errors.length !== 1 ? 's' : ''}</span>}
+              </div>
+              {uploadResult.errors.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {uploadResult.errors.map((err, i) => <li key={i} className="text-[10px] text-red-400 font-mono">{err}</li>)}
+                </ul>
+              )}
+            </div>
+            <button onClick={() => setUploadResult(null)} className="text-slate-500 hover:text-white transition"><i className="fa-solid fa-xmark text-sm" /></button>
+          </div>
+        )}
+
+        <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
+          <div className="p-4 md:p-8 border-b border-slate-800/40 flex items-center gap-4">
+            <div className="flex-1 relative group">
+              <i className="fa-solid fa-search absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-sky-500 transition-colors" />
+              <input type="text" value={searchQuery} onChange={(e) => { const val = e.target.value; setSearchQuery(val); const asset = findAssetFromScan(val); if (asset) handleScan(val); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const code = searchQuery.trim(); if (code && code !== lastScannedCode.current) handleScan(code); } }} placeholder="SEARCH OR SCAN EQUIPMENT..." ref={inventorySearchRef} className="w-full pl-14 pr-6 py-4 md:py-5 rounded-2xl border border-slate-800 bg-slate-950/40 text-white font-black text-xs md:text-sm uppercase focus:border-sky-500/50 outline-none transition-all placeholder:text-slate-600" />
+              {isMobilePhone && <button onClick={() => setShowScanner(true)} className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 md:w-12 md:h-12 bg-sky-500/10 text-sky-400 rounded-xl flex items-center justify-center hover:bg-sky-500 hover:text-white transition group/btn"><i className="fa-solid fa-camera text-sm md:text-base group-hover/btn:scale-110 transition-transform" /></button>}
+            </div>
+          </div>
+
+          <div className="md:hidden divide-y divide-slate-800/40">
+            {paginatedAssets.map((asset) => (
+              <div key={asset.id} onClick={() => openAssetDetails(asset)} className="p-4 space-y-3 active:bg-slate-800/20 transition-colors">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-[10px] font-black text-sky-400 font-mono uppercase">{asset.sku}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <h4 className="text-base font-black text-white uppercase">{asset.aliasName || 'Untiled Asset'}</h4>
+                      {asset.sub_assets && asset.sub_assets.length > 0 && <span className="w-5 h-5 bg-sky-500/20 text-sky-400 rounded-lg flex items-center justify-center text-[8px]" title="Main Asset with Components"><i className="fa-solid fa-boxes-stacked" /></span>}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' : asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : asset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' : 'bg-red-500/10 text-red-400'}`}>{asset.status}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <table className="hidden md:table w-full text-left">
+            <thead>
+              <tr className="border-b border-slate-800/60 bg-slate-950/50">
+                <th className="px-6 py-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Equipment Info</th>
+                <th className="px-6 py-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Category</th>
+                <th className="px-6 py-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center">Qty</th>
+                <th className="px-6 py-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-center">Status</th>
+                <th className="px-6 py-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/40">
+              {paginatedAssets.map((asset) => (
+                <tr key={asset.id} className="hover:bg-slate-800/20 transition-colors group">
+                  <td className="px-6 py-6">
+                    <div className="flex items-center gap-4">
+                      <div onClick={() => openAssetDetails(asset)} className="w-12 h-12 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center text-sky-500 group-hover:border-sky-500/50 transition cursor-pointer">
+                        <i className={`fa-solid ${asset.type === AssetCategory.CONSUMABLES ? 'fa-cubes' : 'fa-box-open'} text-lg`} />
+                      </div>
+                      <div>
+                        <p onClick={() => openAssetDetails(asset)} className="text-sm font-black text-white uppercase group-hover:text-sky-400 transition cursor-pointer">{asset.aliasName || asset.sku}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-1">{asset.sku} • {asset.serialNumber}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-6"><p className="text-[10px] text-slate-500 font-black uppercase">{asset.type}</p></td>
+                  <td className="px-6 py-6 text-center"><p className="text-xs font-black text-white">{asset.quantity || 1}</p></td>
+                  <td className="px-6 py-6 text-center">
+                    <div className="flex flex-col items-center gap-1">
+                      <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' : asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : asset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' : 'bg-red-500/10 text-red-400'}`}>{asset.status}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-6 text-right space-x-4">
+                    <button onClick={() => openEditAssetForm(asset)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
+                    <button onClick={() => handleDeleteAsset(asset.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="p-6 md:p-8 border-t border-slate-800/40 bg-slate-950/20 flex flex-col md:flex-row items-center justify-between gap-6">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Showing <span className="text-white">{(inventoryPage - 1) * itemsPerPage + 1}</span> to <span className="text-white">{Math.min(inventoryPage * itemsPerPage, filteredAssets.length)}</span> of <span className="text-white">{filteredAssets.length}</span> Assets</p>
+            <div className="flex items-center gap-2">
+              <button disabled={inventoryPage === 1} onClick={() => { setInventoryPage(prev => Math.max(1, prev - 1)); mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }} className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-800 hover:text-white transition"><i className="fa-solid fa-chevron-left text-xs" /></button>
+              <div className="flex items-center gap-1">
+                {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                  let pageNum = i + 1;
+                  if (totalPages > 5 && inventoryPage > 3) { pageNum = inventoryPage - 2 + i; if (pageNum + (4 - i) > totalPages) pageNum = totalPages - (4 - i); }
+                  if (pageNum <= 0 || pageNum > totalPages) return null;
+                  return <button key={pageNum} onClick={() => { setInventoryPage(pageNum); mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }} className={`w-10 h-10 rounded-xl font-black text-xs transition ${inventoryPage === pageNum ? 'bg-sky-500 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}>{pageNum}</button>;
+                })}
+              </div>
+              <button disabled={inventoryPage === totalPages} onClick={() => { setInventoryPage(prev => Math.min(totalPages, prev + 1)); mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }} className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-800 hover:text-white transition"><i className="fa-solid fa-chevron-right text-xs" /></button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
+  return (
+      <div className="min-h-screen bg-white p-8 print:p-0 print:m-0 print:min-h-0 relative">
+        <button
+          onClick={() => window.print()}
+          className="no-print fixed bottom-8 right-8 z-[100] w-16 h-16 bg-sky-500 text-white rounded-full shadow-2xl flex items-center justify-center hover:bg-sky-400 active:scale-95 transition-all"
+          title="Print / Save PDF"
+        >
+          <i className="fa-solid fa-print text-2xl"></i>
+        </button>
+
+        <ChallanView
+          booking={selectedBookingForChallan}
+          client={MOCK_CLIENTS[0]}
+          assets={assets.filter(a => (selectedBookingForChallan.assets || []).map(String).includes(a.id.toString()))}
+          companySettings={companySettings}
+        />
+        <style>{`
+          @media print {
+            @page { size: A4 portrait; margin: 0; }
+            html, body { 
+              margin: 0; 
+              padding: 0; 
+              width: 210mm; 
+              height: 297mm;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body { 
+              background: white !important; 
+            }
+          }
+        `}</style>
+      </div>
+    );
+};
+
+export default App;

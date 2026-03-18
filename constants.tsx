@@ -22,7 +22,8 @@ export const MOCK_ASSETS: Asset[] = [
     barcode: '789001',
     status: AssetStatus.IN_USE,
     condition: 'Excellent',
-    lastMaintained: '2024-04-01'
+    lastMaintained: '2024-04-01',
+    quantity: 1
   },
   {
     id: 'AST002',
@@ -44,7 +45,8 @@ export const MOCK_ASSETS: Asset[] = [
     barcode: '789002',
     status: AssetStatus.AVAILABLE,
     condition: 'Good',
-    lastMaintained: '2024-04-15'
+    lastMaintained: '2024-04-15',
+    quantity: 1
   },
   {
     id: 'AST003',
@@ -66,7 +68,8 @@ export const MOCK_ASSETS: Asset[] = [
     barcode: '789003',
     status: AssetStatus.IN_USE,
     condition: 'Excellent',
-    lastMaintained: '2024-03-20'
+    lastMaintained: '2024-03-20',
+    quantity: 1
   },
 ];
 

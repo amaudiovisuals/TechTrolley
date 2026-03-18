@@ -28,7 +28,13 @@ from .serializers import AssetSerializer, EmployeeSerializer
 @api_view(['GET', 'POST'])
 def asset_list(request):
     if request.method == 'GET':
-        assets = Asset.objects.all()
+        # Use select_related for ForeignKey and prefetch_related for ManyToMany/Reverse relations
+        # to eliminate N+1 query overhead for 1800+ assets.
+        assets = Asset.objects.select_related('assigned_to', 'parent_asset').prefetch_related(
+            'assigned_conferences', 
+            'crosscheck_conferences', 
+            'sub_assets'
+        ).all()
         serializer = AssetSerializer(assets, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -185,8 +191,11 @@ def company_settings(request):
              return Response({"detail": "Authentication credentials were not provided."}, status=401)
         
         try:
-            # Use partial update if needed, but here we usually want to update all fields provided
-            data = request.data.copy()
+            # Convert QueryDict to a regular dict to allow injecting parsed objects
+            if hasattr(request.data, 'dict'):
+                data = request.data.dict()
+            else:
+                data = request.data.copy()
             
             # If 'logo' is in data but it's not a file (e.g. it's a string URL or empty string from frontend)
             # we should avoid trying to 'save' it as an image if it hasn't changed.

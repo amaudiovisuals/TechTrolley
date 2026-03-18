@@ -61,19 +61,18 @@ class ConferenceSerializer(serializers.ModelSerializer):
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
         employees_data = validated_data.pop('assigned_employees', [])
         conference = Conference.objects.create(**validated_data)
-        conference.assets.set(assets_data)
-        conference.crosscheck_assets.set(crosscheck_data)
-        conference.assigned_employees.set(employees_data)
         
-        # Update status of assigned assets
-        for asset in assets_data:
-            asset.status = 'In Use'
-            asset.save()
+        if assets_data:
+            conference.assets.set(assets_data)
+            # Use bulk update for efficiency
+            Asset.objects.filter(id__in=[a.id for a in assets_data]).update(status='In Use')
 
-        # Update status of crosscheck assets
-        for asset in crosscheck_data:
-            asset.status = 'Crosscheck'
-            asset.save()
+        if crosscheck_data:
+            conference.crosscheck_assets.set(crosscheck_data)
+            Asset.objects.filter(id__in=[a.id for a in crosscheck_data]).update(status='Crosscheck')
+
+        if employees_data:
+            conference.assigned_employees.set(employees_data)
             
         return conference
 
@@ -81,47 +80,53 @@ class ConferenceSerializer(serializers.ModelSerializer):
         assets_data = validated_data.pop('assets', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
-        old_assets = list(instance.assets.all())
-        old_crosscheck = list(instance.crosscheck_assets.all())
+        
+        old_assets_ids = set(instance.assets.values_list('id', flat=True))
+        old_crosscheck_ids = set(instance.crosscheck_assets.values_list('id', flat=True))
+        
         instance = super().update(instance, validated_data)
 
         if assets_data is not None:
-            # Detect assets removed from this conference
-            new_asset_ids = set(a.pk for a in assets_data)
-            removed_assets = [a for a in old_assets if a.pk not in new_asset_ids]
-
+            new_asset_ids = set(a.id for a in assets_data)
+            removed_ids = old_assets_ids - new_asset_ids
+            
             instance.assets.set(assets_data)
+            
+            # Update status for NEWLY added assets
+            added_ids = new_asset_ids - old_assets_ids
+            if added_ids:
+                Asset.objects.filter(id__in=added_ids).update(status='In Use')
 
-            # Reset removed assets to Available — only if they are not in ANY other conference
-            for asset in removed_assets:
-                still_in_use = Conference.objects.filter(assets=asset).exclude(pk=instance.pk).exists()
-                in_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
-                if not still_in_use and not in_crosscheck:
+            # Handle REMOVED assets: mark Available ONLY if not in any other active conference or crosscheck
+            for aid in removed_ids:
+                asset = Asset.objects.get(id=aid)
+                # Check if still assigned to OTHER conferences
+                in_other_conf = Conference.objects.exclude(pk=instance.pk).filter(assets=asset).exists()
+                in_any_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
+                
+                if not in_other_conf and not in_any_crosscheck:
                     asset.status = 'Available'
-                    asset.save()
-
-            # Mark newly confirmed In Use assets
-            for asset in assets_data:
-                if asset.status != 'In Use':
-                    asset.status = 'In Use'
                     asset.save()
 
         if crosscheck_data is not None:
+            new_cc_ids = set(a.id for a in crosscheck_data)
+            removed_cc_ids = old_crosscheck_ids - new_cc_ids
+            
             instance.crosscheck_assets.set(crosscheck_data)
+            
+            # Update status for NEWLY added crosscheck
+            added_cc_ids = new_cc_ids - old_crosscheck_ids
+            if added_cc_ids:
+                Asset.objects.filter(id__in=added_cc_ids).update(status='Crosscheck')
 
-            # Restore Available status for assets verified (removed) from crosscheck
-            removed_crosscheck = [a for a in old_crosscheck if a not in crosscheck_data]
-            for asset in removed_crosscheck:
-                still_in_use = Conference.objects.filter(assets=asset).exists()
-                still_in_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exclude(pk=instance.pk).exists()
-                if not still_in_use and not still_in_crosscheck and asset.status == 'Crosscheck':
+            # Handle REMOVED crosscheck assets (verified)
+            for aid in removed_cc_ids:
+                asset = Asset.objects.get(id=aid)
+                in_any_conf = Conference.objects.filter(assets=asset).exists()
+                in_other_cc = Conference.objects.exclude(pk=instance.pk).filter(crosscheck_assets=asset).exists()
+                
+                if not in_any_conf and not in_other_cc:
                     asset.status = 'Available'
-                    asset.save()
-
-            # Set Crosscheck status for newly added crosscheck assets
-            for asset in crosscheck_data:
-                if asset.status != 'Crosscheck':
-                    asset.status = 'Crosscheck'
                     asset.save()
 
         if employees_data is not None:

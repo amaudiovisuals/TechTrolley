@@ -23,12 +23,12 @@ class Asset(models.Model):
         ('Other', 'Other'),
     ]
 
-    sku = models.CharField(max_length=100)
+    sku = models.CharField(max_length=100, db_index=True)
     alias_name = models.CharField(max_length=200, null=True, blank=True)
     mac_address = models.CharField(max_length=100, null=True, blank=True)
     imei_number_1 = models.CharField(max_length=100, null=True, blank=True)
     imei_number_2 = models.CharField(max_length=100, null=True, blank=True)
-    serial_number = models.CharField(max_length=100, null=True, blank=True)
+    serial_number = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     description = models.TextField(null=True, blank=True)
     is_barcode_added = models.BooleanField(default=False)
     type = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default='Other')
@@ -44,7 +44,7 @@ class Asset(models.Model):
     barcode_type = models.CharField(max_length=50, blank=True, default='')
     barcode = models.CharField(max_length=100, blank=True, default='') 
     qr_code = models.CharField(max_length=255, blank=True, default='')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available', db_index=True)
     condition = models.CharField(max_length=50, default='Good')
     last_maintained = models.DateField(null=True, blank=True)
     current_venue = models.CharField(max_length=200, null=True, blank=True)
