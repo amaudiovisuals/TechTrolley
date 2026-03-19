@@ -264,7 +264,7 @@ const App: React.FC = () => {
 
   // Pending assignment state for sub-assets
   const [pendingParentAsset, setPendingParentAsset] = useState<Asset | null>(null);
-  const [pendingAction, setPendingAction] = useState<'add' | 'remove' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'add' | 'remove' | 'verify_crosscheck' | null>(null);
   const [scannedSubAssetIds, setScannedSubAssetIds] = useState<string[]>([]);
 
   // Sub-Asset Linkage State
@@ -1060,11 +1060,19 @@ const App: React.FC = () => {
       showScanToast(`❌ "${asset.aliasName || asset.sku}" is not in the Godown Crosscheck queue for this conference.`, 'error');
       return;
     }
-    setConferenceFormData((prev: any) => ({
-      ...prev,
-      crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => id.toString() !== assetIdStr)
-    }));
-    showScanToast(`✅ Verified at Godown: "${asset.aliasName || asset.sku}" — save conference to confirm.`, 'success');
+
+    if (asset.sub_assets && asset.sub_assets.length > 0) {
+      setPendingParentAsset(asset);
+      setPendingAction('verify_crosscheck');
+      setScannedSubAssetIds([]);
+      showScanToast(`⚠️ Please scan ${asset.sub_assets.length} component(s) to verify "${asset.aliasName || asset.sku}"`, 'warning');
+    } else {
+      setConferenceFormData((prev: any) => ({
+        ...prev,
+        crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => id.toString() !== assetIdStr)
+      }));
+      showScanToast(`✅ Verified at Godown: "${asset.aliasName || asset.sku}" — save conference to confirm.`, 'success');
+    }
   };
 
   const submitQuantityAssignment = () => {
@@ -1235,6 +1243,12 @@ const App: React.FC = () => {
                   crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess]))
                 }));
                 showScanToast(`✅ Moved "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components to Crosscheck`, 'success');
+              } else if (pendingAction === 'verify_crosscheck') {
+                setConferenceFormData((prev: any) => ({
+                  ...prev,
+                  crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.includes(id.toString()))
+                }));
+                showScanToast(`✅ Verified "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components at Godown`, 'success');
               }
 
               // Reset pending state
