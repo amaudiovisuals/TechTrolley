@@ -56,3 +56,40 @@ def system_user_delete(request, pk):
 
     user.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_user_role(request):
+    if not request.user.is_superuser and not request.user.is_staff:
+        return Response({'error': 'Unauthorized.'}, status=status.HTTP_403_FORBIDDEN)
+        
+    email = request.data.get('email')
+    role = request.data.get('role')
+    
+    if not email or not role:
+        return Response({'error': 'Email and role required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    try:
+        user = User.objects.get(username=email)
+        
+        # Ensure profile exists for legacy users
+        if hasattr(user, 'profile'):
+            user.profile.role = role
+            user.profile.save()
+        else:
+            from .models import UserProfile
+            UserProfile.objects.create(user=user, role=role)
+
+        # Auto-update status based on role definition
+        if role == 'admin':
+            user.is_staff = True
+            user.is_superuser = True
+        else:
+            user.is_superuser = False
+            user.is_staff = False
+            
+        user.save()
+        return Response({'message': f'Role updated to {role}'})
+    except User.DoesNotExist:
+        return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+

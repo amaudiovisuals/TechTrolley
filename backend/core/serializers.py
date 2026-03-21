@@ -2,9 +2,18 @@ from rest_framework import serializers
 from .models import Asset, Employee
 
 class EmployeeSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+
     class Meta:
         model = Employee
         fields = '__all__'
+
+    def get_role(self, obj):
+        from django.contrib.auth.models import User
+        user = User.objects.filter(username=obj.email).first()
+        if user and hasattr(user, 'profile'):
+            return user.profile.role
+        return 'technician'
 
 class SubAssetSerializer(serializers.ModelSerializer):
     """Lightweight serializer used for nested sub_assets — avoids recursion."""
@@ -138,9 +147,10 @@ class ConferenceSerializer(serializers.ModelSerializer):
 from django.contrib.auth.models import User
 
 class UserSerializer(serializers.ModelSerializer):
+    role = serializers.CharField(source='profile.role', read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'email', 'date_joined', 'is_staff']
+        fields = ['id', 'email', 'date_joined', 'is_staff', 'role']
 from .models import CompanySettings
 
 class CompanySettingsSerializer(serializers.ModelSerializer):

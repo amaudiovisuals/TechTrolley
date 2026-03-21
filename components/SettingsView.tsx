@@ -232,6 +232,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         }
     };
 
+    const handleUpdateRole = async (email: string, role: string) => {
+        try {
+            const res = await apiFetch(`${API_BASE}/api/users/role/`, {
+                method: 'PUT',
+                body: JSON.stringify({ email, role })
+            });
+            if (res.ok) {
+                fetchEmployees();
+                fetchUsers();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                alert(`Failed to update role. ${data.error || 'Please ensure you have permission.'}`);
+            }
+        } catch (e) {
+            alert('Connection error while updating role.');
+        }
+    };
+
     const handleDeleteUser = async (id: number) => {
         if (!confirm('Are you sure you want to delete this system administrator?')) return;
         try {
@@ -461,9 +479,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                             <p className="text-[10px] text-slate-500 font-mono">Login: {emp.email}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => handleDeleteEmployee(emp.id!)} className="text-slate-600 hover:text-red-500 transition px-4">
-                                        <i className="fa-solid fa-trash"></i>
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <select
+                                            value={emp.role || 'technician'}
+                                            onChange={(e) => handleUpdateRole(emp.email, e.target.value)}
+                                            className="bg-slate-900 border border-slate-700 rounded-lg text-white text-[10px] font-bold p-2 uppercase outline-none focus:border-sky-500 transition cursor-pointer"
+                                        >
+                                            <option value="admin">Admin</option>
+                                            <option value="godown_incharge">Godown Incharge</option>
+                                            <option value="technician">Technician</option>
+                                        </select>
+                                        <button onClick={() => handleDeleteEmployee(emp.id!)} className="text-slate-600 hover:text-red-500 transition px-2">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {employees.length === 0 && (

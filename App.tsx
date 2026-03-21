@@ -602,6 +602,13 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLogistics = async (confId: string, vehicleNo: string, driverNo: string) => {
+    // Optimization: Only update if anything actually changed from current state
+    if (selectedConferenceDetails) {
+      if (selectedConferenceDetails.vehicleNumber === vehicleNo && selectedConferenceDetails.driverPhone === driverNo) {
+        return;
+      }
+    }
+
     try {
       const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
         method: 'PATCH',
@@ -705,13 +712,15 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <button
-                onClick={() => handlePrintChallan(conf)}
-                disabled={!isLogisticsFilled}
-                className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-3 ${isLogisticsFilled ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
-              >
-                <i className="fa-solid fa-print"></i> Print Delivery Challan
-              </button>
+              {user?.role !== 'godown_incharge' && (
+                <button
+                  onClick={() => handlePrintChallan(conf)}
+                  disabled={!isLogisticsFilled}
+                  className={`w-full py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-3 ${isLogisticsFilled ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+                >
+                  <i className="fa-solid fa-print"></i> Print Delivery Challan
+                </button>
+              )}
             </div>
           </div>
 
@@ -796,7 +805,7 @@ const App: React.FC = () => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
     setEditingConference(conf);
-    setAssetTab('available'); // Always reset to available tab
+    setAssetTab(user?.role === 'godown_incharge' ? 'crosscheck' : 'available'); // Always reset to appropriate tab
     setConferenceFormData({
       id: conf.id,
       name: conf.name,
@@ -817,7 +826,7 @@ const App: React.FC = () => {
       assigned_employees: conf.assigned_employees || []
     });
 
-    if (!user?.is_staff) {
+    if (!user?.is_staff && user?.role !== 'godown_incharge') {
       setSelectedConferenceDetails(conf);
       setConferenceView('Details');
       setCurrentPage('Conferences');
@@ -982,7 +991,14 @@ const App: React.FC = () => {
     if (action === 'add') {
       // LOCK 1: Already assigned to THIS conference
       if (existingAssets.includes(assetIdStr)) {
-        showScanToast(`⚠️ Already Assigned: "${asset.aliasName || asset.sku}" is already in this conference.`, 'warning');
+        // Optimization for Technician: Scrolling/Removing without switching tabs
+        if (!user?.is_staff && user?.role !== 'godown_incharge') {
+          if (confirm(`Asset "${asset.aliasName || asset.sku}" is already assigned. Move to Godown Crosscheck?`)) {
+            triggerAssetConferenceAction(asset, 'remove');
+          }
+        } else {
+          showScanToast(`⚠️ Already Assigned: "${asset.aliasName || asset.sku}" is already in this conference.`, 'warning');
+        }
         return;
       }
 
@@ -1054,6 +1070,12 @@ const App: React.FC = () => {
   };
 
   const verifyCrosscheckAsset = (asset: Asset) => {
+    // Role Lock: Only Godown Incharge or Admin can verify
+    if (user?.role !== 'godown_incharge' && !user?.is_staff) {
+      showScanToast(`❌ Only Godown Incharge can verify assets in crosscheck.`, 'error');
+      return;
+    }
+
     const assetIdStr = asset.id.toString();
     const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => id.toString()));
     if (!crosscheckIds.has(assetIdStr)) {
@@ -1212,13 +1234,15 @@ const App: React.FC = () => {
         const isSubAsset = pendingParentAsset.sub_assets?.some(sub => String(sub.id) === String(asset.id));
         if (isSubAsset) {
           // Check locks for sub-assets too
-          if (asset.status === AssetStatus.IN_USE) {
-            showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is In Use and cannot be added.`, 'error');
-            return;
-          }
-          if (asset.status === AssetStatus.CROSSCHECK) {
-            showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is in Crosscheck and cannot be added.`, 'error');
-            return;
+          if (pendingAction === 'add') {
+            if (asset.status === AssetStatus.IN_USE) {
+              showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is In Use and cannot be added.`, 'error');
+              return;
+            }
+            if (asset.status === AssetStatus.CROSSCHECK) {
+              showScanToast(`🔒 Component "${asset.aliasName || asset.sku}" is in Crosscheck and cannot be added.`, 'error');
+              return;
+            }
           }
           const subAssetIdStr = asset.id.toString();
           if (!scannedSubAssetIds.includes(subAssetIdStr)) {
@@ -1268,7 +1292,11 @@ const App: React.FC = () => {
       if (assetTab === 'assigned') {
         triggerAssetConferenceAction(asset, 'remove');
       } else if (assetTab === 'crosscheck') {
-        verifyCrosscheckAsset(asset);
+        if (user?.role === 'godown_incharge' || user?.is_staff) {
+          verifyCrosscheckAsset(asset);
+        } else {
+          showScanToast(`❌ Technicians cannot verify assets. Please wait for Godown Incharge.`, 'error');
+        }
       } else {
         triggerAssetConferenceAction(asset, 'add');
       }
@@ -2123,7 +2151,7 @@ const App: React.FC = () => {
   // --- RENDERERS ---
 
   const filteredConferences = useMemo(() => {
-    if (user?.is_staff) return backendConferences;
+    if (user?.is_staff || user?.role === 'godown_incharge') return backendConferences;
     return backendConferences.filter(conf =>
       conf.assigned_employees?.includes(Number(user?.employee_id))
     );
@@ -2788,7 +2816,9 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={(e) => { e.stopPropagation(); handlePrintChallan(conf); }} className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center"><i className="fa-solid fa-print"></i></button>
+                  {user?.role !== 'godown_incharge' && (
+                    <button onClick={(e) => { e.stopPropagation(); handlePrintChallan(conf); }} className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center"><i className="fa-solid fa-print"></i></button>
+                  )}
                   {user?.is_staff && (
                     <button onClick={(e) => { e.stopPropagation(); handleDeleteConference(conf.id); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center"><i className="fa-solid fa-trash"></i></button>
                   )}
@@ -2854,7 +2884,9 @@ const App: React.FC = () => {
                         <i className="fa-solid fa-arrows-to-dot"></i> {(conf.crosscheckAssets || []).length}
                       </span>
                     )}
-                    <button onClick={() => handlePrintChallan(conf)} className="text-emerald-400 hover:text-white" title="Print Challan"><i className="fa-solid fa-print"></i></button>
+                    {user?.role !== 'godown_incharge' && (
+                      <button onClick={() => handlePrintChallan(conf)} className="text-emerald-400 hover:text-white" title="Print Challan"><i className="fa-solid fa-print"></i></button>
+                    )}
                     {user?.is_staff ? (
                       <>
                         <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
@@ -2931,11 +2963,13 @@ const App: React.FC = () => {
             {/* ... nav items ... */}
             {[
               { id: 'Dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
-              ...(user?.is_staff ? [
+              ...((user?.is_staff || user?.role === 'godown_incharge') ? [
                 { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
               ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
-              { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
+              ...(user?.role !== 'godown_incharge' ? [
+                { id: 'Billing', icon: 'fa-receipt', label: 'Challans' }
+              ] : []),
               { id: 'Settings', icon: 'fa-cog', label: 'Settings' }
             ].map(item => (
               <button key={item.id} onClick={() => handleViewChange(item.id as Page)}
@@ -3241,7 +3275,9 @@ const App: React.FC = () => {
                 }}
                 className="bg-slate-900/30 p-6 md:p-10 rounded-[1.5rem] md:rounded-[2.5rem] border border-slate-800/50 space-y-6 md:space-y-8"
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                {user?.role !== 'godown_incharge' && (
+                  <fieldset disabled={user?.role === 'godown_incharge'} className="space-y-6 md:space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                   <div>
                     <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Conference Name</label>
                     <input value={conferenceFormData.name} onChange={e => setConferenceFormData({ ...conferenceFormData, name: e.target.value })} className="form-input-night" required />
@@ -3349,19 +3385,23 @@ const App: React.FC = () => {
                     </select>
                   </div>
                 </div>
+                </fieldset>
+                )}
 
                 {/* Assign Assets - Tabbed */}
                 <div className="space-y-4">
                   {/* Tab Header */}
                   <div className="flex items-center justify-between">
                     <div className="flex gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setAssetTab('available')}
-                        className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${assetTab === 'available' ? 'bg-sky-500 text-white' : 'text-slate-500 hover:text-white'}`}
-                      >
-                        Available
-                      </button>
+                      {user?.role !== 'godown_incharge' && (
+                        <button
+                          type="button"
+                          onClick={() => setAssetTab('available')}
+                          className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition ${assetTab === 'available' ? 'bg-sky-500 text-white' : 'text-slate-500 hover:text-white'}`}
+                        >
+                          Select
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setAssetTab('assigned')}
@@ -3377,84 +3417,85 @@ const App: React.FC = () => {
                         Crosscheck ({assets.filter(a => (conferenceFormData.crosscheck_assets || []).map(String).includes(String(a.id))).length})
                       </button>
                     </div>
-                    <div className="flex gap-3">
-                      {assetTab === 'available' ? (
-                        <div className="flex items-center gap-2 bg-slate-950/50 p-1.5 rounded-2xl border border-slate-800/80 hover:border-emerald-500/50 transition-colors group">
-                          <div className="w-10 h-10 flex items-center justify-center text-emerald-500 bg-emerald-500/10 rounded-xl">
-                            <i className="fa-solid fa-plus-circle" />
-                          </div>
-                          <input
-                            type="text"
-                            value={quickAddInput}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setQuickAddInput(val);
-                              // Auto-detect full matches (Vital for PDAs that don't send Enter)
-                              const asset = findAssetFromScan(val);
-                              if (asset) {
-                                handleScan(val, false); // silent: partial input is expected
-                                setQuickAddInput('');
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.keyCode === 13) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const valFromTarget = (e.target as HTMLInputElement).value;
-                                const code = (valFromTarget || quickAddInput).trim();
-                                if (code && code !== lastScannedCode.current) {
-                                  handleScan(code, true); // explicit: show error if not found
+                    {/* Action Bar (Scanner) - Shown for Technicians only on Select/Assigned, Godown Incharge only on Crosscheck */}
+                    {((user?.role !== 'godown_incharge' && assetTab !== 'crosscheck') || (user?.role === 'godown_incharge' && assetTab === 'crosscheck')) && (
+                      <div className="flex gap-3">
+                        {assetTab === 'available' ? (
+                          <div className="flex items-center gap-2 bg-slate-950/50 p-1.5 rounded-2xl border border-slate-800/80 hover:border-emerald-500/50 transition-colors group">
+                            <div className="w-10 h-10 flex items-center justify-center text-emerald-500 bg-emerald-500/10 rounded-xl">
+                              <i className="fa-solid fa-plus-circle" />
+                            </div>
+                            <input
+                              type="text"
+                              value={quickAddInput}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQuickAddInput(val);
+                                const asset = findAssetFromScan(val);
+                                if (asset) {
+                                  handleScan(val, false);
+                                  setQuickAddInput('');
                                 }
-                                setQuickAddInput('');
-                              }
-                            }}
-                            placeholder="SCAN TO ADD..."
-                            ref={quickAddRef}
-                            className="bg-transparent border-none px-2 py-3 text-xs text-white w-48 focus:outline-none placeholder:text-slate-600 font-black uppercase"
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 bg-slate-950/50 p-1.5 rounded-2xl border border-slate-800/80 hover:border-red-500/50 transition-colors group">
-                          <div className="w-10 h-10 flex items-center justify-center text-red-500 bg-red-500/10 rounded-xl">
-                            <i className="fa-solid fa-minus-circle" />
-                          </div>
-                          <input
-                            type="text"
-                            value={quickRemoveInput}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setQuickRemoveInput(val);
-                              // Auto-detect full matches (Vital for PDAs that don't send Enter)
-                              const asset = findAssetFromScan(val);
-                              if (asset) {
-                                handleScan(val, false); // silent: partial input is expected
-                                setQuickRemoveInput('');
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.keyCode === 13) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                const valFromTarget = (e.target as HTMLInputElement).value;
-                                const code = (valFromTarget || quickRemoveInput).trim();
-                                if (code && code !== lastScannedCode.current) {
-                                  handleScan(code, true); // explicit: show error if not found
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.keyCode === 13) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const valFromTarget = (e.target as HTMLInputElement).value;
+                                  const code = (valFromTarget || quickAddInput).trim();
+                                  if (code && code !== lastScannedCode.current) {
+                                    handleScan(code, true);
+                                  }
+                                  setQuickAddInput('');
                                 }
-                                setQuickRemoveInput('');
-                              }
-                            }}
-                            placeholder={assetTab === 'crosscheck' ? "SCAN TO VERIFY..." : "SCAN TO REMOVE..."}
-                            ref={quickRemoveRef}
-                            className="bg-transparent border-none px-2 py-3 text-xs text-white w-48 focus:outline-none placeholder:text-slate-600 font-black uppercase"
-                          />
-                        </div>
-                      )}
-                      {isMobilePhone && (
-                        <button type="button" onClick={() => setShowScanner(true)} className="px-4 py-2 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-lg text-xs font-black uppercase hover:bg-sky-500 hover:text-white transition">
-                          <i className="fa-solid fa-qrcode mr-2"></i> Camera
-                        </button>
-                      )}
-                    </div>
+                              }}
+                              placeholder="SCAN TO ADD..."
+                              ref={quickAddRef}
+                              className="bg-transparent border-none px-2 py-3 text-xs text-white w-48 focus:outline-none placeholder:text-slate-600 font-black uppercase"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 bg-slate-950/50 p-1.5 rounded-2xl border border-slate-800/80 hover:border-red-500/50 transition-colors group">
+                            <div className="w-10 h-10 flex items-center justify-center text-red-500 bg-red-500/10 rounded-xl">
+                              <i className="fa-solid fa-minus-circle" />
+                            </div>
+                            <input
+                              type="text"
+                              value={quickRemoveInput}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQuickRemoveInput(val);
+                                const asset = findAssetFromScan(val);
+                                if (asset) {
+                                  handleScan(val, false);
+                                  setQuickRemoveInput('');
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.keyCode === 13) {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const valFromTarget = (e.target as HTMLInputElement).value;
+                                  const code = (valFromTarget || quickRemoveInput).trim();
+                                  if (code && code !== lastScannedCode.current) {
+                                    handleScan(code, true);
+                                  }
+                                  setQuickRemoveInput('');
+                                }
+                              }}
+                              placeholder={assetTab === 'crosscheck' ? "SCAN TO VERIFY..." : "SCAN TO REMOVE..."}
+                              ref={quickRemoveRef}
+                              className="bg-transparent border-none px-2 py-3 text-xs text-white w-48 focus:outline-none placeholder:text-slate-600 font-black uppercase"
+                            />
+                          </div>
+                        )}
+                        {isMobilePhone && (
+                          <button type="button" onClick={() => setShowScanner(true)} className="px-4 py-2 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-lg text-xs font-black uppercase hover:bg-sky-500 hover:text-white transition">
+                            <i className="fa-solid fa-qrcode mr-2"></i> Camera
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Available Tab */}
@@ -3534,14 +3575,16 @@ const App: React.FC = () => {
                                   <p className="text-[10px] text-slate-400 uppercase mt-1 line-clamp-1">{asset.description || 'No description'}</p>
                                   <p className="text-[9px] text-slate-500 font-mono mt-1">{asset.sku} • {asset.serialNumber}</p>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => triggerAssetConferenceAction(asset, 'remove')}
-                                  className="text-slate-500 hover:text-red-400 transition mt-1 flex-shrink-0"
-                                  title="Move to Godown Crosscheck"
-                                >
-                                  <i className="fa-solid fa-truck-ramp-box text-sm"></i>
-                                </button>
+                                {user?.role !== 'godown_incharge' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                                    className="text-slate-500 hover:text-red-400 transition mt-1 flex-shrink-0"
+                                    title="Move to Godown Crosscheck"
+                                  >
+                                    <i className="fa-solid fa-truck-ramp-box text-sm"></i>
+                                  </button>
+                                )}
                               </div>
                             ))}
                         </div>
@@ -3570,14 +3613,16 @@ const App: React.FC = () => {
                                   <p className="text-[10px] text-slate-400 uppercase mt-1 line-clamp-1">{asset.description || 'No description'}</p>
                                   <p className="text-[9px] text-slate-600 font-mono mt-1">{asset.sku} • {asset.serialNumber}</p>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => verifyCrosscheckAsset(asset)}
-                                  className="w-8 h-8 flex items-center justify-center bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500 hover:text-white transition mt-1 flex-shrink-0"
-                                  title="Verify Physically Received"
-                                >
-                                  <i className="fa-solid fa-check text-xs"></i>
-                                </button>
+                                {(user?.role === 'godown_incharge' || user?.is_staff) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => verifyCrosscheckAsset(asset)}
+                                    className="w-8 h-8 flex items-center justify-center bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500 hover:text-white transition mt-1 flex-shrink-0"
+                                    title="Verify Physically Received"
+                                  >
+                                    <i className="fa-solid fa-check text-xs"></i>
+                                  </button>
+                                )}
                               </div>
                             ))}
                         </div>
@@ -3693,11 +3738,16 @@ const App: React.FC = () => {
                                 ...prev,
                                 assets: Array.from(new Set([...prev.assets, ...allIdsToProcess]))
                               }));
-                            } else {
+                            } else if (pendingAction === 'remove') {
                               setConferenceFormData((prev: any) => ({
                                 ...prev,
                                 assets: prev.assets.filter((id: any) => !allIdsToProcess.includes(id.toString())),
                                 crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess]))
+                              }));
+                            } else if (pendingAction === 'verify_crosscheck') {
+                              setConferenceFormData((prev: any) => ({
+                                ...prev,
+                                crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.includes(id.toString()))
                               }));
                             }
                             setPendingParentAsset(null); setPendingAction(null); setScannedSubAssetIds([]);

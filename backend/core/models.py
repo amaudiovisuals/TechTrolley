@@ -139,3 +139,31 @@ class CompanySettings(models.Model):
             existing.theme_template = self.theme_template
             return existing.save()
         return super(CompanySettings, self).save(*args, **kwargs)
+
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    ROLE_CHOICES = [
+        ('admin', 'Admin'),
+        ('godown_incharge', 'Godown Incharge'),
+        ('technician', 'Technician'),
+    ]
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='technician')
+
+    def __str__(self):
+        return f"{self.user.username} - {self.role}"
+
+@receiver(post_save, sender=User)
+def create_or_save_user_profile(sender, instance, created, **kwargs):
+    if created:
+        role = 'admin' if getattr(instance, 'is_superuser', False) or getattr(instance, 'is_staff', False) else 'technician'
+        UserProfile.objects.create(user=instance, role=role)
+    else:
+        if not hasattr(instance, 'profile'):
+            role = 'admin' if getattr(instance, 'is_superuser', False) or getattr(instance, 'is_staff', False) else 'technician'
+            UserProfile.objects.create(user=instance, role=role)
+        else:
+            instance.profile.save()
