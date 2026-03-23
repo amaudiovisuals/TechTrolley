@@ -37,7 +37,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         try {
             const response = await fetch(`${API_BASE}/api/login/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
                 body: JSON.stringify({ email, password }),
             });
 
@@ -75,7 +78,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     )}
 
                     <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Office Email ID</label>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block truncate">Office Email ID</label>
                         <div className="relative">
                             <i className="fa-solid fa-envelope absolute left-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
                             <input
@@ -90,7 +93,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     </div>
 
                     <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Password code</label>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block truncate">Password code</label>
                         <div className="relative">
                             <i className="fa-solid fa-lock absolute left-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
                             <input
