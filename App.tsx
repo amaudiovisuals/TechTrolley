@@ -408,7 +408,7 @@ const App: React.FC = () => {
   // Performance optimizations: Debounced Search & Pagination
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [inventoryPage, setInventoryPage] = useState(1);
-  const itemsPerPage = 50;
+  const itemsPerPage = 20;
 
   useEffect(() => {
     const timer = setTimeout(() => {
