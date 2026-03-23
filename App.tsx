@@ -664,8 +664,8 @@ const App: React.FC = () => {
             <button onClick={() => setConferenceView('List')} className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition flex items-center gap-2 mb-4">
               <i className="fa-solid fa-arrow-left"></i> Back to List
             </button>
-            <h2 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tighter">{conf.conferenceName || conf.name}</h2>
-            <p className="text-xs text-slate-500 font-bold uppercase mt-2">{conf.association}</p>
+            <h2 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tighter break-words">{conf.conferenceName || conf.name}</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase mt-2 break-words">{conf.association}</p>
           </div>
           <div className={`px-6 py-2 rounded-full text-xs font-black uppercase tracking-widest ${statusStyle}`}>
             {statusLabel}
@@ -774,13 +774,13 @@ const App: React.FC = () => {
                     if (!asset) return null;
                     return (
                       <div key={assetId} className="flex items-center justify-between p-4 bg-slate-950 rounded-xl border border-slate-900 group animate-in slide-in-from-right-4">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-center text-sky-500">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-lg flex shrink-0 items-center justify-center text-sky-500">
                             <i className="fa-solid fa-box"></i>
                           </div>
-                          <div>
-                            <p className="text-sm font-black text-white uppercase">{asset.aliasName || asset.sku}</p>
-                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{asset.type}</p>
+                          <div className="min-w-0">
+                            <p className="text-sm font-black text-white uppercase truncate">{asset.aliasName || asset.sku}</p>
+                            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest truncate">{asset.type}</p>
                           </div>
                         </div>
                         <button
@@ -2085,15 +2085,15 @@ const App: React.FC = () => {
             {viewingAsset.sub_assets && viewingAsset.sub_assets.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {viewingAsset.sub_assets.map(sub => (
-                  <div key={sub.id} className="bg-slate-950/40 p-5 rounded-2xl border border-emerald-500/20 flex justify-between items-center group transition hover:border-emerald-500/50 shadow-lg shadow-emerald-500/5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                  <div key={sub.id} className="bg-slate-950/40 p-5 rounded-2xl border border-emerald-500/20 flex justify-between items-center group transition hover:border-emerald-500/50 shadow-lg shadow-emerald-500/5 max-w-full">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex shrink-0 items-center justify-center text-emerald-400">
                         <i className="fa-solid fa-microchip text-xs" />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Component</p>
-                        <p className="text-sm font-black text-white uppercase">{sub.alias_name || sub.sku}</p>
-                        <p className="text-[10px] text-slate-400 font-mono mt-1">SN: {sub.serial_number}</p>
+                        <p className="text-sm font-black text-white uppercase truncate">{sub.alias_name || sub.sku}</p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-1 truncate">SN: {sub.serial_number}</p>
                       </div>
                     </div>
                     <button
@@ -2497,11 +2497,11 @@ const App: React.FC = () => {
         <div className="md:hidden divide-y divide-slate-800/40">
           {paginatedInventoryAssets.map((asset) => (
             <div key={asset.id} onClick={() => openAssetDetails(asset)} className="p-4 space-y-3 active:bg-slate-800/20 transition-colors">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-[10px] font-black text-sky-400 font-mono uppercase">{asset.sku}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <h4 className="text-base font-black text-white uppercase">{asset.aliasName || 'Untiled Asset'}</h4>
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black text-sky-400 font-mono uppercase truncate">{asset.sku}</p>
+                  <div className="flex items-center gap-2 mt-1 min-w-0">
+                    <h4 className="text-base font-black text-white uppercase truncate">{asset.aliasName || 'Untiled Asset'}</h4>
                     {asset.sub_assets && asset.sub_assets.length > 0 && (
                       <span className="w-5 h-5 bg-sky-500/20 text-sky-400 rounded-lg flex items-center justify-center text-[8px]" title="Main Asset with Components">
                         <i className="fa-solid fa-boxes-stacked" />
@@ -2989,8 +2989,8 @@ const App: React.FC = () => {
       </aside>
 
       <main ref={mainRef} className="flex-1 overflow-y-auto no-print scroll-smooth">
-        <header className="bg-slate-950/60 backdrop-blur-3xl border-b border-slate-900 px-6 md:px-12 py-6 md:py-8 sticky top-0 z-40 flex justify-between items-center">
-          <div className="flex items-center gap-4">
+        <header className="bg-slate-950/60 backdrop-blur-3xl border-b border-slate-900 px-4 md:px-12 py-4 md:py-8 sticky top-0 z-40 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0">
+          <div className="flex items-center gap-4 flex-wrap w-full md:w-auto">
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="md:hidden w-10 h-10 bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center text-slate-400"
