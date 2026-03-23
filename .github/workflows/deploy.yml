@@ -19,7 +19,7 @@ jobs:
           node-version: '20'
           
       - name: Install Frontend Dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Compile React PWA
         run: npm run build
