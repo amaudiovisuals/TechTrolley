@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -23,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-1)*jn94=(8rf9(%x7)7p)2pr__tjf#z91jqpsov^aue7s^qc)('
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_ENV') != 'production'
 
 ALLOWED_HOSTS = ['*']
 
@@ -77,12 +78,26 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+import os
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+if os.getenv('DJANGO_ENV') == 'production':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'techtrolley_prod',
+            'USER': 'techtrolley_admin',
+            'PASSWORD': 'TechTrolley2026!',
+            'HOST': 'localhost',
+            'PORT': '',
+        }
+    }
 
 
 # Password validation
@@ -120,11 +135,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'static'
 
 # CORS and CSRF Settings
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ORIGIN_ALLOW_ALL = True
-CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://localhost:3000', 'https://127.0.0.1:3000', 'http://*.local']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://techtrolley.amaudiovisuals.com']
 CORS_ALLOW_ALL_ORIGINS = True
 
 # Security Relaxations for Local Dev
@@ -146,5 +162,5 @@ REST_FRAMEWORK = {
 # Media files (Uploads)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-ALLOWED_HOSTS = ['.elasticbeanstalk.com', 'localhost', '127.0.0.1']
-DEBUG = True
+ALLOWED_HOSTS = ['.elasticbeanstalk.com', 'localhost', '127.0.0.1', '40.192.34.67', 'techtrolley.amaudiovisuals.com']
+DEBUG = os.getenv('DJANGO_ENV') != 'production'

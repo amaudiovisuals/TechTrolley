@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
         workbox: {
           // Cache all assets and API calls
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          navigateFallbackDenylist: [/^\/admin/, /^\/api/],
           runtimeCaching: [
             {
               // Cache API calls to the Django backend
