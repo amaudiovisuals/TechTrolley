@@ -64,13 +64,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-8">
-            <div className="w-full max-w-md space-y-12">
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 sm:p-8">
+            <div className="w-full max-w-md space-y-8 sm:space-y-12">
                 <div className="text-center space-y-4 flex flex-col items-center">
                     <Logo size="lg" companySettings={companySettings} showText={true} variant="login" />
                 </div>
 
-                <form onSubmit={handleSubmit} className="bg-slate-900/30 backdrop-blur-xl p-10 rounded-[2.5rem] border border-slate-800/50 shadow-2xl space-y-6">
+                <form onSubmit={handleSubmit} className="bg-slate-900/30 backdrop-blur-xl p-6 sm:p-10 rounded-[2.5rem] border border-slate-800/50 shadow-2xl space-y-6">
                     {error && (
                         <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs font-bold uppercase text-center">
                             {error}
@@ -79,13 +79,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
                     <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block truncate">Office Email ID</label>
-                        <div className="relative">
-                            <i className="fa-solid fa-envelope absolute left-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                        <div className="flex items-center w-full bg-slate-950/50 border border-slate-800 rounded-2xl focus-within:border-sky-500 transition-colors overflow-hidden">
+                            <div className="pl-5 pr-3 text-slate-500 flex-shrink-0 flex items-center justify-center">
+                                <i className="fa-solid fa-envelope"></i>
+                            </div>
                             <input
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-6 text-white font-bold placeholder-slate-600 focus:border-sky-500 focus:outline-none transition-colors"
+                                className="w-full bg-transparent py-4 pr-6 text-white font-bold placeholder-slate-600 focus:outline-none"
                                 placeholder="user@company.com"
                                 required
                             />
@@ -94,13 +96,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
                     <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block truncate">Password code</label>
-                        <div className="relative">
-                            <i className="fa-solid fa-lock absolute left-5 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                        <div className="flex items-center w-full bg-slate-950/50 border border-slate-800 rounded-2xl focus-within:border-sky-500 transition-colors overflow-hidden">
+                            <div className="pl-5 pr-3 text-slate-500 flex-shrink-0 flex items-center justify-center">
+                                <i className="fa-solid fa-lock"></i>
+                            </div>
                             <input
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-6 text-white font-bold placeholder-slate-600 focus:border-sky-500 focus:outline-none transition-colors"
+                                className="w-full bg-transparent py-4 pr-6 text-white font-bold placeholder-slate-600 focus:outline-none"
                                 placeholder="••••••••"
                                 required
                             />

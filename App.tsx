@@ -37,10 +37,11 @@ import {
 
 import Login from './Login';
 import { SettingsView } from './components/SettingsView';
+import { ReportsView } from './components/ReportsView';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { QRLabelModal } from './components/QRLabelModal';
 
-type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Settings';
+type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings';
 type AssetView = 'List' | 'Form' | 'Details';
 type EmployeeView = 'List' | 'Form';
 type ConferenceView = 'List' | 'Form' | 'Details';
@@ -2968,7 +2969,8 @@ const App: React.FC = () => {
               ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
               ...(user?.role !== 'godown_incharge' ? [
-                { id: 'Billing', icon: 'fa-receipt', label: 'Challans' }
+                { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
+                { id: 'Reports', icon: 'fa-chart-pie', label: 'Reports' }
               ] : []),
               { id: 'Settings', icon: 'fa-cog', label: 'Settings' }
             ].map(item => (
@@ -3045,6 +3047,7 @@ const App: React.FC = () => {
         <div className="p-6 md:p-12 max-w-7xl mx-auto">
           {currentPage === 'Dashboard' && renderDashboard()}
           {currentPage === 'Settings' && <SettingsView apiFetch={apiFetch} user={user} />}
+          {currentPage === 'Reports' && <ReportsView apiFetch={apiFetch} />}
           {currentPage === 'Assets' && assetView === 'List' && renderInventory()}
           {currentPage === 'Assets' && assetView === 'Details' && renderAssetDetails()}
           {currentPage === 'Employees' && employeeView === 'List' && renderEmployees()}
