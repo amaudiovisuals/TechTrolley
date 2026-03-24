@@ -33,7 +33,10 @@ def asset_list(request):
         assets = Asset.objects.select_related('assigned_to', 'parent_asset').prefetch_related(
             'assigned_conferences', 
             'crosscheck_conferences', 
-            'sub_assets'
+            'sub_assets',
+            'sub_assets__assigned_to',
+            'sub_assets__assigned_conferences',
+            'sub_assets__crosscheck_conferences'
         ).all()
         serializer = AssetSerializer(assets, many=True)
         return Response(serializer.data)

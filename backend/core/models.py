@@ -158,6 +158,8 @@ class UserProfile(models.Model):
 
 @receiver(post_save, sender=User)
 def create_or_save_user_profile(sender, instance, created, **kwargs):
+    if kwargs.get('raw'):
+        return
     if created:
         role = 'admin' if getattr(instance, 'is_superuser', False) or getattr(instance, 'is_staff', False) else 'technician'
         UserProfile.objects.create(user=instance, role=role)

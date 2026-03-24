@@ -299,7 +299,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
 
             {activeTab === 'general' && (
                 <div className="max-w-4xl">
-                    <form onSubmit={handleSaveSettings} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                    <form onSubmit={handleSaveSettings} className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-2xl font-black text-white uppercase">Company Details</h3>
                             {!isEditing && (
@@ -442,7 +442,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
 
             {activeTab === 'profile' && (
                 <div className="max-w-2xl">
-                    <form onSubmit={handleChangePassword} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                    <form onSubmit={handleChangePassword} className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
                         <h3 className="text-2xl font-black text-white uppercase mb-4">Change Password</h3>
                         {passwordMsg.text && (
                             <div className={`p-4 rounded-xl text-xs font-bold uppercase ${passwordMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -465,21 +465,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             {activeTab === 'users' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Employee List */}
-                    <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50">
+                    <div className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50">
                         <h3 className="text-2xl font-black text-white uppercase mb-8">Users</h3>
                         <div className="space-y-4">
                             {employees.map(emp => (
-                                <div key={emp.id} className="flex items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-teal-500">
+                                <div key={emp.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900 gap-4">
+                                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex shrink-0 items-center justify-center text-teal-500">
                                             <i className="fa-solid fa-user-tag"></i>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-white uppercase">{emp.name}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono">Login: {emp.email}</p>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-bold text-white uppercase truncate">{emp.name}</p>
+                                            <p className="text-[10px] text-slate-500 font-mono truncate">Login: {emp.email}</p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center justify-between w-full sm:w-auto gap-3">
                                         <select
                                             value={emp.role || 'technician'}
                                             onChange={(e) => handleUpdateRole(emp.email, e.target.value)}
@@ -505,7 +505,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
 
                     {/* Add Employee Form */}
                     <div>
-                        <form onSubmit={handleAddEmployee} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                        <form onSubmit={handleAddEmployee} className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
                             <h3 className="text-2xl font-black text-white uppercase mb-4">Add New User</h3>
                             {addEmployeeMsg.text && (
                                 <div className={`p-4 rounded-xl text-xs font-bold uppercase ${addEmployeeMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
@@ -533,23 +533,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             {activeTab === 'team' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* User List */}
-                    <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50">
+                    <div className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50">
                         <h3 className="text-2xl font-black text-orange-500 uppercase mb-8">System Admins</h3>
                         <div className="space-y-4">
                             {users.map(user => (
-                                <div key={user.id} className="flex items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-orange-500">
+                                <div key={user.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900 gap-4">
+                                    <div className="flex items-center gap-4 min-w-0 flex-1">
+                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex shrink-0 items-center justify-center text-orange-500">
                                             <i className="fa-solid fa-crown"></i>
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-white uppercase">{user.email}</p>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-bold text-white uppercase truncate">{user.email}</p>
                                             <p className="text-[10px] text-slate-500 font-mono">Admin ID: {user.id}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => handleDeleteUser(user.id)} className="text-slate-600 hover:text-red-500 transition px-4">
-                                        <i className="fa-solid fa-trash"></i>
-                                    </button>
+                                    <div className="flex justify-end w-full sm:w-auto">
+                                        <button onClick={() => handleDeleteUser(user.id)} className="text-slate-600 hover:text-red-500 transition px-4 py-2 bg-slate-900/50 sm:bg-transparent rounded-lg">
+                                            <i className="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -557,7 +559,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
 
                     {/* Add User Form */}
                     <div>
-                        <form onSubmit={handleAddUser} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                        <form onSubmit={handleAddUser} className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
                             <h3 className="text-2xl font-black text-white uppercase mb-4">Add New Admin</h3>
                             {addUserMsg.text && (
                                 <div className={`p-4 rounded-xl text-xs font-bold uppercase ${addUserMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>

@@ -27,3 +27,5 @@ dist-ssr
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+backend/venv/
