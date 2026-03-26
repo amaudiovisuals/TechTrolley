@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   Asset,
   AssetStatus,
@@ -11,8 +11,17 @@ import {
   CompanySettings
 } from './types';
 import QRCode from 'qrcode';
+import * as XLSX from 'xlsx';
 
 const GLOBAL_CONSUMABLES_SKU = 'GLOBAL-CONSUMABLES';
+
+function getSkuFamily(sku: string): string {
+  if (!sku) return 'Unknown';
+  const stripped = sku.replace(/-\d+$/, '').replace(/_\d+$/, '');
+  return stripped.replace(/_/g, ' ').trim();
+}
+
+const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 import {
   MOCK_ASSETS,
   MOCK_CLIENTS,
@@ -40,6 +49,7 @@ import { SettingsView } from './components/SettingsView';
 import { ReportsView } from './components/ReportsView';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { QRLabelModal } from './components/QRLabelModal';
+import jsPDF from 'jspdf';
 
 type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings';
 type AssetView = 'List' | 'Form' | 'Details';
@@ -201,7 +211,7 @@ const App: React.FC = () => {
     setCompanySettings({ ...companySettings, dashboard_config: newConfig });
   };
 
-  const apiFetch = async (url: string, options: any = {}) => {
+  const apiFetch = useCallback(async (url: string, options: any = {}) => {
     const token = localStorage.getItem('token');
     const headers: any = {
       ...options.headers,
@@ -217,7 +227,6 @@ const App: React.FC = () => {
       const response = await fetch(url, { ...options, headers });
       if (response.status === 401) {
         handleLogout();
-        // Redirect to login or just let the state change handle it
         return response;
       }
       return response;
@@ -225,7 +234,7 @@ const App: React.FC = () => {
       console.error('API Fetch Error:', error);
       throw error;
     }
-  };
+  }, []);
 
   const handleLogin = (token: string, userData: any) => {
     localStorage.setItem('token', token);
@@ -261,6 +270,8 @@ const App: React.FC = () => {
   // Status for scanner
   const [assets, setAssets] = useState<Asset[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
+  const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
   const [formErrors, setFormErrors] = useState<any>({});
 
   // Pending assignment state for sub-assets
@@ -409,6 +420,7 @@ const App: React.FC = () => {
   // Performance optimizations: Debounced Search & Pagination
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [inventoryPage, setInventoryPage] = useState(1);
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All');
   const itemsPerPage = 20;
 
   useEffect(() => {
@@ -420,14 +432,34 @@ const App: React.FC = () => {
   }, [searchQuery]);
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
-    return assets.filter(a =>
-      (a.aliasName || '').toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-      (a.description || '').toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
-      (a.serialNumber && a.serialNumber.toLowerCase().includes(debouncedSearchQuery.toLowerCase())) ||
-      (a.sku && a.sku.toLowerCase().includes(debouncedSearchQuery.toLowerCase())) ||
-      (a.barcode && a.barcode.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
-    );
-  }, [assets, debouncedSearchQuery]);
+    const q = normalizeSearch(debouncedSearchQuery);
+    return assets.filter(a => {
+      // Category Filter
+      if (inventoryCategoryFilter !== 'All' && a.type !== inventoryCategoryFilter) return false;
+      
+      // Search Filter
+      return !q ||
+        normalizeSearch(a.aliasName || '').includes(q) ||
+        normalizeSearch(a.name || '').includes(q) ||
+        normalizeSearch(a.description || '').includes(q) ||
+        normalizeSearch(a.serialNumber || '').includes(q) ||
+        normalizeSearch(a.sku || '').includes(q) ||
+        normalizeSearch(a.barcode || '').includes(q);
+    });
+  }, [assets, debouncedSearchQuery, inventoryCategoryFilter]);
+  const assetUsageHistory = useMemo(() => {
+    if (!viewingAsset) return { history: [], timesUsed: 0 };
+    const history: { name: string, date: string }[] = [];
+    backendConferences.forEach(c => {
+      const allAssigned = [...(c.assets || []), ...(c.crosscheckAssets || [])];
+      if (allAssigned.some(id => String(id) === String(viewingAsset.id))) {
+        history.push({ name: c.conferenceName || (c as any).name, date: c.startDate });
+      }
+    });
+    // Sort by most recent first
+    history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return { history, timesUsed: history.length };
+  }, [viewingAsset, backendConferences]);
 
   const totalInventoryPages = Math.ceil(filteredInventoryAssets.length / itemsPerPage);
   const paginatedInventoryAssets = filteredInventoryAssets.slice(
@@ -435,12 +467,9 @@ const App: React.FC = () => {
     inventoryPage * itemsPerPage
   );
 
-  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [challanSearchQuery, setChallanSearchQuery] = useState('');
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
-
   // Upload result banner state
   const [uploadResult, setUploadResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
 
@@ -1351,6 +1380,96 @@ const App: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleExportInventory = () => {
+    if (assets.length === 0) {
+      alert("No inventory data to export.");
+      return;
+    }
+
+    // Map assets to a flat structure for Excel
+    const exportData = assets.map(asset => ({
+      'SKU': asset.sku || '',
+      'Name': asset.name || '',
+      'Alias Name': asset.aliasName || '',
+      'Category': asset.type || '',
+      'Status': asset.status || '',
+      'Description': asset.description || '',
+      'Serial Number': asset.serialNumber || '',
+      'MAC Address': asset.macAddress || '',
+      'IMEI 1': asset.imeiNumber1 || '',
+      'IMEI 2': asset.imeiNumber2 || '',
+      'Item Price': asset.itemPrice || 0,
+      'Depreciation %': asset.depreciationPercentage || 0,
+      'Purchased Date': asset.purchasedDate || '',
+      'Available From': asset.availableFrom || '',
+      'Available Till': asset.availableTill || '',
+      'Last Maintained': asset.lastMaintained || '',
+      'Assigned To': asset.assigned_to_name || 'Unassigned',
+      'Barcode Added': asset.isBarcodeAdded ? 'Yes' : 'No',
+    }));
+
+    // Create workbook and worksheet
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
+
+    // Generate and download file
+    const fileName = `TechTrolley_Inventory_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    
+    showScanToast("📊 Inventory exported successfully", "success");
+  };
+
+  const handleDownloadInventoryPDF = () => {
+    // Grouping logic borrowed from ReportsView
+    const grouped: Record<string, Record<string, number>> = {};
+    for (const a of filteredInventoryAssets) {
+      const cat = a.type || 'Other';
+      const family = getSkuFamily(a.sku || a.name || '');
+      if (!grouped[cat]) grouped[cat] = {};
+      grouped[cat][family] = (grouped[cat][family] || 0) + 1;
+    }
+
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    let y = margin;
+
+    // Header
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, pageWidth, 30, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.text(inventoryCategoryFilter === 'All' ? 'Tech Trolley – Inventory Report' : `Tech Trolley – ${inventoryCategoryFilter} Report`, margin, 12);
+    doc.setFontSize(9);
+    doc.text(`Generated: ${new Date().toLocaleString('en-IN')} | ${filteredInventoryAssets.length} Items`, margin, 22);
+    y = 40;
+
+    const catOrder = Object.keys(grouped).sort();
+    for (const cat of catOrder) {
+      if (y > 250) { doc.addPage(); y = margin; }
+      doc.setFillColor(30, 41, 59);
+      doc.rect(margin - 2, y - 4, pageWidth - 2 * margin + 4, 9, 'F');
+      doc.setTextColor(56, 189, 248);
+      doc.setFontSize(11);
+      doc.text(cat.toUpperCase(), margin, y + 1);
+      y += 12;
+
+      const items = Object.entries(grouped[cat]).sort((a, b) => b[1] - a[1]);
+      for (const [name, count] of items) {
+        if (y > 280) { doc.addPage(); y = margin; }
+        doc.setTextColor(30, 30, 30);
+        doc.setFontSize(9);
+        doc.text(`${name}`, margin + 3, y);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`${count} unit${count !== 1 ? 's' : ''}`, pageWidth - margin - 20, y, { align: 'right' });
+        y += 6;
+      }
+      y += 6;
+    }
+    doc.save(`TechTrolley_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   const handleDownloadTemplate = () => {
     // Ultimate fallback for strict Windows PC browsers: fetch the raw bytes,
     // construct an explicit Excel Blob, encode it into a Base64 Data URI, 
@@ -1847,8 +1966,8 @@ const App: React.FC = () => {
 
         <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8 shadow-2xl">
           <div className="flex items-start justify-between border-b border-slate-800/50 pb-8">
-            <div>
-              <h3 className="text-3xl font-black text-white uppercase">{viewingAsset.aliasName || viewingAsset.sku}</h3>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-3xl font-black text-white uppercase truncate">{viewingAsset.aliasName || viewingAsset.sku}</h3>
               <p className="text-sky-400 font-mono text-sm mt-2">{viewingAsset.type}</p>
             </div>
             <div className="flex gap-4">
@@ -1870,7 +1989,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 pb-8 border-b border-slate-800/50">
             <div className="space-y-8">
               <div>
                 <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Description</label>
@@ -1912,9 +2031,15 @@ const App: React.FC = () => {
                     <p className="text-xl text-orange-400 font-black">{viewingAsset.depreciationPercentage}%</p>
                   </div>
                 </div>
-                <div>
-                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Purchased Date</label>
-                  <p className="text-base text-white font-bold">{viewingAsset.purchasedDate ? new Date(viewingAsset.purchasedDate).toLocaleDateString('en-GB') : '-'}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block mb-1">Purchased Date</label>
+                    <p className="text-base text-white font-bold">{viewingAsset.purchasedDate ? new Date(viewingAsset.purchasedDate).toLocaleDateString('en-GB') : '-'}</p>
+                  </div>
+                  <div className="bg-sky-500/10 p-3 rounded-xl border border-sky-500/20 text-center">
+                    <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest block mb-1">Total Programs</label>
+                    <p className="text-2xl text-white font-black">{assetUsageHistory.timesUsed}</p>
+                  </div>
                 </div>
               </div>
 
@@ -1929,6 +2054,26 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* New Section: Deployment History */}
+          <div className="pb-8 border-b border-slate-800/50">
+            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-6">Program Deployment History</h4>
+            {assetUsageHistory.history.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                {assetUsageHistory.history.map((h, i) => (
+                  <div key={i} className="bg-slate-950/20 border border-slate-800/50 p-4 rounded-xl flex justify-between items-center group hover:border-sky-500/30 transition-all">
+                    <p className="text-xs font-bold text-slate-200 uppercase group-hover:text-white truncate pr-4">{h.name}</p>
+                    <p className="text-[10px] font-mono text-slate-500 group-hover:text-sky-400 whitespace-nowrap">{h.date}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 border border-dashed border-slate-800 rounded-2xl text-center">
+                <i className="fa-solid fa-clock-rotate-left text-slate-800 text-3xl mb-4"></i>
+                <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">No previous program history found</p>
+              </div>
+            )}
           </div>
 
           <div className="pt-8 border-t border-slate-800/50">
@@ -2049,11 +2194,13 @@ const App: React.FC = () => {
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-2 mb-4">
                   {assets
                     .filter(a => a.id !== viewingAsset.id && !viewingAsset.sub_assets?.some(sub => sub.id === a.id))
-                    .filter(a => !subAssetSearchQuery ||
-                      (a.aliasName && a.aliasName.toLowerCase().includes(subAssetSearchQuery.toLowerCase())) ||
-                      (a.sku && a.sku.toLowerCase().includes(subAssetSearchQuery.toLowerCase())) ||
-                      (a.serialNumber && a.serialNumber.toLowerCase().includes(subAssetSearchQuery.toLowerCase()))
-                    )
+                    .filter(a => {
+                      const q = normalizeSearch(subAssetSearchQuery);
+                      return !q ||
+                        normalizeSearch(a.aliasName || '').includes(q) ||
+                        normalizeSearch(a.sku || '').includes(q) ||
+                        normalizeSearch(a.serialNumber || '').includes(q);
+                    })
                     .slice(0, 5)
                     .map(a => (
                       <button
@@ -2394,6 +2541,18 @@ const App: React.FC = () => {
           >
             <i className="fa-solid fa-file-csv" /> Import
           </button>
+          <button
+            onClick={handleExportInventory}
+            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-500 transition flex items-center justify-center gap-2"
+          >
+            <i className="fa-solid fa-file-export" /> Excel
+          </button>
+          <button
+            onClick={handleDownloadInventoryPDF}
+            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-orange-600 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-orange-500 transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
+          >
+            <i className="fa-solid fa-file-pdf" /> PDF
+          </button>
           <div className="flex gap-2">
             <div className="relative" ref={registerDropdownRef}>
               <button
@@ -2457,7 +2616,7 @@ const App: React.FC = () => {
         </div>
       )}
       <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
-        <div className="p-4 md:p-8 border-b border-slate-800/40 flex items-center gap-4">
+        <div className="p-4 md:p-8 border-b border-slate-800/40 flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative group">
             <i className="fa-solid fa-search absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-sky-500 transition-colors" />
             <input
@@ -2481,7 +2640,7 @@ const App: React.FC = () => {
               }}
               placeholder="SEARCH OR SCAN EQUIPMENT..."
               ref={inventorySearchRef}
-              className="w-full pl-14 pr-6 py-4 md:py-5 rounded-2xl border border-slate-800 bg-slate-950/40 text-white font-black text-xs md:text-sm uppercase focus:border-sky-500/50 outline-none transition-all placeholder:text-slate-600"
+              className={`w-full pl-14 ${isMobilePhone ? 'pr-16' : 'pr-6'} py-4 md:py-5 rounded-2xl border border-slate-800 bg-slate-950/40 text-white font-black text-xs md:text-sm uppercase focus:border-sky-500/50 outline-none transition-all placeholder:text-slate-600`}
             />
             {isMobilePhone && (
               <button
@@ -2491,6 +2650,22 @@ const App: React.FC = () => {
                 <i className="fa-solid fa-camera text-sm md:text-base group-hover/btn:scale-110 transition-transform" />
               </button>
             )}
+          </div>
+          <div className="md:w-64">
+            <select
+              value={inventoryCategoryFilter}
+              onChange={(e) => {
+                setInventoryCategoryFilter(e.target.value);
+                setInventoryPage(1);
+              }}
+              className="w-full h-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 md:py-0 text-white font-black text-xs uppercase outline-none focus:border-sky-500 transition-all cursor-pointer appearance-none"
+              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
+            >
+              <option value="All">All Categories</option>
+              {Object.values(AssetCategory).map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -2502,7 +2677,7 @@ const App: React.FC = () => {
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-black text-sky-400 font-mono uppercase truncate">{asset.sku}</p>
                   <div className="flex items-center gap-2 mt-1 min-w-0">
-                    <h4 className="text-base font-black text-white uppercase truncate">{asset.aliasName || 'Untiled Asset'}</h4>
+                    <h4 className="text-base font-black text-white uppercase truncate flex-1">{asset.aliasName || 'Untiled Asset'}</h4>
                     {asset.sub_assets && asset.sub_assets.length > 0 && (
                       <span className="w-5 h-5 bg-sky-500/20 text-sky-400 rounded-lg flex items-center justify-center text-[8px]" title="Main Asset with Components">
                         <i className="fa-solid fa-boxes-stacked" />
@@ -2562,8 +2737,8 @@ const App: React.FC = () => {
                   <td className="px-6 py-6">
                     <div className="flex items-center gap-3">
                       <div>
-                        <p className="font-black text-white text-base uppercase">{asset.aliasName || '-'}</p>
-                        <p className="text-[9px] text-slate-500 font-black mt-1 uppercase">MAC: {asset.macAddress || 'N/A'}</p>
+                        <p className="font-black text-white text-base uppercase truncate max-w-[200px]">{asset.aliasName || '-'}</p>
+                        <p className="text-[9px] text-slate-500 font-black mt-1 uppercase truncate">MAC: {asset.macAddress || 'N/A'}</p>
                       </div>
                       {asset.sub_assets && asset.sub_assets.length > 0 && (
                         <div className="px-2 py-1 bg-sky-500/10 border border-sky-500/20 rounded-md flex items-center gap-1.5" title="Main Asset">
@@ -2863,11 +3038,11 @@ const App: React.FC = () => {
 
               return (
                 <tr key={conf.id} className="hover:bg-slate-800/10 transition">
-                  <td className="px-10 py-6">
-                    <p className="font-black text-white text-base uppercase">{conf.conferenceName || conf.name}</p>
+                  <td className="px-10 py-6 min-w-0">
+                    <p className="font-black text-white text-base uppercase truncate max-w-xs">{conf.conferenceName || conf.name}</p>
                     <p className="text-[9px] text-slate-500 font-black mt-1 uppercase">ID: {conf.id}</p>
                   </td>
-                  <td className="px-10 py-6 text-xs text-slate-400 uppercase font-bold">{conf.association}</td>
+                  <td className="px-10 py-6 text-xs text-slate-400 uppercase font-bold truncate max-w-[150px]">{conf.association}</td>
                   <td className="px-10 py-6">
                     <p className="text-xs text-slate-300 font-mono">{new Date(conf.startDate).toLocaleDateString()}</p>
                     <p className="text-[10px] text-slate-500 mt-1 font-mono">to {new Date(conf.endDate).toLocaleDateString()}</p>
@@ -3047,7 +3222,7 @@ const App: React.FC = () => {
         <div className="p-6 md:p-12 max-w-7xl mx-auto">
           {currentPage === 'Dashboard' && renderDashboard()}
           {currentPage === 'Settings' && <SettingsView apiFetch={apiFetch} user={user} />}
-          {currentPage === 'Reports' && <ReportsView apiFetch={apiFetch} />}
+          {currentPage === 'Reports' && <ReportsView apiFetch={apiFetch} user={user} onEditAsset={openEditAssetForm} />}
           {currentPage === 'Assets' && assetView === 'List' && renderInventory()}
           {currentPage === 'Assets' && assetView === 'Details' && renderAssetDetails()}
           {currentPage === 'Employees' && employeeView === 'List' && renderEmployees()}
@@ -3545,10 +3720,10 @@ const App: React.FC = () => {
                           >
                             <div className="flex items-start gap-3">
                               <div className="w-4 h-4 mt-1 rounded border border-slate-600 group-hover:border-sky-500 flex-shrink-0 transition"></div>
-                              <div>
-                                <p className="font-black uppercase text-xs text-slate-300 group-hover:text-white transition">{asset.aliasName || asset.sku}</p>
+                              <div className="min-w-0 flex-1">
+                                <p className="font-black uppercase text-xs text-slate-300 group-hover:text-white transition truncate">{asset.aliasName || asset.sku}</p>
                                 <p className="text-[10px] text-slate-500 uppercase mt-1 line-clamp-1">{asset.description || 'No description'}</p>
-                                <p className="text-[9px] text-slate-600 font-mono mt-1">{asset.sku} • {asset.serialNumber}</p>
+                                <p className="text-[9px] text-slate-600 font-mono mt-1 truncate">{asset.sku} • {asset.serialNumber}</p>
                               </div>
                             </div>
                           </div>
@@ -3573,10 +3748,10 @@ const App: React.FC = () => {
                             })
                             .map(asset => (
                               <div key={asset.id} className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 flex items-start justify-between gap-2">
-                                <div>
-                                  <p className="font-black uppercase text-xs text-white">{asset.aliasName || asset.sku}</p>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-black uppercase text-xs text-white truncate">{asset.aliasName || asset.sku}</p>
                                   <p className="text-[10px] text-slate-400 uppercase mt-1 line-clamp-1">{asset.description || 'No description'}</p>
-                                  <p className="text-[9px] text-slate-500 font-mono mt-1">{asset.sku} • {asset.serialNumber}</p>
+                                  <p className="text-[9px] text-slate-500 font-mono mt-1 truncate">{asset.sku} • {asset.serialNumber}</p>
                                 </div>
                                 {user?.role !== 'godown_incharge' && (
                                   <button
@@ -3611,10 +3786,10 @@ const App: React.FC = () => {
                             })
                             .map(asset => (
                               <div key={asset.id} className="p-4 rounded-xl border border-orange-500/30 bg-orange-500/5 flex items-start justify-between gap-2">
-                                <div>
-                                  <p className="font-black uppercase text-xs text-white">{asset.aliasName || asset.sku}</p>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-black uppercase text-xs text-white truncate">{asset.aliasName || asset.sku}</p>
                                   <p className="text-[10px] text-slate-400 uppercase mt-1 line-clamp-1">{asset.description || 'No description'}</p>
-                                  <p className="text-[9px] text-slate-600 font-mono mt-1">{asset.sku} • {asset.serialNumber}</p>
+                                  <p className="text-[9px] text-slate-600 font-mono mt-1 truncate">{asset.sku} • {asset.serialNumber}</p>
                                 </div>
                                 {(user?.role === 'godown_incharge' || user?.is_staff) && (
                                   <button
@@ -3917,9 +4092,10 @@ const App: React.FC = () => {
               <div className="max-h-[40vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                 {assets
                   .filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0)
-                  .filter(a =>
-                    (a.aliasName || a.sku).toLowerCase().includes(consumablesPickerSearchQuery.toLowerCase())
-                  )
+                  .filter(a => {
+                    const q = normalizeSearch(consumablesPickerSearchQuery);
+                    return normalizeSearch(a.aliasName || a.sku || '').includes(q);
+                  })
                   .map(a => (
                     <button
                       key={a.id}

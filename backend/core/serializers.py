@@ -2,18 +2,9 @@ from rest_framework import serializers
 from .models import Asset, Employee
 
 class EmployeeSerializer(serializers.ModelSerializer):
-    role = serializers.SerializerMethodField()
-
     class Meta:
         model = Employee
         fields = '__all__'
-
-    def get_role(self, obj):
-        from django.contrib.auth.models import User
-        user = User.objects.filter(username=obj.email).first()
-        if user and hasattr(user, 'profile'):
-            return user.profile.role
-        return 'technician'
 
 class SubAssetSerializer(serializers.ModelSerializer):
     """Lightweight serializer used for nested sub_assets — avoids recursion."""
@@ -29,8 +20,10 @@ class SubAssetSerializer(serializers.ModelSerializer):
         ]
 
     def get_current_conference_name(self, obj):
-        # Check if asset is in assigned_conferences (status = In Use)
-        # or crosscheck_conferences (status = Crosscheck)
+        # Prefer the efficient annotation if provided by the view
+        if hasattr(obj, 'annotated_conference'):
+            return obj.annotated_conference
+        # Fallback to the original (slower) logic for compatibility with other views
         conf = obj.assigned_conferences.first() or obj.crosscheck_conferences.first()
         return conf.name if conf else None
 
@@ -55,6 +48,8 @@ class AssetSerializer(serializers.ModelSerializer):
         ]
 
     def get_current_conference_name(self, obj):
+        if hasattr(obj, 'annotated_conference'):
+            return obj.annotated_conference
         conf = obj.assigned_conferences.first() or obj.crosscheck_conferences.first()
         return conf.name if conf else None
 

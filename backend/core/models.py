@@ -12,13 +12,24 @@ class Asset(models.Model):
     ]
     
     CATEGORY_CHOICES = [
-        ('Sound System', 'Sound System'),
-        ('AV Equipment', 'AV Equipment'),
+        ('Speakers & Audio', 'Speakers & Audio'),
+        ('Audio Mixers', 'Audio Mixers'),
+        ('Microphones', 'Microphones'),
+        ('Laptops', 'Laptops'),
+        ('Smartphones', 'Smartphones'),
+        ('Computers & Servers', 'Computers & Servers'),
         ('IT & Networking', 'IT & Networking'),
-        ('LED Wall', 'LED Wall'),
-        ('Lighting', 'Lighting'),
-        ('Power', 'Power'),
-        ('Truss & Rigging', 'Truss & Rigging'),
+        ('Peripherals', 'Peripherals'),
+        ('Monitors', 'Monitors'),
+        ('TVs', 'TVs'),
+        ('Projectors', 'Projectors'),
+        ('Lighting & LED', 'Lighting & LED'),
+        ('Video Switchers', 'Video Switchers'),
+        ('Capture Cards', 'Capture Cards'),
+        ('Splitters & Converters', 'Splitters & Converters'),
+        ('Cameras', 'Cameras'),
+        ('UPS & Power', 'UPS & Power'),
+        ('Printers', 'Printers'),
         ('Consumables', 'Consumables'),
         ('Other', 'Other'),
     ]
@@ -67,6 +78,7 @@ class Employee(models.Model):
     department = models.CharField(max_length=100)
     email = models.EmailField()
     phone = models.CharField(max_length=20)
+    role = models.CharField(max_length=50, default='technician', blank=True)
     joined_at = models.DateField(auto_now_add=True, null=True, blank=True)
 
     def __str__(self):

@@ -7,13 +7,24 @@ export enum AssetStatus {
 }
 
 export enum AssetCategory {
-  SOUND = 'Sound System',
-  AV = 'AV Equipment',
+  SPEAKERS = 'Speakers & Audio',
+  MIXERS = 'Audio Mixers',
+  MICS = 'Microphones',
+  LAPTOPS = 'Laptops',
+  SMARTPHONES = 'Smartphones',
+  COMPUTERS = 'Computers & Servers',
   IT = 'IT & Networking',
-  LED = 'LED Wall',
-  LIGHTING = 'Lighting',
-  POWER = 'Power',
-  TRUSS = 'Truss & Rigging',
+  PERIPHERALS = 'Peripherals',
+  MONITORS = 'Monitors',
+  TVS = 'TVs',
+  PROJECTORS = 'Projectors',
+  LIGHTING = 'Lighting & LED',
+  SWITCHERS = 'Video Switchers',
+  CAPTURE = 'Capture Cards',
+  CONVERTERS = 'Splitters & Converters',
+  CAMERAS = 'Cameras',
+  POWER = 'UPS & Power',
+  PRINTERS = 'Printers',
   CONSUMABLES = 'Consumables',
   OTHER = 'Other'
 }

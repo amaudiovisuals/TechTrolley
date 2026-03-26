@@ -28,16 +28,22 @@ from .serializers import AssetSerializer, EmployeeSerializer
 @api_view(['GET', 'POST'])
 def asset_list(request):
     if request.method == 'GET':
-        # Use select_related for ForeignKey and prefetch_related for ManyToMany/Reverse relations
-        # to eliminate N+1 query overhead for 1800+ assets.
-        assets = Asset.objects.select_related('assigned_to', 'parent_asset').prefetch_related(
-            'assigned_conferences', 
-            'crosscheck_conferences', 
+        from django.db.models import OuterRef, Subquery
+        from django.db.models.functions import Coalesce
+        from .models import Conference
+        from django.db.models import Value
+
+        # Optimized subqueries to get the current conference name without N+1 hits
+        assigned_qs = Conference.objects.filter(assets=OuterRef('pk')).values('name')[:1]
+        crosscheck_qs = Conference.objects.filter(crosscheck_assets=OuterRef('pk')).values('name')[:1]
+
+        assets = Asset.objects.annotate(
+            annotated_conference=Coalesce(Subquery(assigned_qs), Subquery(crosscheck_qs), Value(None))
+        ).select_related('assigned_to', 'parent_asset').prefetch_related(
             'sub_assets',
             'sub_assets__assigned_to',
-            'sub_assets__assigned_conferences',
-            'sub_assets__crosscheck_conferences'
         ).all()
+        
         serializer = AssetSerializer(assets, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
@@ -57,7 +63,32 @@ def asset_detail(request, pk):
 
     elif request.method in ['PUT', 'PATCH']:
         partial = (request.method == 'PATCH')
-        serializer = AssetSerializer(asset, data=request.data, partial=partial)
+        
+        # Handle system user assignment (bridging to Employee record)
+        assigned_to = request.data.get('assigned_to')
+        if assigned_to and isinstance(assigned_to, str) and assigned_to.startswith('u-'):
+            user_id = assigned_to.split('-')[1]
+            from django.contrib.auth.models import User
+            from .models import Employee
+            u = get_object_or_404(User, pk=user_id)
+            # Find or create matching employee
+            emp, created = Employee.objects.get_or_create(
+                email=u.email,
+                defaults={
+                    'name': u.email.split('@')[0].upper(),
+                    'employee_id': f"SYS-{u.id}",
+                    'department': 'Management',
+                    'phone': '-',
+                    'role': u.profile.role if hasattr(u, 'profile') else 'admin'
+                }
+            )
+            # Update the request data to use the actual Employee ID
+            data = request.data.copy()
+            data['assigned_to'] = emp.id
+            serializer = AssetSerializer(asset, data=data, partial=partial)
+        else:
+            serializer = AssetSerializer(asset, data=request.data, partial=partial)
+            
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

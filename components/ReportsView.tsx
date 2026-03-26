@@ -1,411 +1,434 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Asset, Booking, Employee, AssetCategory } from '../types';
-import jsPDF from 'jspdf';
+import jsPDFLib from 'jspdf';
+import * as XLSX from 'xlsx';
 
 interface ReportsViewProps {
     apiFetch: (url: string, options?: RequestInit) => Promise<Response>;
+    user?: any;
+    onEditAsset?: (asset: Asset) => void;
 }
 
-// Extracts the "product family" from a SKU by stripping the trailing unit number (-1, -12, etc.)
-// e.g., "BOSE_S1_PRO_PLUS-4" -> "BOSE S1 PRO PLUS"
-function getSkuFamily(sku: string): string {
-    if (!sku) return 'Unknown';
-    const stripped = sku.replace(/-\d+$/, '').replace(/_\d+$/, '');
-    return stripped.replace(/_/g, ' ').trim();
-}
+const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 
-export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch }) => {
-    const [activeTab, setActiveTab] = useState<'Inventory' | 'Conferences'>('Inventory');
+export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEditAsset }) => {
+    const [activeTab, setActiveTab] = useState<'Conferences' | 'Personal'>('Conferences');
 
+    // Data State
     const [assets, setAssets] = useState<Asset[]>([]);
     const [conferences, setConferences] = useState<Booking[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Filters
-    const [invCategory, setInvCategory] = useState<string>('All');
-    const [invSubCategory, setInvSubCategory] = useState<string>('All');
-    const [invSearch, setInvSearch] = useState('');
+    // Filters & Pagination
     const [confSearch, setConfSearch] = useState('');
     const [confStartDate, setConfStartDate] = useState('');
     const [confEndDate, setConfEndDate] = useState('');
+    
+    const [empSearch, setEmpSearch] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 20;
 
-    useEffect(() => {
-        const loadReportData = async () => {
-            setLoading(true);
-            try {
-                const [assetsRes, confRes, empRes] = await Promise.all([
-                    apiFetch('/api/assets/'),
-                    apiFetch('/api/conferences/'),
-                    apiFetch('/api/employees/')
-                ]);
-                if (assetsRes.ok) setAssets(await assetsRes.json());
-                if (confRes.ok) setConferences(await confRes.json());
-                if (empRes.ok) setEmployees(await empRes.json());
-            } catch (err) {
-                console.error("Failed to load report data", err);
+    // Modals
+    const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
+    const [isAssigningTo, setIsAssigningTo] = useState<Employee | null>(null);
+    const [assignmentSearch, setAssignmentSearch] = useState('');
+
+    // ─── Data Loading ──────────────────────────────────────────
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [assetsRes, confRes, empRes, usersRes] = await Promise.all([
+                apiFetch('/api/assets/'),
+                apiFetch('/api/conferences/'),
+                apiFetch('/api/employees/'),
+                apiFetch('/api/system-users/')
+            ]);
+            
+            let loadedAssets: Asset[] = assetsRes.ok ? await assetsRes.json() : [];
+            let loadedConferences: Booking[] = confRes.ok ? await confRes.json() : [];
+            let loadedEmployees: Employee[] = empRes.ok ? await empRes.json() : [];
+            
+            // Bridge System Users to Employees for Assignment
+            if (usersRes.ok) {
+                const systemUsers = await usersRes.json();
+                const existingEmails = new Set(loadedEmployees.map(e => (e.email || '').toLowerCase()));
+                systemUsers.forEach((u: any) => {
+                    if (u.email && !existingEmails.has(u.email.toLowerCase())) {
+                        loadedEmployees.push({
+                            id: `u-${u.id}`,
+                            name: u.email.split('@')[0].toUpperCase(),
+                            employee_id: `SYS-${u.id}`,
+                            department: 'Management',
+                            email: u.email,
+                            role: u.role || 'admin',
+                            phone: '-',
+                            joined_at: u.date_joined
+                        } as any);
+                    }
+                });
             }
-            setLoading(false);
-        };
-        loadReportData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
-    const employeeMap = useMemo(() => {
-        const map: Record<string, string> = {};
-        employees.forEach(emp => { map[String(emp.id)] = emp.name; });
-        return map;
-    }, [employees]);
-
-    // ─── Derived per-category subcategory map (from actual DB SKUs) ────────────────────
-    const dynamicSubcategoryMap = useMemo(() => {
-        const map: Record<string, Set<string>> = {};
-        for (const a of assets) {
-            const cat = a.type;
-            if (!cat || cat === 'Other') continue;
-            const family = getSkuFamily(a.sku || a.name || '');
-            if (!family || family.toUpperCase().startsWith('TEST') || family.toUpperCase() === 'NIHAL TEST') continue;
-            if (!map[cat]) map[cat] = new Set();
-            map[cat].add(family);
-        }
-        // Convert sets to sorted arrays
-        const result: Record<string, string[]> = {};
-        for (const cat of Object.keys(map)) {
-            result[cat] = Array.from(map[cat]).sort();
-        }
-        return result;
-    }, [assets]);
-
-    // ─── Inventory table rows ──────────────────────────────────────────────────────────
-    const formattedInventory = useMemo(() => {
-        return assets.map(a => {
-            let timesUsed = 0;
-            conferences.forEach(c => {
-                if (
-                    (c.assets && c.assets.some(id => String(id) === String(a.id))) ||
-                    (c.crosscheckAssets && c.crosscheckAssets.some(id => String(id) === String(a.id)))
-                ) timesUsed++;
+            const mapAsset = (a: any) => ({
+                ...a,
+                aliasName: a.alias_name || a.aliasName,
+                serialNumber: a.serial_number || a.serialNumber,
+                purchasedDate: a.purchased_date || a.purchasedDate,
+                availableFrom: a.available_from || a.availableFrom,
+                availableTill: a.available_till || a.availableTill,
+                isBarcodeAdded: a.is_barcode_added || a.isBarcodeAdded,
+                itemPrice: a.item_price || a.itemPrice,
+                depreciationPercentage: a.depreciation_percentage || a.depreciationPercentage,
+                currentVenue: a.current_venue || a.currentVenue,
+                returnDate: a.return_date || a.returnDate
             });
 
-            let ageYears = 0, expectedLifeYears = 0, lifeConsumedPercent = 0;
-            if (a.purchasedDate) {
-                const ageMs = new Date().getTime() - new Date(a.purchasedDate).getTime();
-                ageYears = ageMs / (1000 * 60 * 60 * 24 * 365);
-                if (a.depreciationPercentage && a.depreciationPercentage > 0) {
-                    expectedLifeYears = 100 / a.depreciationPercentage;
-                    lifeConsumedPercent = Math.min(100, Math.round((ageYears / expectedLifeYears) * 100));
+            setAssets(loadedAssets.map(mapAsset));
+            setConferences(loadedConferences);
+            setEmployees(loadedEmployees);
+            
+        } catch (err) {
+            console.error("Reports Load Error:", err);
+        } finally {
+            setLoading(false);
+        }
+    }, [apiFetch]);
+
+    useEffect(() => { loadData(); }, [loadData]);
+
+    // ─── Memoized Computations (Performance) ───────────────────
+    
+    // Group all assets by their assigned_to ID once
+    const assignmentsMap = useMemo(() => {
+        const map: Record<string, Asset[]> = {};
+        assets.forEach(a => {
+            if (a.assigned_to) {
+                const eid = String(a.assigned_to);
+                const isLaptop = a.type === 'Laptops' || a.type === AssetCategory.LAPTOPS || 
+                                (a.sku || '').toUpperCase().includes('LAPTOP') || 
+                                (a.sku || '').toUpperCase().includes('MACBOOK');
+                if (isLaptop) {
+                    if (!map[eid]) map[eid] = [];
+                    map[eid].push(a);
                 }
             }
-            return { ...a, timesUsed, lifeConsumedPercent, expectedLifeYears };
-        }).filter(a => {
-            if (invCategory !== 'All' && a.type !== invCategory) return false;
-            if (invSubCategory !== 'All') {
-                const subStr = invSubCategory.toLowerCase();
-                const matchSKU = (a.sku || '').replace(/_/g, ' ').toLowerCase().includes(subStr);
-                const matchName = (a.aliasName || a.name || '').toLowerCase().includes(subStr);
-                if (!matchSKU && !matchName) return false;
-            }
-            if (invSearch) {
-                const q = invSearch.toLowerCase();
-                return (a.aliasName || a.name || '').toLowerCase().includes(q)
-                    || (a.description || '').toLowerCase().includes(q)
-                    || (a.sku || '').toLowerCase().includes(q);
-            }
-            return true;
         });
-    }, [assets, conferences, invCategory, invSubCategory, invSearch]);
-
-    // ─── Grouped counts for PDF ────────────────────────────────────────────────────────
-    const groupedPdfData = useMemo(() => {
-        const groups: Record<string, Record<string, number>> = {};
-        for (const a of assets) {
-            const cat = a.type || 'Other';
-            const family = getSkuFamily(a.sku || a.name || '');
-            if (!groups[cat]) groups[cat] = {};
-            groups[cat][family] = (groups[cat][family] || 0) + 1;
-        }
-        return groups;
+        return map;
     }, [assets]);
 
-    // ─── PDF Export ────────────────────────────────────────────────────────────────────
-    const downloadPDF = useCallback(() => {
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const margin = 15;
-        let y = margin;
-
-        // Header
-        doc.setFillColor(15, 23, 42);
-        doc.rect(0, 0, pageWidth, 30, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(18);
-        doc.text('Tech Trolley – Asset Inventory Report', margin, 12);
-        doc.setFontSize(9);
-        doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, margin, 22);
-        y = 38;
-
-        const catOrder = Object.keys(groupedPdfData).sort();
-        for (const cat of catOrder) {
-            // Category header
-            doc.setFillColor(30, 41, 59);
-            doc.rect(margin - 2, y - 4, pageWidth - 2 * margin + 4, 9, 'F');
-            doc.setTextColor(56, 189, 248);
-            doc.setFontSize(11);
-            doc.text(cat.toUpperCase(), margin, y + 1);
-            y += 12;
-
-            const items = Object.entries(groupedPdfData[cat]).sort((a, b) => b[1] - a[1]);
-            for (const [name, count] of items) {
-                if (y > 270) {
-                    doc.addPage();
-                    y = margin;
-                }
-                doc.setTextColor(30, 30, 30);
-                doc.setFontSize(9);
-                const displayName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-                doc.text(`${displayName}`, margin + 3, y);
-                doc.setTextColor(100, 100, 100);
-                doc.text(`${count} unit${count !== 1 ? 's' : ''}`, pageWidth - margin - 20, y, { align: 'right' });
-                y += 6;
+    // Calculate usage history ONLY for the asset in the detail modal (On-demand)
+    const assetDetailData = useMemo(() => {
+        if (!detailAsset) return null;
+        const history: { name: string, date: string }[] = [];
+        conferences.forEach(c => {
+            const allAssigned = [...(c.assets || []), ...(c.crosscheckAssets || [])];
+            if (allAssigned.some(id => String(id) === String(detailAsset.id))) {
+                history.push({ name: c.conferenceName || (c as any).name, date: c.startDate });
             }
+        });
+        return { history, timesUsed: history.length };
+    }, [detailAsset, conferences]);
 
-            // Category total
-            const totalUnits = items.reduce((s, [, c]) => s + c, 0);
-            doc.setDrawColor(200, 200, 200);
-            doc.line(margin, y, pageWidth - margin, y);
-            doc.setTextColor(100, 116, 139);
-            doc.setFontSize(8);
-            doc.text(`Total: ${totalUnits} units across ${items.length} model${items.length !== 1 ? 's' : ''}`, margin + 3, y + 4);
-            y += 12;
-        }
+    // ─── Filtering & Pagination ───────────────────────────────
+    
+    const filteredEmployees = useMemo(() => {
+        return employees.filter(e => {
+            if (!empSearch) return true;
+            const q = normalizeSearch(empSearch);
+            return normalizeSearch(e.name).includes(q) || normalizeSearch(e.employee_id).includes(q);
+        });
+    }, [employees, empSearch]);
 
-        doc.save(`TechTrolley_Inventory_${new Date().toISOString().slice(0, 10)}.pdf`);
-    }, [groupedPdfData]);
+    const paginatedEmployees = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredEmployees.slice(start, start + itemsPerPage);
+    }, [filteredEmployees, currentPage]);
 
-    // ─── Conference data ───────────────────────────────────────────────────────────────
-    const formattedConferences = useMemo(() => {
+    const totalEmpPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+
+    const filteredConferences = useMemo(() => {
         return conferences.filter(c => {
-            if (confSearch) {
-                const q = confSearch.toLowerCase();
-                if (!(c.conferenceName || c.name || '').toLowerCase().includes(q) &&
-                    !(c.associationName || '').toLowerCase().includes(q)) return false;
-            }
-            if (confStartDate && new Date(c.startDate) < new Date(confStartDate)) return false;
-            if (confEndDate && new Date(c.endDate) > new Date(confEndDate)) return false;
-            return true;
+             if (confSearch) {
+                 const q = confSearch.toLowerCase();
+                 if (!(c.conferenceName || (c as any).name || '').toLowerCase().includes(q) && 
+                     !(c.associationName || '').toLowerCase().includes(q)) return false;
+             }
+             if (confStartDate && new Date(c.startDate) < new Date(confStartDate)) return false;
+             if (confEndDate && new Date(c.endDate) > new Date(confEndDate)) return false;
+             return true;
         });
     }, [conferences, confSearch, confStartDate, confEndDate]);
 
-    const subCatsForCategory = invCategory !== 'All' ? (dynamicSubcategoryMap[invCategory] || []) : [];
+    // ─── Actions ─────────────────────────────────────────────
+    
+    const handleAssignLaptop = async (assetId: number, employeeId: string | number) => {
+        try {
+            const response = await apiFetch(`/api/assets/${assetId}/`, {
+                method: 'PATCH',
+                body: JSON.stringify({ assigned_to: employeeId })
+            });
+            if (response.ok) {
+                setIsAssigningTo(null);
+                setAssignmentSearch('');
+                loadData();
+            }
+        } catch (err) {
+            console.error("Assign Error:", err);
+        }
+    };
 
-    if (loading) {
+    const downloadPDF = () => {
+        const doc = new jsPDFLib({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        doc.setFontSize(16);
+        doc.text('Employee Laptop Assignments', 15, 20);
+        doc.setFontSize(10);
+        let y = 30;
+        employees.forEach((emp) => {
+            const assigned = assignmentsMap[String(emp.id)] || [];
+            if (assigned.length > 0) {
+                if (y > 270) { doc.addPage(); y = 20; }
+                doc.setFont('helvetica', 'bold');
+                doc.text(`${emp.name} (${emp.employee_id}) - ${(emp as any).role || emp.department}`, 15, y);
+                y += 5;
+                doc.setFont('helvetica', 'normal');
+                assigned.forEach(l => {
+                    doc.text(`• ${l.aliasName || l.sku} [${l.sku}]`, 20, y);
+                    y += 5;
+                });
+                y += 5;
+            }
+        });
+        doc.save(`Employee_Laptops_${new Date().toISOString().slice(0, 10)}.pdf`);
+    };
+
+    const exportToExcel = () => {
+        const data = employees.map(emp => {
+            const assigned = assignmentsMap[String(emp.id)] || [];
+            return {
+                'Employee ID': emp.employee_id,
+                'Employee Name': emp.name,
+                'Role': (emp as any).role || emp.department || '-',
+                'Assigned Laptops': assigned.map(l => l.aliasName || l.sku).join(', ')
+            };
+        });
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Employee Laptops");
+        XLSX.writeFile(wb, `Employee_Laptops_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    };
+
+    // ─── Render Components ────────────────────────────────────
+
+    const renderAssetModal = () => {
+        if (!detailAsset || !assetDetailData) return null;
         return (
-            <div className="flex items-center justify-center h-full">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-200">
+                <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setDetailAsset(null)}></div>
+                <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden pointer-events-auto">
+                    <div className="p-8 border-b border-slate-800 flex justify-between items-start">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-2xl font-black text-white uppercase truncate">{detailAsset.aliasName || (detailAsset as any).name}</h3>
+                            <p className="text-sky-400 font-mono text-xs mt-1">{detailAsset.sku}</p>
+                        </div>
+                        <button onClick={() => setDetailAsset(null)} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition">
+                            <i className="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                    </div>
+                    <div className="p-8 space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Purchased On</p>
+                                <p className="text-sm font-bold text-white">{detailAsset.purchasedDate || 'N/A'}</p>
+                            </div>
+                            <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Implementations</p>
+                                <p className="text-xl font-black text-orange-400">{assetDetailData.timesUsed}</p>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            <h4 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Deployment History</h4>
+                            {assetDetailData.history.length > 0 ? (
+                                <div className="space-y-2">
+                                    {assetDetailData.history.map((h, i) => (
+                                        <div key={i} className="flex justify-between items-center bg-slate-950/20 p-4 rounded-xl border border-slate-800/50">
+                                            <p className="text-sm font-bold text-slate-200 uppercase">{h.name}</p>
+                                            <p className="text-xs font-mono text-slate-500">{h.date}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (<p className="text-xs text-slate-600 italic">No usage history found.</p>)}
+                        </div>
+                    </div>
+                    {(user?.role === 'admin' || user?.is_staff) && onEditAsset && (
+                        <div className="p-6 bg-slate-950/40 border-t border-slate-800">
+                            <button onClick={() => { onEditAsset(detailAsset); setDetailAsset(null); }} className="w-full py-4 bg-sky-500 text-white rounded-xl font-black uppercase text-xs hover:bg-sky-400 transition">Edit Assignment</button>
+                        </div>
+                    )}
+                </div>
             </div>
         );
-    }
+    };
+
+    const renderAssignmentModal = () => {
+        if (!isAssigningTo) return null;
+        let pool = assets.filter(a => {
+            if (a.assigned_to) return false;
+            if (assignmentSearch) return true; // Broad search if typing
+            const searchPool = (a.type + ' ' + a.sku + ' ' + (a.aliasName || '') + ' ' + (a.name || '')).toUpperCase();
+            return a.type === 'Laptops' || a.type === AssetCategory.LAPTOPS || a.type === AssetCategory.COMPUTERS || a.type === AssetCategory.IT ||
+                   searchPool.includes('LAPTOP') || searchPool.includes('MACBOOK') || searchPool.includes('MAC') || searchPool.includes('THINKPAD');
+        });
+
+        if (assignmentSearch) {
+            const q = normalizeSearch(assignmentSearch);
+            pool = pool.filter(l => 
+                normalizeSearch(l.aliasName || (l as any).alias_name || (l as any).name || '').includes(q) || 
+                normalizeSearch(l.sku).includes(q) || 
+                normalizeSearch(l.serialNumber || (l as any).serial_number || '').includes(q)
+            );
+        }
+
+        return (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm" onClick={() => { setIsAssigningTo(null); setAssignmentSearch(''); }}></div>
+                <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden p-8 space-y-6">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-xl font-black text-white uppercase">Assign to {isAssigningTo.name}</h3>
+                        <button onClick={() => { setIsAssigningTo(null); setAssignmentSearch(''); }} className="w-10 h-10 flex items-center justify-center text-slate-500 hover:text-white transition"><i className="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div className="relative">
+                        <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                        <input type="text" placeholder="SKU, NAME OR SERIAL..." value={assignmentSearch} onChange={e => setAssignmentSearch(e.target.value)} className="form-input-night pl-10 h-12 text-[10px] font-black uppercase tracking-widest w-full" />
+                    </div>
+                    <div className="max-h-[40vh] overflow-y-auto space-y-2 custom-scrollbar pr-2">
+                        {pool.slice(0, 50).map(l => (
+                            <button key={l.id} onClick={() => handleAssignLaptop(l.id as any, isAssigningTo.id)} className="w-full p-4 bg-slate-950/40 border border-slate-800 rounded-2xl flex justify-between items-center hover:bg-sky-500/10 hover:border-sky-500/50 transition-all text-left group">
+                                <div>
+                                    <p className="font-bold text-white text-sm uppercase group-hover:text-sky-400 transition-colors">{l.aliasName || (l as any).name}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">{l.sku}</p>
+                                </div>
+                                <i className="fa-solid fa-plus text-sky-400"></i>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div></div>;
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-                <h2 className="text-4xl md:text-5xl font-black text-orange-500 uppercase">System Reports</h2>
+            {renderAssetModal()}
+            {renderAssignmentModal()}
 
-                {activeTab === 'Inventory' && (
-                    <button
-                        onClick={downloadPDF}
-                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm px-5 py-3 rounded-2xl transition-all shadow-lg hover:shadow-emerald-500/30"
-                    >
-                        <i className="fa-solid fa-file-pdf text-white"></i>
-                        Download Full Report PDF
+            <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-4">
+                    <h2 className="text-4xl md:text-5xl font-black text-orange-500 uppercase">System Reports</h2>
+                    <button onClick={loadData} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-sky-400 transition" title="Manual Refresh">
+                        <i className={`fa-solid fa-rotate ${loading ? 'animate-spin' : ''}`}></i>
                     </button>
-                )}
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={exportToExcel} className="flex items-center gap-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white font-bold text-xs px-5 py-3 rounded-2xl transition-all"><i className="fa-solid fa-file-excel text-emerald-500"></i> Excel</button>
+                    <button onClick={downloadPDF} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-5 py-3 rounded-2xl transition-all shadow-lg hover:shadow-emerald-500/30"><i className="fa-solid fa-file-pdf"></i> PDF</button>
+                </div>
             </div>
 
-            <div className="flex border-b border-slate-800 gap-8">
-                {(['Inventory', 'Conferences'] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`pb-4 text-sm font-bold uppercase tracking-widest transition-colors relative ${activeTab === tab ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
-                    >
-                        {tab === 'Inventory' ? 'Inventory Assets' : 'Conferences'}
-                        {activeTab === tab && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-sky-400 rounded-t-full" />}
+            <div className="flex border-b border-slate-800 gap-8 overflow-x-auto no-scrollbar">
+                {(['Conferences', 'Personal'] as const).map(tab => (
+                    <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-4 text-xs font-black uppercase tracking-widest transition-colors relative whitespace-nowrap ${activeTab === tab ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}>
+                        {tab === 'Conferences' ? 'Conferences' : 'Employee Assets'}
+                        {activeTab === tab && <div className="absolute bottom-0 left-0 w-full h-1 bg-sky-400 rounded-t-full" />}
                     </button>
                 ))}
             </div>
 
-            {activeTab === 'Inventory' && (
-                <div className="bg-slate-900/30 p-5 md:p-8 rounded-[2rem] border border-slate-800/50 space-y-6">
-                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                            {/* Main Category */}
-                            <select
-                                value={invCategory}
-                                onChange={e => { setInvCategory(e.target.value); setInvSubCategory('All'); }}
-                                className="form-select-night py-3 text-sm min-w-[200px]"
-                            >
-                                <option value="All">All Categories</option>
-                                {Object.values(AssetCategory).map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                            </select>
-
-                            {/* Dynamic Sub-Category from real SKU data */}
-                            {invCategory !== 'All' && subCatsForCategory.length > 0 && (
-                                <select
-                                    value={invSubCategory}
-                                    onChange={e => setInvSubCategory(e.target.value)}
-                                    className="form-select-night py-3 text-sm min-w-[220px] border-sky-900/50 bg-sky-950/20 text-sky-400 focus:border-sky-500"
-                                >
-                                    <option value="All">All Models ({assets.filter(a => a.type === invCategory).length} items)</option>
-                                    {subCatsForCategory.map(sub => {
-                                        const count = assets.filter(a => a.type === invCategory && (
-                                            (a.sku || '').replace(/_/g, ' ').toLowerCase().includes(sub.toLowerCase()) ||
-                                            (a.aliasName || a.name || '').toLowerCase().includes(sub.toLowerCase())
-                                        )).length;
-                                        return (
-                                            <option key={sub} value={sub}>{sub} ({count})</option>
-                                        );
-                                    })}
-                                </select>
-                            )}
-                        </div>
-
-                        {/* Search */}
-                        <div className="relative w-full lg:w-80">
-                            <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
-                            <input
-                                type="text"
-                                placeholder="Search by name, SKU..."
-                                value={invSearch}
-                                onChange={e => setInvSearch(e.target.value)}
-                                className="form-input-night pl-11 py-3 text-sm w-full"
-                            />
-                        </div>
+            {activeTab === 'Personal' && (
+                <div className="bg-slate-900/30 p-5 md:p-8 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Employee Assets</h3>
+                        <input type="text" placeholder="SEARCH EMPLOYEE NAME OR ID..." value={empSearch} onChange={e => { setEmpSearch(e.target.value); setCurrentPage(1); }} className="form-input-night px-6 py-4 text-[10px] font-black uppercase tracking-widest w-full md:w-96" />
                     </div>
-
-                    <p className="text-xs text-slate-500">
-                        Showing <span className="text-sky-400 font-bold">{formattedInventory.length}</span> items
-                    </p>
-
-                    <div className="overflow-x-auto rounded-3xl border border-slate-800/50 bg-slate-950/50 shadow-xl backdrop-blur-xl">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="border-b border-slate-800/50">
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Asset</th>
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Category</th>
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Lifecycle</th>
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Programs Used</th>
+                    <div className="overflow-x-auto rounded-[1.5rem] border border-slate-800/50 bg-slate-950/40">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-900/50 border-b border-slate-800">
+                                <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                    <th className="p-6">Employee</th>
+                                    <th className="p-6">Role</th>
+                                    <th className="p-6">Assigned Hardware</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                {formattedInventory.slice(0, 300).map(asset => (
-                                    <tr key={asset.id} className="border-b border-slate-800/50 last:border-0 hover:bg-slate-800/20 transition-colors">
-                                        <td className="p-4 md:p-6">
-                                            <p className="font-bold text-white text-sm break-words">{asset.aliasName || asset.name}</p>
-                                            <p className="text-[10px] text-slate-400 font-mono mt-1 break-all">{asset.sku}</p>
-                                        </td>
-                                        <td className="p-4 md:p-6 text-sm text-slate-300">{asset.type}</td>
-                                        <td className="p-4 md:p-6">
-                                            {asset.lifeConsumedPercent > 0 ? (
-                                                <>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="flex-1 w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
-                                                            <div
-                                                                className={`h-full rounded-full ${asset.lifeConsumedPercent > 80 ? 'bg-rose-500' : asset.lifeConsumedPercent > 50 ? 'bg-orange-500' : 'bg-emerald-500'}`}
-                                                                style={{ width: `${asset.lifeConsumedPercent}%` }}
-                                                            ></div>
+                            <tbody className="divide-y divide-slate-800/20">
+                                {paginatedEmployees.map(emp => {
+                                    const assigned = assignmentsMap[String(emp.id)] || [];
+                                    return (
+                                        <tr key={emp.id} className="hover:bg-sky-500/5 transition-all text-sm font-bold">
+                                            <td className="p-6">
+                                                <p className="text-white uppercase">{emp.name}</p>
+                                                <p className="text-[9px] text-slate-500 font-mono mt-1">ID: {emp.employee_id}</p>
+                                            </td>
+                                            <td className="p-6">
+                                                <span className="px-3 py-1 bg-slate-800 text-[10px] font-black text-slate-400 uppercase rounded-lg">{(emp as any).role || emp.department || '-'}</span>
+                                            </td>
+                                            <td className="p-6">
+                                                <div className="flex flex-wrap gap-4 items-center">
+                                                    {assigned.length > 0 ? (
+                                                        <div className="flex-1 space-y-1">
+                                                            {assigned.map(l => (
+                                                                <div key={l.id} className="flex items-center gap-2">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                                    <p className="text-xs text-slate-200 uppercase">{l.aliasName || l.sku}</p>
+                                                                    <button onClick={() => setDetailAsset(l)} className="text-[9px] text-sky-400 font-black uppercase hover:text-white transition-colors">Details</button>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                        <span className="text-xs font-bold text-slate-400">{asset.lifeConsumedPercent}%</span>
-                                                    </div>
-                                                    <p className="text-[10px] text-slate-500 mt-1">Since: {asset.purchasedDate}</p>
-                                                </>
-                                            ) : (
-                                                <span className="text-xs text-slate-600 italic">No data</span>
-                                            )}
-                                        </td>
-                                        <td className="p-4 md:p-6">
-                                            <div className="inline-flex items-center justify-center bg-slate-900 border border-slate-700 rounded-full px-4 py-1.5 text-sm font-black text-sky-400">
-                                                {asset.timesUsed}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {formattedInventory.length === 0 && (
-                                    <tr><td colSpan={4} className="p-8 text-center text-slate-500">No assets match your filters.</td></tr>
-                                )}
-                                {formattedInventory.length > 300 && (
-                                    <tr><td colSpan={4} className="p-4 text-center text-slate-500 text-xs">Showing 300 of {formattedInventory.length} results. Use filters to narrow down.</td></tr>
-                                )}
+                                                    ) : (<span className="text-[10px] text-slate-700 italic font-black uppercase">No Laptops</span>)}
+                                                    {(user?.role === 'admin' || user?.is_staff) && (
+                                                        <button onClick={() => setIsAssigningTo(emp)} className="px-4 py-2 bg-slate-800 border border-slate-700 text-slate-400 hover:text-sky-400 rounded-xl text-[9px] font-black uppercase transition-all">Assign New</button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
+                    {totalEmpPages > 1 && (
+                        <div className="flex justify-center gap-2 mt-8">
+                            {[...Array(totalEmpPages)].map((_, i) => (
+                                <button key={i} onClick={() => setCurrentPage(i + 1)} className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black transition-all ${currentPage === i + 1 ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30' : 'bg-slate-800 text-slate-500 hover:text-white'}`}>{i + 1}</button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
             {activeTab === 'Conferences' && (
-                <div className="bg-slate-900/30 p-5 md:p-8 rounded-[2rem] border border-slate-800/50 space-y-6">
+                <div className="bg-slate-900/30 p-5 md:p-8 rounded-[2.5rem] border border-slate-800/50 space-y-6">
                     <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-                        <div className="flex items-center gap-4 w-full lg:w-auto">
-                            <input type="date" value={confStartDate} onChange={e => setConfStartDate(e.target.value)} className="form-input-night py-3 text-sm" />
-                            <span className="text-slate-500 font-bold uppercase text-xs">TO</span>
-                            <input type="date" value={confEndDate} onChange={e => setConfEndDate(e.target.value)} className="form-input-night py-3 text-sm" />
+                        <div className="flex items-center gap-3">
+                            <input type="date" value={confStartDate} onChange={e => setConfStartDate(e.target.value)} className="form-input-night py-3 text-xs font-bold" />
+                            <i className="fa-solid fa-arrow-right text-slate-700 text-xs"></i>
+                            <input type="date" value={confEndDate} onChange={e => setConfEndDate(e.target.value)} className="form-input-night py-3 text-xs font-bold" />
                         </div>
-                        <div className="relative w-full lg:w-80">
-                            <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
-                            <input
-                                type="text"
-                                placeholder="Search client or event..."
-                                value={confSearch}
-                                onChange={e => setConfSearch(e.target.value)}
-                                className="form-input-night pl-11 py-3 text-sm w-full"
-                            />
-                        </div>
+                        <input type="text" placeholder="SEARCH CLIENT OR EVENT..." value={confSearch} onChange={e => setConfSearch(e.target.value)} className="form-input-night px-6 py-4 text-[10px] font-black uppercase tracking-widest w-full lg:w-96" />
                     </div>
-
-                    <div className="overflow-x-auto rounded-3xl border border-slate-800/50 bg-slate-950/50 shadow-xl backdrop-blur-xl">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="border-b border-slate-800/50">
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Event</th>
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Dates</th>
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Total Assets</th>
-                                    <th className="p-4 md:p-6 text-xs uppercase tracking-widest font-black text-slate-500">Technicians</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {formattedConferences.map(c => (
-                                    <tr key={c.id} className="border-b border-slate-800/50 last:border-0 hover:bg-slate-800/20 transition-colors">
-                                        <td className="p-4 md:p-6">
-                                            <p className="font-bold text-white text-sm break-words">{c.conferenceName || c.name}</p>
-                                            <p className="text-[10px] text-slate-400 font-mono mt-1">{c.associationName}</p>
-                                        </td>
-                                        <td className="p-4 md:p-6 text-sm text-slate-300">{c.startDate} → {c.endDate}</td>
-                                        <td className="p-4 md:p-6">
-                                            <div className="inline-flex items-center justify-center bg-slate-900 border border-slate-700 rounded-full px-4 py-1.5 text-sm font-black text-orange-400">
-                                                {(c.assets?.length || 0) + (c.crosscheckAssets?.length || 0)}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 md:p-6">
-                                            <div className="flex flex-wrap gap-2">
-                                                {(c.assigned_employees || []).map(empId => (
-                                                    <span key={empId} className="bg-slate-800 text-sky-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md">
-                                                        {employeeMap[String(empId)] || 'Technician'}
-                                                    </span>
-                                                ))}
-                                                {!(c.assigned_employees || []).length && (
-                                                    <span className="text-slate-500 text-xs italic">Unassigned</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {formattedConferences.length === 0 && (
-                                    <tr><td colSpan={4} className="p-8 text-center text-slate-500">No events found in this range.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {filteredConferences.map(c => (
+                            <div key={c.id} className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800/50 space-y-4 hover:border-sky-500/50 transition-all">
+                                <div>
+                                    <h4 className="text-sm font-black text-white uppercase truncate">{c.conferenceName || (c as any).name}</h4>
+                                    <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-wider truncate">{c.associationName}</p>
+                                </div>
+                                <div className="flex justify-between items-end">
+                                    <div className="text-[10px] font-mono text-sky-400/70">{c.startDate}</div>
+                                    <div className="px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[10px] font-black uppercase">{(c.assets?.length || 0) + (c.crosscheckAssets?.length || 0)} Assets</div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
