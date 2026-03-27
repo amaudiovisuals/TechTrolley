@@ -63,6 +63,9 @@ jobs:
             python manage.py migrate
             python manage.py collectstatic --noinput
             
+            # 5. Clean up duplicate assets in production
+            python fix_duplicate_assets.py
+            
             # 4. Restart the the Backend and Web Server
             sudo systemctl daemon-reload
             sudo systemctl restart gunicorn
