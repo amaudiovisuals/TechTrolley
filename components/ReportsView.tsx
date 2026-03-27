@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Asset, Booking, Employee, AssetCategory } from '../types';
+import { Asset, Booking, Employee, AssetCategory, AssetFlag } from '../types';
 import jsPDFLib from 'jspdf';
 import * as XLSX from 'xlsx';
 
@@ -12,7 +12,7 @@ interface ReportsViewProps {
 const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEditAsset }) => {
-    const [activeTab, setActiveTab] = useState<'Conferences' | 'Personal'>('Conferences');
+    const [activeTab, setActiveTab] = useState<'Conferences' | 'Personal' | 'Flagged'>('Conferences');
 
     // Data State
     const [assets, setAssets] = useState<Asset[]>([]);
@@ -26,6 +26,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
     const [confEndDate, setConfEndDate] = useState('');
     
     const [empSearch, setEmpSearch] = useState('');
+    const [flagFilter, setFlagFilter] = useState<AssetFlag | 'All'>('All');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
 
@@ -158,6 +159,14 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
              return true;
         });
     }, [conferences, confSearch, confStartDate, confEndDate]);
+
+    const filteredFlaggedAssets = useMemo(() => {
+        return assets.filter(a => {
+            if (!a.flag || a.flag === AssetFlag.NONE) return false;
+            if (flagFilter !== 'All' && a.flag !== flagFilter) return false;
+            return true;
+        });
+    }, [assets, flagFilter]);
 
     // ─── Actions ─────────────────────────────────────────────
     
@@ -337,9 +346,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
             </div>
 
             <div className="flex border-b border-slate-800 gap-8 overflow-x-auto no-scrollbar">
-                {(['Conferences', 'Personal'] as const).map(tab => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-4 text-xs font-black uppercase tracking-widest transition-colors relative whitespace-nowrap ${activeTab === tab ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}>
-                        {tab === 'Conferences' ? 'Conferences' : 'Employee Assets'}
+                {(['Conferences', 'Personal', 'Flagged'] as const).map(tab => (
+                    <button key={tab} onClick={() => { setActiveTab(tab); setCurrentPage(1); }} className={`pb-4 text-xs font-black uppercase tracking-widest transition-colors relative whitespace-nowrap ${activeTab === tab ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}>
+                        {tab === 'Conferences' ? 'Conferences' : tab === 'Personal' ? 'Employee Assets' : 'Flagged Items'}
                         {activeTab === tab && <div className="absolute bottom-0 left-0 w-full h-1 bg-sky-400 rounded-t-full" />}
                     </button>
                 ))}
@@ -403,6 +412,76 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {activeTab === 'Flagged' && (
+                <div className="bg-slate-900/30 p-5 md:p-8 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Flagged Items Report</h3>
+                        <div className="flex gap-2 w-full md:w-auto">
+                            {[AssetFlag.EXPIRED, AssetFlag.REQUIRED_SERVICE, AssetFlag.ON_SERVICE, AssetFlag.MISSING].map(f => (
+                                <button
+                                    key={f}
+                                    onClick={() => setFlagFilter(flagFilter === f ? 'All' : f)}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                                        flagFilter === f 
+                                            ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/20' 
+                                            : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300'
+                                    }`}
+                                >
+                                    {f}
+                                </button>
+                            ))}
+                            {flagFilter !== 'All' && (
+                                <button onClick={() => setFlagFilter('All')} className="text-[10px] font-black text-sky-400 uppercase tracking-widest px-4">Clear</button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto rounded-[1.5rem] border border-slate-800/50 bg-slate-950/40">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-900/50 border-b border-slate-800">
+                                <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                    <th className="p-6">Asset SKU / Name</th>
+                                    <th className="p-6">Flag Type</th>
+                                    <th className="p-6">Current Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/20">
+                                {filteredFlaggedAssets.length > 0 ? filteredFlaggedAssets.map(asset => (
+                                    <tr key={asset.id} className="hover:bg-red-500/5 transition-all text-sm font-bold">
+                                        <td className="p-6">
+                                            <p className="text-white uppercase font-black">{asset.aliasName || asset.sku}</p>
+                                            <p className="text-[9px] text-slate-500 font-mono mt-1">{asset.sku}</p>
+                                        </td>
+                                        <td className="p-6">
+                                            <span className="px-3 py-1 bg-red-500/10 text-[10px] font-black text-red-500 uppercase rounded-lg border border-red-500/20">
+                                                <i className="fa-solid fa-flag mr-2" />
+                                                {asset.flag}
+                                            </span>
+                                        </td>
+                                        <td className="p-6">
+                                            <span className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg ${
+                                                asset.status === 'Available' ? 'bg-emerald-500/10 text-emerald-500' :
+                                                asset.status === 'In Use' ? 'bg-orange-500/10 text-orange-500' : 'bg-slate-800 text-slate-400'
+                                            }`}>
+                                                {asset.status}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan={4} className="p-20 text-center">
+                                            <div className="flex flex-col items-center gap-4 opacity-20">
+                                                <i className="fa-solid fa-flag-checkered text-5xl text-slate-500" />
+                                                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">No flagged assets found</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
 

@@ -15,7 +15,7 @@ class SubAssetSerializer(serializers.ModelSerializer):
         model = Asset
         fields = [
             'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
-            'status', 'condition', 'barcode_type', 'barcode', 'qr_code', 'assigned_to', 'assigned_to_name',
+            'status', 'flag', 'condition', 'barcode_type', 'barcode', 'qr_code', 'assigned_to', 'assigned_to_name',
             'parent_asset', 'current_conference_name',
         ]
 
@@ -42,7 +42,7 @@ class AssetSerializer(serializers.ModelSerializer):
             'serial_number', 'description', 'is_barcode_added', 'type', 'quantity',
             'purchased_date', 'item_price', 'depreciation_percentage', 
             'available_from', 'available_till', 'created_at',
-            'barcode_type', 'barcode', 'qr_code', 'status', 'condition', 'last_maintained', 
+            'barcode_type', 'barcode', 'qr_code', 'status', 'flag', 'condition', 'last_maintained', 
             'current_venue', 'return_date', 'assigned_to', 'assigned_to_name',
             'parent_asset', 'sub_assets', 'current_conference_name',
         ]

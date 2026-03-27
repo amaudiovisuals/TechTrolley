@@ -10,6 +10,14 @@ class Asset(models.Model):
         ('Damaged', 'Damaged'),
         ('Crosscheck', 'Crosscheck'),
     ]
+
+    FLAG_CHOICES = [
+        ('', 'None'),
+        ('Expired', 'Expired'),
+        ('Required Service', 'Required Service'),
+        ('On Service', 'On Service'),
+        ('Missing', 'Missing'),
+    ]
     
     CATEGORY_CHOICES = [
         ('Speakers & Audio', 'Speakers & Audio'),
@@ -57,6 +65,7 @@ class Asset(models.Model):
     qr_code = models.CharField(max_length=255, blank=True, default='')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available', db_index=True)
     condition = models.CharField(max_length=50, default='Good')
+    flag = models.CharField(max_length=20, choices=FLAG_CHOICES, default='', blank=True, db_index=True)
     last_maintained = models.DateField(null=True, blank=True)
     current_venue = models.CharField(max_length=200, null=True, blank=True)
     return_date = models.DateField(null=True, blank=True)

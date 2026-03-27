@@ -6,6 +6,14 @@ export enum AssetStatus {
   CROSSCHECK = 'Crosscheck'
 }
 
+export enum AssetFlag {
+  NONE = '',
+  EXPIRED = 'Expired',
+  REQUIRED_SERVICE = 'Required Service',
+  ON_SERVICE = 'On Service',
+  MISSING = 'Missing'
+}
+
 export enum AssetCategory {
   SPEAKERS = 'Speakers & Audio',
   MIXERS = 'Audio Mixers',
@@ -52,6 +60,7 @@ export interface Asset {
   barcode: string;
   qrCode?: string;
   status: AssetStatus;
+  flag?: AssetFlag | string;
   condition: string;
   lastMaintained: string;
   assigned_to?: number;
