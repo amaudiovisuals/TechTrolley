@@ -35,16 +35,16 @@ jobs:
           source: "dist"
           target: "/home/ubuntu/TechTrolley/"
 
-      - name: Transfer Database to AWS EC2
+      - name: Transfer Data Fixture to AWS EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "backend/db.sqlite3"
-          target: "/home/ubuntu/db_upload/"
+          source: "backend/production_data.json,backend/load_production_data.py"
+          target: "/home/ubuntu/data_sync/"
 
-      - name: Diagnose & Deploy
+      - name: Deploy & Sync Data
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -52,46 +52,35 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-
-            echo "======= DIAGNOSTICS ======="
-            echo "--- Nginx config files ---"
-            cat /etc/nginx/sites-enabled/* 2>/dev/null || echo "No sites-enabled config found"
-            echo "--- Web root contents ---"
-            ls /var/www/html/ 2>/dev/null || echo "/var/www/html not found"
-            ls /var/www/html/techtrolley/ 2>/dev/null | head -5 || echo "/var/www/html/techtrolley not found"
-            echo "--- TechTrolley dir ---"
-            ls ~/TechTrolley/
-            echo "--- dist dir ---"
-            ls ~/TechTrolley/dist/ | head -5 2>/dev/null || echo "No dist in TechTrolley"
-            echo "--- Gunicorn service ---"
-            cat /etc/systemd/system/gunicorn.service 2>/dev/null || echo "gunicorn.service not found"
-            echo "--- DB location ---"
-            find ~/TechTrolley -name "db.sqlite3" 2>/dev/null
-            echo "======= END DIAGNOSTICS ======="
-
             cd ~/TechTrolley
 
+            # 1. Pull latest code
             git fetch origin
             git reset --hard origin/main
             git pull origin main
 
-            # Copy new dist files
-            sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/ 2>/dev/null || echo "WARNING: could not copy to /var/www/html/techtrolley"
+            # 2. Deploy the compiled React Frontend
+            sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/
 
-            # Replace production database (after git reset)
-            cp ~/db_upload/backend/db.sqlite3 ~/TechTrolley/backend/db.sqlite3 2>/dev/null || echo "WARNING: DB copy failed"
-            chmod 664 ~/TechTrolley/backend/db.sqlite3 2>/dev/null || true
-
+            # 3. Update the Python Backend Environment
             cd backend
             if [ ! -d "venv" ]; then
               python3 -m venv venv
             fi
             source venv/bin/activate
             pip install -r requirements.txt -q
+
+            # 4. Apply schema migrations
             python manage.py migrate
+
+            # 5. Sync local data to production PostgreSQL
+            cp ~/data_sync/backend/production_data.json ~/TechTrolley/backend/production_data.json
+            cp ~/data_sync/backend/load_production_data.py ~/TechTrolley/backend/load_production_data.py
+            python load_production_data.py
 
             python manage.py collectstatic --noinput
 
+            # 6. Restart services
             sudo systemctl daemon-reload
             sudo systemctl restart gunicorn
             sudo systemctl reload nginx
