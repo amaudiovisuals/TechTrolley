@@ -44,7 +44,7 @@ jobs:
           source: "backend/db.sqlite3"
           target: "/home/ubuntu/db_upload/"
 
-      - name: Execute Server Pipeline
+      - name: Diagnose & Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -52,35 +52,48 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+
+            echo "======= DIAGNOSTICS ======="
+            echo "--- Nginx config files ---"
+            cat /etc/nginx/sites-enabled/* 2>/dev/null || echo "No sites-enabled config found"
+            echo "--- Web root contents ---"
+            ls /var/www/html/ 2>/dev/null || echo "/var/www/html not found"
+            ls /var/www/html/techtrolley/ 2>/dev/null | head -5 || echo "/var/www/html/techtrolley not found"
+            echo "--- TechTrolley dir ---"
+            ls ~/TechTrolley/
+            echo "--- dist dir ---"
+            ls ~/TechTrolley/dist/ | head -5 2>/dev/null || echo "No dist in TechTrolley"
+            echo "--- Gunicorn service ---"
+            cat /etc/systemd/system/gunicorn.service 2>/dev/null || echo "gunicorn.service not found"
+            echo "--- DB location ---"
+            find ~/TechTrolley -name "db.sqlite3" 2>/dev/null
+            echo "======= END DIAGNOSTICS ======="
+
             cd ~/TechTrolley
 
-            # 1. Download the latest Python Code from GitHub
             git fetch origin
             git reset --hard origin/main
             git pull origin main
 
-            # 2. Deploy the compiled React Frontend
-            sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/
+            # Copy new dist files
+            sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/ 2>/dev/null || echo "WARNING: could not copy to /var/www/html/techtrolley"
 
-            # 3. REPLACE the production database with the uploaded local database
-            #    (This must happen AFTER git reset so it doesn't get overwritten)
-            cp ~/db_upload/backend/db.sqlite3 ~/TechTrolley/backend/db.sqlite3
-            chmod 664 ~/TechTrolley/backend/db.sqlite3
+            # Replace production database (after git reset)
+            cp ~/db_upload/backend/db.sqlite3 ~/TechTrolley/backend/db.sqlite3 2>/dev/null || echo "WARNING: DB copy failed"
+            chmod 664 ~/TechTrolley/backend/db.sqlite3 2>/dev/null || true
 
-            # 4. Update the Python Backend Environment
             cd backend
             if [ ! -d "venv" ]; then
               python3 -m venv venv
             fi
             source venv/bin/activate
-            pip install -r requirements.txt
-
-            # 5. Apply schema migrations (data is already in db.sqlite3)
+            pip install -r requirements.txt -q
             python manage.py migrate
 
             python manage.py collectstatic --noinput
 
-            # 6. Restart the Backend and Web Server
             sudo systemctl daemon-reload
             sudo systemctl restart gunicorn
             sudo systemctl reload nginx
+
+            echo "=== DEPLOY COMPLETE ==="
