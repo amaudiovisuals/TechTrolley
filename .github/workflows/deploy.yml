@@ -44,15 +44,15 @@ jobs:
           script: |
             set -e
             cd ~/TechTrolley
-            
+
             # 1. Download the latest Python Code from GitHub
             git fetch origin
             git reset --hard origin/main
             git pull origin main
-            
-            # 2. Deploy the high-speed compiled React Frontend
+
+            # 2. Deploy the compiled React Frontend
             sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/
-            
+
             # 3. Update the Python Backend Environment
             cd backend
             if [ ! -d "venv" ]; then
@@ -61,12 +61,13 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
             python manage.py migrate
+
+            # 4. Load the latest production data (assets, conferences, users)
+            python manage.py loaddata production_data.json
+
             python manage.py collectstatic --noinput
-            
-            # 5. Clean up duplicate assets in production
-            python fix_duplicate_assets.py
-            
-            # 4. Restart the the Backend and Web Server
+
+            # 5. Restart the Backend and Web Server
             sudo systemctl daemon-reload
             sudo systemctl restart gunicorn
             sudo systemctl reload nginx
