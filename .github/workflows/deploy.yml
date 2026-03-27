@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
+
       - name: Install Frontend Dependencies
         run: npm install --legacy-peer-deps
 
@@ -26,14 +26,23 @@ jobs:
         env:
           VITE_API_URL: https://techtrolley.amaudiovisuals.com
 
-      - name: Transfer React Build + Database to AWS EC2
+      - name: Transfer React Build to AWS EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "dist,backend/db.sqlite3"
+          source: "dist"
           target: "/home/ubuntu/TechTrolley/"
+
+      - name: Transfer Database to AWS EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "backend/db.sqlite3"
+          target: "/home/ubuntu/db_upload/"
 
       - name: Execute Server Pipeline
         uses: appleboy/ssh-action@v1.0.3
@@ -53,7 +62,12 @@ jobs:
             # 2. Deploy the compiled React Frontend
             sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/
 
-            # 3. Update the Python Backend Environment
+            # 3. REPLACE the production database with the uploaded local database
+            #    (This must happen AFTER git reset so it doesn't get overwritten)
+            cp ~/db_upload/backend/db.sqlite3 ~/TechTrolley/backend/db.sqlite3
+            chmod 664 ~/TechTrolley/backend/db.sqlite3
+
+            # 4. Update the Python Backend Environment
             cd backend
             if [ ! -d "venv" ]; then
               python3 -m venv venv
@@ -61,11 +75,8 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
 
-            # 4. Run migrations (schema only, data already in db.sqlite3)
-            python manage.py migrate --run-syncdb
-
-            # 5. Set correct permissions on the database
-            chmod 664 db.sqlite3
+            # 5. Apply schema migrations (data is already in db.sqlite3)
+            python manage.py migrate
 
             python manage.py collectstatic --noinput
 
