@@ -349,13 +349,20 @@ def bulk_upload_assets(request):
 
         for index, row in df.iterrows():
             try:
+                # Skip completely empty rows
+                if row.isnull().all():
+                    continue
+
                 serial = safe_str(row.get(serial_col, ''))
+                sku_val = safe_str(row.get(sku_col, ''))
+                
                 if not serial:
-                    sku_val = safe_str(row.get(sku_col, ''))
                     if sku_val:
                         serial = sku_val
                     else:
-                        errors.append(f"Row {index+2}: Missing Serial Number — skipped")
+                        # Only report error if the row is not completely empty (redundant check but safe)
+                        if not all(safe_str(v) == '' for v in row.values):
+                            errors.append(f"Row {index+2}: Missing both Serial Number and SKU — skipped")
                         continue
 
                 # Normalize type
