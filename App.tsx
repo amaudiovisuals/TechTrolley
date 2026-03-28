@@ -2901,6 +2901,20 @@ const App: React.FC = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <h4 className="text-lg font-black text-white uppercase leading-tight">{conf.conferenceName || conf.name}</h4>
+                  {conf.pdf_document && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <a 
+                        href={conf.pdf_document} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-sky-500/10 text-sky-400 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-sky-500 hover:text-white transition-all border border-sky-500/20"
+                      >
+                        <i className="fa-solid fa-file-pdf"></i>
+                        Logistics Document
+                      </a>
+                    </div>
+                  )}
                   <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{conf.association}</p>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${statusStyle}`}>{statusLabel}</span>
@@ -2965,6 +2979,19 @@ const App: React.FC = () => {
                 <tr key={conf.id} className="hover:bg-slate-800/10 transition">
                   <td className="px-10 py-6 min-w-0">
                     <p className="font-black text-white text-base uppercase truncate max-w-xs">{conf.conferenceName || conf.name}</p>
+                    {conf.pdf_document && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <a 
+                          href={conf.pdf_document} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-2 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-sky-500 hover:text-white transition-all border border-sky-500/20"
+                        >
+                          <i className="fa-solid fa-file-pdf"></i>
+                          PDF Doc
+                        </a>
+                      </div>
+                    )}
                     <p className="text-[9px] text-slate-500 font-black mt-1 uppercase">ID: {conf.id}</p>
                   </td>
                   <td className="px-10 py-6 text-xs text-slate-400 uppercase font-bold truncate max-w-[150px]">{conf.association}</td>

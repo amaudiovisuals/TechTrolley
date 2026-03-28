@@ -1,4 +1,12 @@
 @echo off
+echo --- Step 0: Pulling latest changes from GitHub ---
+git pull --rebase origin main
+if %ERRORLEVEL% NEQ 0 (
+    echo Error during git pull. Please resolve conflicts manually before re-running.
+    pause
+    exit /b
+)
+
 echo --- Step 1: Exporting local data ---
 python backend\export_local_data.py
 if %ERRORLEVEL% NEQ 0 (
