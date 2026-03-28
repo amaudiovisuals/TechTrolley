@@ -18,6 +18,10 @@ from django.contrib.auth.models import User
 
 print("=== TechTrolley Production Data Sync ===")
 
+# Step 0: Ensure migrations are applied
+print("Running migrations...")
+call_command('migrate', interactive=False)
+
 # Step 1: Clear out app-level data (M2M first, then models)
 print("Clearing existing conference-asset links...")
 for conf in Conference.objects.all():
