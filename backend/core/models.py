@@ -115,6 +115,7 @@ class Conference(models.Model):
     assets = models.ManyToManyField(Asset, blank=True, related_name='assigned_conferences')
     crosscheck_assets = models.ManyToManyField(Asset, blank=True, related_name='crosscheck_conferences')
     assigned_employees = models.ManyToManyField(Employee, blank=True, related_name='assigned_conferences')
+    pdf_document = models.FileField(upload_to='conference_pdfs/', null=True, blank=True)
 
     def __str__(self):
         return self.name

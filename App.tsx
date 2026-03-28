@@ -267,6 +267,7 @@ const App: React.FC = () => {
   const [challanViewMode, setChallanViewMode] = useState<'List' | 'Detail'>('List');
   const [quickAddInput, setQuickAddInput] = useState('');
   const [quickRemoveInput, setQuickRemoveInput] = useState('');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
 
   // Refs for scanner focus
   const inventorySearchRef = useRef<HTMLInputElement>(null);
@@ -539,7 +540,8 @@ const App: React.FC = () => {
     conference_type: 'Medical Conference',
     assets: [],
     crosscheck_assets: [],
-    assigned_employees: []
+    assigned_employees: [],
+    pdf_document: null
   });
 
   const fetchConferences = () => {
@@ -569,7 +571,8 @@ const App: React.FC = () => {
             challanNumber: (1000 + parseInt(c.id)).toString(),
             assets: (c.assets || []).map((id: any) => id.toString()),
             crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
-            assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10))
+            assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
+            pdf_document: c.pdf_document
           }));
           setBackendConferences(mapped);
 
@@ -607,9 +610,28 @@ const App: React.FC = () => {
       assigned_employees: (conferenceFormData.assigned_employees || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
     };
 
+    const isFormData = !!pdfFile;
+    let body: any;
+
+    if (isFormData) {
+      body = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((v: any) => body.append(key, v));
+        } else if (value !== null && value !== undefined) {
+          body.append(key, value);
+        }
+      });
+      if (pdfFile) {
+        body.append('pdf_document', pdfFile);
+      }
+    } else {
+      body = JSON.stringify(payload);
+    }
+
     apiFetch(url, {
       method: method,
-      body: JSON.stringify(payload)
+      body: body
     })
       .then(async res => {
         if (res.ok) {
@@ -620,8 +642,9 @@ const App: React.FC = () => {
           setConferenceFormData({
             name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
             vehicle_number: '', driver_phone: '',
-            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: []
+            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
           });
+          setPdfFile(null);
           setAssetTab('available'); // Reset tab for next open
         } else {
           const errData = await res.json().catch(() => ({}));
@@ -3037,7 +3060,7 @@ const App: React.FC = () => {
       <aside className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-[var(--sidebar-bg)] border-r border-slate-900 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-8 relative">
           <Logo size="sm" companySettings={companySettings} className="mb-12" />
-          <div className="absolute top-2 right-4 text-[10px] text-white/20 font-black tracking-widest uppercase no-print">v1.4-RBAC</div>
+          <div className="absolute top-2 right-4 text-[10px] text-white/20 font-black tracking-widest uppercase no-print">v1.5-RBAC</div>
           <nav className="space-y-4">
             {/* ... nav items ... */}
             {[
@@ -3543,6 +3566,48 @@ const App: React.FC = () => {
                           placeholder="9021457863"
                         />
                       </div>
+
+                      {user?.is_staff && (
+                        <div>
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Conference Document (PDF)</label>
+                          <div className="relative group/file">
+                            <input 
+                              type="file"
+                              accept=".pdf"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) setPdfFile(file);
+                              }}
+                              className="hidden"
+                              id="pdf-upload"
+                            />
+                            <label 
+                              htmlFor="pdf-upload"
+                              className="w-full flex items-center gap-4 bg-sky-50/50 border-2 border-dashed border-sky-100 rounded-2xl px-6 py-5 cursor-pointer hover:border-sky-500/50 hover:bg-sky-50 transition-all group-hover/file:shadow-inner"
+                            >
+                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-sky-500 shadow-sm border border-sky-100">
+                                <i className={`fa-solid ${pdfFile ? 'fa-file-pdf' : 'fa-cloud-arrow-up'}`}></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-black text-slate-800 truncate">
+                                  {pdfFile ? pdfFile.name : (conferenceFormData.pdf_document ? 'Update Document' : 'Upload Logistics PDF')}
+                                </p>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">
+                                  {pdfFile ? `${(pdfFile.size / 1024).toFixed(1)} KB` : 'Click to select file'}
+                                </p>
+                              </div>
+                              {pdfFile && (
+                                <button 
+                                  onClick={(e) => { e.preventDefault(); setPdfFile(null); }}
+                                  className="text-slate-300 hover:text-red-500 transition-colors"
+                                >
+                                  <i className="fa-solid fa-times-circle"></i>
+                                </button>
+                              )}
+                            </label>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="pt-4 space-y-4">
                         <button 

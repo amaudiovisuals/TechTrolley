@@ -65724,6 +65724,7 @@
     "conference_type": "Medical Conference",
     "start_date": "2026-03-01",
     "end_date": "2026-04-06",
+    "pdf_document": "",
     "assets": [
       548
     ],
@@ -65750,6 +65751,7 @@
     "conference_type": "Medical Conference",
     "start_date": "2026-10-01",
     "end_date": "2026-10-05",
+    "pdf_document": "",
     "assets": [],
     "crosscheck_assets": [],
     "assigned_employees": [

@@ -120,6 +120,7 @@ export interface Booking {
   vehicleNumber?: string;
   driverPhone?: string;
   assigned_employees?: number[];
+  pdf_document?: string | null;
 }
 
 export interface DeliveryChallanRecord {
