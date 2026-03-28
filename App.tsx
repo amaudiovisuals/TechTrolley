@@ -3037,7 +3037,7 @@ const App: React.FC = () => {
       <aside className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-[var(--sidebar-bg)] border-r border-slate-900 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-8 relative">
           <Logo size="sm" companySettings={companySettings} className="mb-12" />
-          <div className="absolute top-2 right-4 text-[10px] text-white/20 font-black tracking-widest uppercase no-print">v1.2-RBAC</div>
+          <div className="absolute top-2 right-4 text-[10px] text-white/20 font-black tracking-widest uppercase no-print">v1.3-RBAC</div>
           <nav className="space-y-4">
             {/* ... nav items ... */}
             {[
@@ -3048,8 +3048,10 @@ const App: React.FC = () => {
                 { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
               ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
-              ...(user?.role !== 'godown_incharge' && user?.role !== 'technician' ? [
+              ...(user?.role !== 'godown_incharge' ? [
                 { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
+              ] : []),
+              ...(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician') ? [
                 { id: 'Reports', icon: 'fa-chart-pie', label: 'Reports' }
               ] : []),
               { id: 'Settings', icon: 'fa-cog', label: 'Settings' }
