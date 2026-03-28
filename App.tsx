@@ -248,7 +248,10 @@ const App: React.FC = () => {
     localStorage.setItem('user', JSON.stringify(userData));
     setIsLoggedIn(true);
     setUser(userData);
-    if (userData?.role === 'technician') setCurrentPage('Conferences');
+    console.log("Logged in user role:", userData?.role);
+    if (userData?.role === 'technician') {
+      setCurrentPage('Conferences');
+    }
   };
 
   const handleLogout = () => {
@@ -3032,8 +3035,9 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-950">
       <aside className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-[var(--sidebar-bg)] border-r border-slate-900 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-8">
+        <div className="p-8 relative">
           <Logo size="sm" companySettings={companySettings} className="mb-12" />
+          <div className="absolute top-2 right-4 text-[10px] text-white/20 font-black tracking-widest uppercase no-print">v1.2-RBAC</div>
           <nav className="space-y-4">
             {/* ... nav items ... */}
             {[
