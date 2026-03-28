@@ -72,7 +72,7 @@ const GlobalQRPreview: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  const API_BASE = '';
+  const API_BASE = 'https://techtrolley.amaudiovisuals.com';
   const isMobilePhone = useMemo(() => {
     const ua = navigator.userAgent;
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
@@ -591,8 +591,8 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch conferences", err));
   };
 
-  const handleSaveConference = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveConference = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const url = editingConference
       ? `${API_BASE}/api/conferences/${editingConference.id}/`
       : `${API_BASE}/api/conferences/`;
@@ -616,6 +616,7 @@ const App: React.FC = () => {
     if (isFormData) {
       body = new FormData();
       Object.entries(payload).forEach(([key, value]) => {
+        if (key === 'pdf_document' && pdfFile) return; // Skip old URL string if we have a new file
         if (Array.isArray(value)) {
           value.forEach((v: any) => body.append(key, v));
         } else if (value !== null && value !== undefined) {
@@ -636,8 +637,10 @@ const App: React.FC = () => {
       .then(async res => {
         if (res.ok) {
           fetchConferences();
-          fetchAssets(); // Refresh asset statuses on dashboard and inventory
+          fetchAssets(); 
           setConferenceView('List');
+          setScanToast({ message: "Conference saved successfully!", type: 'success' });
+          setPdfFile(null); // Clear pending file
           setEditingConference(null);
           setConferenceFormData({
             name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
@@ -669,29 +672,42 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLogistics = async (confId: string, vehicleNo: string, driverNo: string) => {
-    // Optimization: Only update if anything actually changed from current state
-    if (selectedConferenceDetails) {
-      if (selectedConferenceDetails.vehicleNumber === vehicleNo && selectedConferenceDetails.driverPhone === driverNo) {
-        return;
-      }
-    }
-
     try {
-      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
-        method: 'PATCH',
-        body: JSON.stringify({
+      let body: any;
+      if (pdfFile) {
+        body = new FormData();
+        body.append('vehicle_number', vehicleNo);
+        body.append('driver_phone', driverNo);
+        body.append('pdf_document', pdfFile);
+      } else {
+        body = JSON.stringify({
           vehicle_number: vehicleNo,
           driver_phone: driverNo
-        })
+        });
+      }
+
+      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+        method: 'POST',
+        body: body
       });
       if (res.ok) {
+        const updatedData = await res.json();
         fetchConferences();
-        setScanToast({ message: "Logistics updated successfully!", type: 'success' });
+        setPdfFile(null); // Clear the pending file after successful upload
+        // Update local state immediately to show the new link
+        setConferenceFormData(prev => ({ ...prev, pdf_document: updatedData.pdf_document }));
+        setScanToast({ message: "Logistics and PDF updated successfully!", type: 'success' });
+        alert("UPLOAD SUCCESSFUL: The PDF is now saved on the server. Technicians will see it immediately.");
       } else {
-        alert("Failed to update logistics.");
+        const errData = await res.json().catch(() => ({}));
+        console.error("Upload Error Details:", errData);
+        setScanToast({ message: `Failed to update logistics: ${JSON.stringify(errData)}`, type: 'error' });
+        alert(`UPLOAD FAILED: Status ${res.status}. Server Error: ${JSON.stringify(errData)}`);
       }
     } catch (err) {
-      console.error("Logistics Update Error:", err);
+      console.error("Logistics Update Network Error:", err);
+      alert(`NETWORK ERROR: Could not connect to backend. Please check your internet connection. Details: ${err}`);
+      setScanToast({ message: "Network error while updating logistics", type: 'error' });
     }
   };
 
@@ -703,7 +719,7 @@ const App: React.FC = () => {
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
-      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: []
+      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
     });
     setConferenceView('Form');
   };
@@ -731,7 +747,8 @@ const App: React.FC = () => {
       conference_type: conf.type,
       assets: conf.assets || [],
       crosscheck_assets: conf.crosscheckAssets || [],
-      assigned_employees: conf.assigned_employees || []
+      assigned_employees: conf.assigned_employees || [],
+      pdf_document: conf.pdf_document
     });
 
     setConferenceView('Form');
@@ -2901,21 +2918,19 @@ const App: React.FC = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <h4 className="text-lg font-black text-white uppercase leading-tight">{conf.conferenceName || conf.name}</h4>
-                  {conf.pdf_document && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <a 
-                        href={conf.pdf_document} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-sky-500/10 text-sky-400 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-sky-500 hover:text-white transition-all border border-sky-500/20"
-                      >
-                        <i className="fa-solid fa-file-pdf"></i>
-                        Logistics Document
-                      </a>
-                    </div>
-                  )}
                   <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{conf.association}</p>
+                  {conf.pdf_document && (
+                    <a 
+                      href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 bg-sky-500/10 text-sky-400 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-sky-500/20 transition-all border border-sky-500/10"
+                    >
+                      <i className="fa-solid fa-file-pdf"></i>
+                      Download PDF
+                    </a>
+                  )}
                 </div>
                 <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${statusStyle}`}>{statusLabel}</span>
               </div>
@@ -2979,20 +2994,21 @@ const App: React.FC = () => {
                 <tr key={conf.id} className="hover:bg-slate-800/10 transition">
                   <td className="px-10 py-6 min-w-0">
                     <p className="font-black text-white text-base uppercase truncate max-w-xs">{conf.conferenceName || conf.name}</p>
-                    {conf.pdf_document && (
-                      <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-[9px] text-slate-500 font-black uppercase">ID: {conf.id}</p>
+                      {conf.pdf_document && (
                         <a 
-                          href={conf.pdf_document} 
+                          href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="flex items-center gap-2 px-2 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-sky-500 hover:text-white transition-all border border-sky-500/20"
+                          className="flex items-center gap-1.5 px-2 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-md hover:bg-sky-500 hover:text-white transition-all group/pdf"
+                          title="Download Logistics PDF"
                         >
-                          <i className="fa-solid fa-file-pdf"></i>
-                          PDF Doc
+                          <i className="fa-solid fa-file-pdf text-[10px] group-hover/pdf:scale-110"></i>
+                          <span className="text-[9px] font-black uppercase tracking-widest">Download PDF</span>
                         </a>
-                      </div>
-                    )}
-                    <p className="text-[9px] text-slate-500 font-black mt-1 uppercase">ID: {conf.id}</p>
+                      )}
+                    </div>
                   </td>
                   <td className="px-10 py-6 text-xs text-slate-400 uppercase font-bold truncate max-w-[150px]">{conf.association}</td>
                   <td className="px-10 py-6">
@@ -3426,6 +3442,19 @@ const App: React.FC = () => {
                     <p className="text-sm md:text-lg font-bold text-slate-500 uppercase tracking-wide">
                       {conferenceFormData.association_name || "Association Not Specified"}
                     </p>
+                    {conferenceFormData.pdf_document && (
+                      <div className="pt-2">
+                        <a 
+                          href={conferenceFormData.pdf_document.startsWith('http') ? conferenceFormData.pdf_document : `${API_BASE}${conferenceFormData.pdf_document}`}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-3 bg-sky-500 text-white px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-sky-500/30 hover:bg-sky-400 hover:scale-105 active:scale-95 transition-all"
+                        >
+                          <i className="fa-solid fa-file-pdf text-base"></i>
+                          Download Logistics PDF
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -3563,7 +3592,7 @@ const App: React.FC = () => {
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                 {/* Second Row Bottom: Logistics (Narrow) & Scanning (Wide) */}
-                <div className={`${editingConference ? 'lg:col-span-4' : 'lg:col-span-12'} space-y-8 animate-in fade-in slide-in-from-left duration-700`}>
+                <div className="lg:col-span-4 space-y-8">
                   <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 space-y-8 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-sky-50 rounded-full -mr-12 -mt-12 group-hover:bg-sky-100 transition-colors duration-500 opacity-50"></div>
                     
@@ -3612,27 +3641,55 @@ const App: React.FC = () => {
                               htmlFor="pdf-upload"
                               className="w-full flex items-center gap-4 bg-sky-50/50 border-2 border-dashed border-sky-100 rounded-2xl px-6 py-5 cursor-pointer hover:border-sky-500/50 hover:bg-sky-50 transition-all group-hover/file:shadow-inner"
                             >
-                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-sky-500 shadow-sm border border-sky-100">
-                                <i className={`fa-solid ${pdfFile ? 'fa-file-pdf' : 'fa-cloud-arrow-up'}`}></i>
+                              <div className="w-12 h-12 rounded-xl bg-white shadow-sm border border-sky-100 flex items-center justify-center text-sky-500 group-hover/file:scale-110 transition-transform">
+                                <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-black text-slate-800 truncate">
+                              <div className="flex-1 min-w-0 text-left">
+                                <p className="text-sm font-bold text-slate-700 truncate">
                                   {pdfFile ? pdfFile.name : (conferenceFormData.pdf_document ? 'Update Document' : 'Upload Logistics PDF')}
                                 </p>
-                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">
-                                  {pdfFile ? `${(pdfFile.size / 1024).toFixed(1)} KB` : 'Click to select file'}
-                                </p>
+                                <p className="text-[10px] text-slate-400 font-medium">Accepts PDF only • Max 10MB</p>
                               </div>
                               {pdfFile && (
                                 <button 
-                                  onClick={(e) => { e.preventDefault(); setPdfFile(null); }}
-                                  className="text-slate-300 hover:text-red-500 transition-colors"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPdfFile(null); }}
+                                  className="text-slate-300 hover:text-red-500 transition-colors p-2"
+                                  title="Clear selection"
                                 >
                                   <i className="fa-solid fa-times-circle"></i>
                                 </button>
                               )}
                             </label>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Technician/Admin PDF Download Link */}
+                      {conferenceFormData.pdf_document && (
+                        <div className="pt-2 animate-in fade-in duration-700">
+                           <div className="flex items-center justify-between mb-2 ml-1">
+                             <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Current Logistics PDF</label>
+                             {!user?.is_staff && (
+                               <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full animate-pulse shadow-md shadow-emerald-500/30">
+                                 <span className="w-1 h-1 bg-white rounded-full"></span> PDF AVAILABLE
+                               </span>
+                             )}
+                           </div>
+                           <a 
+                             href={conferenceFormData.pdf_document.startsWith('http') ? conferenceFormData.pdf_document : `${API_BASE}${conferenceFormData.pdf_document}`}
+                             target="_blank"
+                             rel="noopener noreferrer"
+                             className="w-full flex items-center gap-4 bg-sky-500 text-white rounded-2xl px-6 py-5 hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/30 active:scale-[0.98] ring-2 ring-sky-500/20"
+                           >
+                             <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-white text-2xl">
+                               <i className="fa-solid fa-file-pdf"></i>
+                             </div>
+                             <div className="flex-1 min-w-0 text-left">
+                               <p className="text-base font-black uppercase tracking-[0.1em]">Download PDF</p>
+                               <p className="text-[10px] text-white/80 font-medium italic truncate">Tap to view conference logistics</p>
+                             </div>
+                             <i className="fa-solid fa-chevron-right text-white/50"></i>
+                           </a>
                         </div>
                       )}
 
@@ -3643,21 +3700,22 @@ const App: React.FC = () => {
                         >
                           <i className="fa-solid fa-print"></i> Print Delivery Challan
                         </button>
-                        <button 
-                          onClick={handleSaveConference}
-                          className="w-full py-5 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20 transition-all active:scale-95"
-                        >
-                          <i className="fa-solid fa-save"></i> Save Changes
-                        </button>
+                        {user?.is_staff && (
+                          <button 
+                            onClick={() => handleUpdateLogistics(conferenceFormData.id, conferenceFormData.vehicle_number, conferenceFormData.driver_phone)}
+                            className="w-full py-5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-sky-600/20 transition-all active:scale-95"
+                          >
+                            <i className="fa-solid fa-cloud-arrow-up"></i> Update Logistics & PDF
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Right Column: Asset Scanning Card (Hidden for new conferences) */}
-                {editingConference && (
-                  <div className="lg:col-span-8">
-                    <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
+                {/* Right Column: Asset Scanning Card */}
+                <div className="lg:col-span-8">
+                  <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-500/20">
@@ -3738,17 +3796,7 @@ const App: React.FC = () => {
                     <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-[400px]">
                       {assetTab === 'available' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {!quickAddInput.trim() ? (
-                            <div className="col-span-2 py-24 text-center space-y-5 animate-in fade-in zoom-in duration-500">
-                                <div className="w-20 h-20 bg-sky-50 rounded-3xl flex items-center justify-center mx-auto text-sky-400 border border-sky-100/50 shadow-inner">
-                                    <i className="fa-solid fa-barcode-read text-3xl animate-pulse"></i>
-                                </div>
-                                <div className="space-y-1">
-                                    <p className="text-slate-800 font-black uppercase text-xs tracking-widest">Ready to Scan</p>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Type SKU or use scanner to find items</p>
-                                </div>
-                            </div>
-                          ) : assets.filter(a => {
+                          {assets.filter(a => {
                             const currentConferenceId = editingConference?.id;
                             const bookedInOtherConferences = new Set<string>(
                               backendConferences
@@ -3762,7 +3810,7 @@ const App: React.FC = () => {
                             const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
                             
                             const q = quickAddInput.toLowerCase();
-                            const matchesSearch = (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                            const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
                             const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
                             const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
                             const notDamaged = a.status !== AssetStatus.DAMAGED;
@@ -3786,7 +3834,7 @@ const App: React.FC = () => {
                             const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
                             
                             const q = quickAddInput.toLowerCase();
-                            const matchesSearch = (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                            const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
                             const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
                             const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
                             const notDamaged = a.status !== AssetStatus.DAMAGED;
@@ -3872,10 +3920,9 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
 
           {currentPage === 'Billing' && challanViewMode === 'List' && renderChallanList()}

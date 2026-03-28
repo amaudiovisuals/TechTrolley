@@ -18,7 +18,7 @@ def conference_list(request):
 
 from django.shortcuts import get_object_or_404
 
-@api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
+@api_view(['GET', 'PUT', 'DELETE', 'PATCH', 'POST'])
 def conference_detail(request, pk):
     conference = get_object_or_404(Conference, pk=pk)
 
@@ -33,8 +33,8 @@ def conference_detail(request, pk):
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
     
-    # Support PATCH for partial updates
-    elif request.method == 'PATCH':
+    # Support PATCH/POST for partial updates
+    elif request.method in ['PATCH', 'POST']:
         serializer = ConferenceSerializer(conference, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
