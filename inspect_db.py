@@ -2,7 +2,7 @@ import os
 import sqlite3
 import json
 
-db_path = r'c:\Users\amoff\Desktop\tech-trolley-asset-tracker\backend\db.sqlite3'
+db_path = os.path.join(os.path.dirname(__file__), 'backend', 'db.sqlite3')
 
 if not os.path.exists(db_path):
     print(f"Error: Database file not found at {db_path}")

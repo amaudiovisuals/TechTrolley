@@ -680,7 +680,7 @@ const App: React.FC = () => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
     setEditingConference(conf);
-    setAssetTab(user?.role === 'godown_incharge' ? 'crosscheck' : 'available'); // Always reset to appropriate tab
+    setAssetTab('available'); // Reset to available tab by default for everyone
     setConferenceFormData({
       id: conf.id,
       name: conf.name,
@@ -3570,7 +3570,7 @@ const App: React.FC = () => {
                     {/* Scanning Control Bar */}
                     <div className="space-y-6">
                       <div className="flex gap-1 p-1.5 bg-sky-50/50 rounded-2xl border border-sky-100/50">
-                        {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                        {(user?.is_staff || user?.role === 'godown_incharge' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
                           <button
                             onClick={() => setAssetTab('available')}
                             className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'available' ? 'bg-white text-sky-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
