@@ -73,11 +73,7 @@ jobs:
             # 4. Apply schema migrations
             python manage.py migrate
 
-            # 5. Sync local data to production PostgreSQL
-            cp ~/data_sync/backend/production_data.json ~/TechTrolley/backend/production_data.json
-            cp ~/data_sync/backend/load_production_data.py ~/TechTrolley/backend/load_production_data.py
-            python load_production_data.py
-
+            # 5. Apply static assets
             python manage.py collectstatic --noinput
 
             # 6. Restart services
