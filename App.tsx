@@ -160,6 +160,12 @@ const App: React.FC = () => {
   }, [isLoggedIn]); // Depend on isLoggedIn to refetch settings if login state changes
 
   useEffect(() => {
+    if (isLoggedIn && user?.role === 'technician' && currentPage === 'Dashboard') {
+      setCurrentPage('Conferences');
+    }
+  }, [isLoggedIn, user, currentPage]);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (registerDropdownRef.current && !registerDropdownRef.current.contains(event.target as Node)) {
         setIsRegisterDropdownOpen(false);
@@ -242,6 +248,7 @@ const App: React.FC = () => {
     localStorage.setItem('user', JSON.stringify(userData));
     setIsLoggedIn(true);
     setUser(userData);
+    if (userData?.role === 'technician') setCurrentPage('Conferences');
   };
 
   const handleLogout = () => {
@@ -3030,12 +3037,14 @@ const App: React.FC = () => {
           <nav className="space-y-4">
             {/* ... nav items ... */}
             {[
-              { id: 'Dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
+              ...((user?.is_staff || user?.role !== 'technician') ? [
+                { id: 'Dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
+              ] : []),
               ...((user?.is_staff || user?.role === 'godown_incharge') ? [
                 { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
               ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
-              ...(user?.role !== 'godown_incharge' ? [
+              ...(user?.role !== 'godown_incharge' && user?.role !== 'technician' ? [
                 { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
                 { id: 'Reports', icon: 'fa-chart-pie', label: 'Reports' }
               ] : []),
