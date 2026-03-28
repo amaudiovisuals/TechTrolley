@@ -44,7 +44,9 @@ def custom_login(request):
     return Response({
         'token': token.key,
         'user_id': user.pk,
+        'username': user.username,
         'email': user.email,
         'is_staff': user.is_staff,
-        'employee_id': employee_id
+        'employee_id': employee_id,
+        'role': user.profile.role if hasattr(user, 'profile') else ('admin' if user.is_staff else 'technician')
     })

@@ -49,9 +49,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             if (response.ok) {
                 onLogin(data.token, {
                     email: data.email,
+                    username: data.username,
                     userId: data.user_id,
                     is_staff: data.is_staff,
-                    employee_id: data.employee_id
+                    employee_id: data.employee_id,
+                    role: data.role
                 });
             } else {
                 setError(data.error || 'Login failed');

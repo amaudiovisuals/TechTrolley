@@ -17,6 +17,7 @@ def get_my_profile(request):
 
     return Response({
         'user_id': user.pk,
+        'username': user.username,
         'email': user.email,
         'is_staff': user.is_staff,
         'employee_id': employee_id,
