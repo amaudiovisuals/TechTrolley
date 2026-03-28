@@ -389,7 +389,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                                                                 <div key={l.id} className="flex items-center gap-2">
                                                                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                                                                     <p className="text-xs text-slate-200 uppercase">{l.aliasName || l.sku}</p>
-                                                                    <button onClick={() => setDetailAsset(l)} className="text-[9px] text-sky-400 font-black uppercase hover:text-white transition-colors">Details</button>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button onClick={() => setDetailAsset(l)} className="text-[9px] text-sky-400 font-black uppercase hover:text-white transition-colors">Details</button>
+                                                                        {(user?.role === 'admin' || user?.is_staff) && (
+                                                                            <button 
+                                                                                onClick={() => {
+                                                                                    if (window.confirm(`Unassign ${l.aliasName || l.sku} from ${emp.name}?`)) {
+                                                                                        handleAssignLaptop(l.id as any, null);
+                                                                                    }
+                                                                                }} 
+                                                                                className="text-[9px] text-red-500 font-black uppercase hover:text-white transition-colors"
+                                                                            >
+                                                                                Remove
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                         </div>
