@@ -680,7 +680,7 @@ const App: React.FC = () => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
     setEditingConference(conf);
-    setAssetTab('available'); // Reset to available tab by default for everyone
+    setAssetTab(user?.role === 'technician' ? 'assigned' : 'available'); // Reset to default tab based on role
     setConferenceFormData({
       id: conf.id,
       name: conf.name,
