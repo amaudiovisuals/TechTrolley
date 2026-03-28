@@ -17,4 +17,3 @@ echo --- Step 4: Pushing to GitHub (Triggers AWS Deployment) ---
 git push origin main
 
 echo --- Done! Check GitHub Actions for deployment status ---
-pause
