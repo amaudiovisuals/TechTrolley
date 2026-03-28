@@ -3536,7 +3536,7 @@ const App: React.FC = () => {
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                 {/* Second Row Bottom: Logistics (Narrow) & Scanning (Wide) */}
-                <div className="lg:col-span-4 space-y-8">
+                <div className={`${editingConference ? 'lg:col-span-4' : 'lg:col-span-12'} space-y-8 animate-in fade-in slide-in-from-left duration-700`}>
                   <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 space-y-8 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-sky-50 rounded-full -mr-12 -mt-12 group-hover:bg-sky-100 transition-colors duration-500 opacity-50"></div>
                     
@@ -3627,9 +3627,10 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right Column: Asset Scanning Card */}
-                <div className="lg:col-span-8">
-                  <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
+                {/* Right Column: Asset Scanning Card (Hidden for new conferences) */}
+                {editingConference && (
+                  <div className="lg:col-span-8">
+                    <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-500/20">
@@ -3710,7 +3711,17 @@ const App: React.FC = () => {
                     <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-[400px]">
                       {assetTab === 'available' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {assets.filter(a => {
+                          {!quickAddInput.trim() ? (
+                            <div className="col-span-2 py-24 text-center space-y-5 animate-in fade-in zoom-in duration-500">
+                                <div className="w-20 h-20 bg-sky-50 rounded-3xl flex items-center justify-center mx-auto text-sky-400 border border-sky-100/50 shadow-inner">
+                                    <i className="fa-solid fa-barcode-read text-3xl animate-pulse"></i>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-slate-800 font-black uppercase text-xs tracking-widest">Ready to Scan</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Type SKU or use scanner to find items</p>
+                                </div>
+                            </div>
+                          ) : assets.filter(a => {
                             const currentConferenceId = editingConference?.id;
                             const bookedInOtherConferences = new Set<string>(
                               backendConferences
@@ -3724,7 +3735,7 @@ const App: React.FC = () => {
                             const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
                             
                             const q = quickAddInput.toLowerCase();
-                            const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                            const matchesSearch = (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
                             const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
                             const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
                             const notDamaged = a.status !== AssetStatus.DAMAGED;
@@ -3748,7 +3759,7 @@ const App: React.FC = () => {
                             const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
                             
                             const q = quickAddInput.toLowerCase();
-                            const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                            const matchesSearch = (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
                             const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
                             const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
                             const notDamaged = a.status !== AssetStatus.DAMAGED;
@@ -3834,9 +3845,10 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
-          )}
+          </div>
+        )}
 
 
           {currentPage === 'Billing' && challanViewMode === 'List' && renderChallanList()}

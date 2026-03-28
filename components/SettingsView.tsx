@@ -471,26 +471,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                             {employees.map(emp => (
                                 <div key={emp.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900 gap-4">
                                     <div className="flex items-center gap-4 min-w-0 flex-1">
-                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex shrink-0 items-center justify-center text-teal-500">
-                                            <i className="fa-solid fa-user-tag"></i>
+                                        <div className="w-12 h-12 bg-slate-900/80 rounded-2xl flex shrink-0 items-center justify-center text-teal-500 shadow-inner">
+                                            <i className="fa-solid fa-user-tag text-lg"></i>
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-bold text-white uppercase truncate">{emp.name}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono truncate">Login: {emp.email}</p>
+                                            <p className="text-sm font-black text-white uppercase truncate tracking-tight">{emp.name}</p>
+                                            <p className="text-[10px] text-slate-500 font-medium truncate opacity-70">ID: {emp.employee_id} • {emp.email}</p>
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+                                    <div className="flex items-center justify-end gap-3 shrink-0">
                                         <select
                                             value={emp.role || 'technician'}
                                             onChange={(e) => handleUpdateRole(emp.email, e.target.value)}
-                                            className="bg-slate-900 border border-slate-700 rounded-lg text-white text-[10px] font-bold p-2 uppercase outline-none focus:border-sky-500 transition cursor-pointer"
+                                            className="bg-slate-900/80 border border-slate-800 rounded-xl text-white text-[10px] font-black p-2.5 uppercase outline-none focus:border-sky-500 transition cursor-pointer hover:bg-slate-800"
                                         >
                                             <option value="admin">Admin</option>
-                                            <option value="godown_incharge">Godown Incharge</option>
+                                            <option value="godown_incharge">Incharge</option>
                                             <option value="technician">Technician</option>
                                         </select>
-                                        <button onClick={() => handleDeleteEmployee(emp.id!)} className="text-slate-600 hover:text-red-500 transition px-2">
-                                            <i className="fa-solid fa-trash"></i>
+                                        <button onClick={() => handleDeleteEmployee(emp.id!)} className="w-10 h-10 flex items-center justify-center text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition">
+                                            <i className="fa-solid fa-trash text-sm"></i>
                                         </button>
                                     </div>
                                 </div>
