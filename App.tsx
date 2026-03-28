@@ -3594,7 +3594,7 @@ const App: React.FC = () => {
 
                       {/* Scanner visibility logic per role */}
                       {((assetTab === 'available') || 
-                        ((user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
+                        ((user?.is_staff || user?.role === 'technician' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
                         ((user?.role === 'godown_incharge' || user?.is_staff) && assetTab === 'crosscheck')) && (
                         <div className="relative group">
                           <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
@@ -3708,7 +3708,7 @@ const App: React.FC = () => {
                                 <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
                                 <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type}</p>
                               </div>
-                              {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                              {(user?.is_staff || user?.role === 'technician' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
                                 <button
                                   onClick={() => triggerAssetConferenceAction(asset, 'remove')}
                                   className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
