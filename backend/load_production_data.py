@@ -39,7 +39,8 @@ User.objects.all().delete()
 
 # Step 2: Load fresh data from fixture
 print("Loading production_data.json into PostgreSQL...")
-call_command('loaddata', 'production_data.json', verbosity=1)
+fixture_path = os.path.join(os.path.dirname(__file__), 'production_data.json')
+call_command('loaddata', fixture_path, verbosity=1)
 
 print("=== Sync Complete ===")
 print(f"Users: {User.objects.count()}")

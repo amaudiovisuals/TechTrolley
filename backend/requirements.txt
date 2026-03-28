@@ -51,3 +51,5 @@ tzdata==2025.3
 urllib3==1.26.20
 wcwidth==0.2.14
 wrapt==2.1.2
+
+psycopg2-binary==2.9.10
