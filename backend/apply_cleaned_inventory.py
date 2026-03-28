@@ -74,7 +74,8 @@ def apply_cleaned_inventory(excel_path):
         imei2 = clean_val(imei2)
 
         # Asset Update Logic
-        asset, created = Asset.objects.get_or_create(sku=sku)
+        asset = Asset.objects.create(sku=sku)
+        created = True
         
         asset.name = name
         asset.alias_name = alias
