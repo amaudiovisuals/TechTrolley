@@ -23,6 +23,29 @@ function getSkuFamily(sku: string): string {
 }
 
 const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
+
+const ScanPrompt: React.FC<{ title?: string, subtitle?: string }> = ({ 
+  title = "Ready to Scan", 
+  subtitle = "Type a SKU or scan a QR code to see results" 
+}) => (
+  <div className="col-span-full py-32 flex flex-col items-center justify-center text-center space-y-6 animate-in fade-in zoom-in duration-700">
+    <div className="relative">
+      <div className="absolute inset-0 bg-sky-500/20 blur-3xl rounded-full scale-150 animate-pulse"></div>
+      <div className="relative w-24 h-24 bg-gradient-to-br from-sky-500 to-blue-600 rounded-3xl flex items-center justify-center text-white text-4xl shadow-2xl shadow-sky-500/20 ring-4 ring-white">
+        <i className="fa-solid fa-qrcode animate-bounce"></i>
+      </div>
+    </div>
+    <div className="space-y-2">
+      <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">{title}</h3>
+      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest max-w-xs leading-relaxed">{subtitle}</p>
+    </div>
+    <div className="flex gap-2">
+      <div className="w-2 h-2 bg-sky-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+      <div className="w-2 h-2 bg-sky-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+      <div className="w-2 h-2 bg-sky-500 rounded-full animate-bounce"></div>
+    </div>
+  </div>
+);
 import {
   MOCK_ASSETS,
   MOCK_CLIENTS,
@@ -671,22 +694,31 @@ const App: React.FC = () => {
     });
   };
 
-  const handleUpdateLogistics = async (confId: string, vehicleNo: string, driverNo: string) => {
+  const handleUpdateLogistics = async () => {
+    const { id, vehicle_number, driver_phone, assets: assetIds, crosscheck_assets, assigned_employees } = conferenceFormData;
+    
     try {
       let body: any;
       if (pdfFile) {
         body = new FormData();
-        body.append('vehicle_number', vehicleNo);
-        body.append('driver_phone', driverNo);
+        body.append('vehicle_number', vehicle_number || '');
+        body.append('driver_phone', driver_phone || '');
         body.append('pdf_document', pdfFile);
+        // Append collections as JSON strings for FormData compatibility
+        body.append('assets', JSON.stringify(assetIds || []));
+        body.append('crosscheck_assets', JSON.stringify(crosscheck_assets || []));
+        body.append('assigned_employees', JSON.stringify(assigned_employees || []));
       } else {
         body = JSON.stringify({
-          vehicle_number: vehicleNo,
-          driver_phone: driverNo
+          vehicle_number,
+          driver_phone,
+          assets: assetIds,
+          crosscheck_assets,
+          assigned_employees
         });
       }
 
-      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${id}/`, {
         method: 'POST',
         body: body
       });
@@ -696,18 +728,18 @@ const App: React.FC = () => {
         setPdfFile(null); // Clear the pending file after successful upload
         // Update local state immediately to show the new link
         setConferenceFormData(prev => ({ ...prev, pdf_document: updatedData.pdf_document }));
-        setScanToast({ message: "Logistics and PDF updated successfully!", type: 'success' });
-        alert("UPLOAD SUCCESSFUL: The PDF is now saved on the server. Technicians will see it immediately.");
+        setScanToast({ message: "Conference state and logistics saved!", type: 'success' });
+        alert("SAVE SUCCESSFUL: Assets and logistics are now synced with the server.");
       } else {
         const errData = await res.json().catch(() => ({}));
-        console.error("Upload Error Details:", errData);
-        setScanToast({ message: `Failed to update logistics: ${JSON.stringify(errData)}`, type: 'error' });
-        alert(`UPLOAD FAILED: Status ${res.status}. Server Error: ${JSON.stringify(errData)}`);
+        console.error("Save Error Details:", errData);
+        setScanToast({ message: `Failed to save: ${JSON.stringify(errData)}`, type: 'error' });
+        alert(`SAVE FAILED: Status ${res.status}. Server Error: ${JSON.stringify(errData)}`);
       }
     } catch (err) {
-      console.error("Logistics Update Network Error:", err);
-      alert(`NETWORK ERROR: Could not connect to backend. Please check your internet connection. Details: ${err}`);
-      setScanToast({ message: "Network error while updating logistics", type: 'error' });
+      console.error("Conference Update Network Error:", err);
+      alert(`NETWORK ERROR: Could not connect to backend. Details: ${err}`);
+      setScanToast({ message: "Network error while saving", type: 'error' });
     }
   };
 
@@ -719,15 +751,17 @@ const App: React.FC = () => {
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
-      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
+      contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', 
+      assets: [], requirements: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
     });
     setConferenceView('Form');
   };
 
 
-  const openEditConferenceForm = (conf: any) => {
+   const openEditConferenceForm = (conf: any) => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
+    fetchEmployees();   // Ensure technician names are loaded
     setEditingConference(conf);
     setAssetTab(user?.role === 'technician' ? 'assigned' : 'available'); // Reset to default tab based on role
     setConferenceFormData({
@@ -746,6 +780,7 @@ const App: React.FC = () => {
       end_date: conf.endDate,
       conference_type: conf.type,
       assets: conf.assets || [],
+      requirements: conf.requirements || [],
       crosscheck_assets: conf.crosscheckAssets || [],
       assigned_employees: conf.assigned_employees || [],
       pdf_document: conf.pdf_document
@@ -901,7 +936,7 @@ const App: React.FC = () => {
     return asset || null;
   };
 
-  const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove') => {
+  const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove' | 'unassign') => {
     const assetIdStr = asset.id.toString();
     const existingAssets = conferenceFormData.assets.map((id: any) => id.toString());
     const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => id.toString()));
@@ -960,11 +995,26 @@ const App: React.FC = () => {
         setScannedSubAssetIds([]);
         showScanToast(`⚠️ Please scan ${asset.sub_assets.length} component(s) to add "${asset.aliasName || asset.sku}"`, 'warning');
       } else {
-        setConferenceFormData((prev: any) => ({
-          ...prev,
-          assets: [...prev.assets, assetIdStr]
-        }));
-        showScanToast(`✅ Added Successfully: "${asset.aliasName || asset.sku}"`, 'success');
+        if (user?.role === 'technician') {
+          // Technician adds to REQUIREMENTS
+          setConferenceFormData((prev: any) => ({
+            ...prev,
+            requirements: [...(prev.requirements || []), assetIdStr]
+          }));
+          showScanToast(`📋 Requirement Added: "${asset.aliasName || asset.sku}"`, 'success');
+        } else {
+          // Admin/Godown adds to ACTUAL ASSETS
+          setConferenceFormData((prev: any) => {
+            // Fulfillment logic: if it was in requirements, remove it from there
+            const updatedRequirements = (prev.requirements || []).filter((id: any) => id.toString() !== assetIdStr);
+            return {
+              ...prev,
+              assets: [...prev.assets, assetIdStr],
+              requirements: updatedRequirements
+            };
+          });
+          showScanToast(`✅ Assigned Successfully: "${asset.aliasName || asset.sku}"`, 'success');
+        }
       }
     } else if (action === 'remove') {
       if (user?.role === 'godown_incharge') {
@@ -988,6 +1038,23 @@ const App: React.FC = () => {
           crosscheck_assets: [...(prev.crosscheck_assets || []), assetIdStr]
         }));
         showScanToast(`✅ Moved to Godown Crosscheck: "${asset.aliasName || asset.sku}"`, 'success');
+      }
+    } else if (action === 'unassign') {
+      if (user?.role === 'technician') {
+        // Technician removes from REQUIREMENTS
+        setConferenceFormData((prev: any) => ({
+          ...prev,
+          requirements: (prev.requirements || []).filter((id: any) => id.toString() !== assetIdStr)
+        }));
+        showScanToast(`🗑️ Requirement Removed: "${asset.aliasName || asset.sku}"`, 'success');
+      } else {
+        // Admin/Godown unassigns from ACTUAL ASSETS
+        setConferenceFormData((prev: any) => ({
+          ...prev,
+          assets: prev.assets.filter((id: any) => id.toString() !== assetIdStr),
+          crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => id.toString() !== assetIdStr)
+        }));
+        showScanToast(`🗑️ Removed Accident: "${asset.aliasName || asset.sku}"`, 'success');
       }
     }
   };
@@ -2608,7 +2675,8 @@ const App: React.FC = () => {
 
         {/* Mobile View: Cards (Visible only on mobile/PDA) */}
         <div className="md:hidden divide-y divide-slate-800/40">
-          {paginatedInventoryAssets.map((asset) => (
+          {paginatedInventoryAssets.length > 0 ? (
+            paginatedInventoryAssets.map((asset) => (
             <div key={asset.id} onClick={() => openAssetDetails(asset)} className="p-4 space-y-3 active:bg-slate-800/20 transition-colors">
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -2653,8 +2721,13 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-          ))}
-          {paginatedInventoryAssets.length === 0 && <div className="p-8 text-center text-slate-500 font-black uppercase text-[10px]">No assets found</div>}
+            ))
+          ) : (
+            <div className="py-20 text-center w-full">
+              <i className="fa-solid fa-magnifying-glass text-4xl text-slate-800 mb-4 scale-x-[-1]"></i>
+              <p className="text-xs font-black text-slate-600 uppercase tracking-widest">No assets found</p>
+            </div>
+          )}
         </div>
         <div className="hidden md:block overflow-x-auto custom-scrollbar">
           <table className="w-full text-left min-w-[1000px]">
@@ -2670,8 +2743,9 @@ const App: React.FC = () => {
                 <th className="px-6 py-6 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/20">
-              {paginatedInventoryAssets.map((asset) => (
+             <tbody className="divide-y divide-slate-800/20">
+               {paginatedInventoryAssets.length > 0 ? (
+                 paginatedInventoryAssets.map((asset) => (
                 <tr key={asset.id} onClick={() => openAssetDetails(asset)} className="hover:bg-slate-800/10 transition cursor-pointer group">
                   <td className="px-6 py-6">
                     <p className="text-xs font-black text-sky-400 font-mono">{asset.sku}</p>
@@ -2726,7 +2800,14 @@ const App: React.FC = () => {
                     <button onClick={() => handleDeleteAsset(asset.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
                   </td>
                 </tr>
-              ))}
+                  ))
+              ) : (
+                <tr>
+                  <td colSpan={10} className="px-6 py-20 text-center">
+                    <ScanPrompt title="No Results Found" subtitle="Try a different SKU or category" />
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -3557,19 +3638,24 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                      {employees.map(emp => {
-                        const isAssigned = conferenceFormData.assigned_employees?.includes(Number(emp.id));
+                      {employees.length === 0 ? (
+                        <div className="col-span-full py-6 text-center">
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest italic">No Technicians Loaded. Try refreshing.</p>
+                        </div>
+                      ) : employees.map(emp => {
+                        // Use string comparison for robustness across different DB types
+                        const isAssigned = (conferenceFormData.assigned_employees || []).some(id => String(id) === String(emp.id));
                         return (
                           <button
                             key={emp.id}
                             type="button"
                             onClick={() => {
-                              const current = [...(conferenceFormData.assigned_employees || [])].map(Number);
-                              const empIdNum = Number(emp.id);
-                              if (current.includes(empIdNum)) {
-                                setConferenceFormData({ ...conferenceFormData, assigned_employees: current.filter(id => id !== empIdNum) });
+                              const current = [...(conferenceFormData.assigned_employees || [])].map(String);
+                              const empIdStr = String(emp.id);
+                              if (current.includes(empIdStr)) {
+                                setConferenceFormData({ ...conferenceFormData, assigned_employees: current.filter(id => id !== empIdStr) });
                               } else {
-                                setConferenceFormData({ ...conferenceFormData, assigned_employees: [...current, empIdNum] });
+                                setConferenceFormData({ ...conferenceFormData, assigned_employees: [...current, empIdStr] });
                               }
                             }}
                             className={`flex items-center gap-3 p-3 rounded-xl border text-[10px] font-black uppercase transition-all duration-300 ${isAssigned ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-500/20' : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-sky-300 hover:bg-white'}`}
@@ -3658,46 +3744,21 @@ const App: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Technician/Admin PDF Download Link */}
-                      {conferenceFormData.pdf_document && (
-                        <div className="pt-2 animate-in fade-in duration-700">
-                           <div className="flex items-center justify-between mb-2 ml-1">
-                             <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Current Logistics PDF</label>
-                             {!user?.is_staff && (
-                               <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full animate-pulse shadow-md shadow-emerald-500/30">
-                                 <span className="w-1 h-1 bg-white rounded-full"></span> PDF AVAILABLE
-                               </span>
-                             )}
-                           </div>
-                           <a 
-                             href={`${API_BASE}/api/conferences/${conferenceFormData.id}/download-pdf/`}
-                             className="w-full flex items-center gap-4 bg-sky-500 text-white rounded-2xl px-6 py-5 hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/30 active:scale-[0.98] ring-2 ring-sky-500/20"
-                           >
-                             <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-white text-2xl">
-                               <i className="fa-solid fa-file-pdf"></i>
-                             </div>
-                             <div className="flex-1 min-w-0 text-left">
-                               <p className="text-base font-black uppercase tracking-[0.1em]">Download PDF</p>
-                               <p className="text-[10px] text-white/80 font-medium italic truncate">Tap to view conference logistics</p>
-                             </div>
-                             <i className="fa-solid fa-chevron-right text-white/50"></i>
-                           </a>
-                        </div>
-                      )}
 
-                      <div className="pt-4 space-y-4">
+                      <div className="pt-4 grid grid-cols-1 gap-3">
                         <button 
                           onClick={() => handlePrintChallan(editingConference)}
-                          className="w-full py-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                          className="w-full py-4 md:py-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/20 transition-all active:scale-95 leading-tight"
                         >
-                          <i className="fa-solid fa-print"></i> Print Delivery Challan
+                          <i className="fa-solid fa-print"></i> <span>Print Delivery Challan</span>
                         </button>
-                        {user?.is_staff && (
+                        {(user?.is_staff || user?.role === 'technician') && (
                           <button 
-                            onClick={() => handleUpdateLogistics(conferenceFormData.id, conferenceFormData.vehicle_number, conferenceFormData.driver_phone)}
-                            className="w-full py-5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-sky-600/20 transition-all active:scale-95"
+                            onClick={() => handleUpdateLogistics()}
+                            className="w-full py-4 md:py-5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-sky-600/20 transition-all active:scale-95 leading-tight text-center"
                           >
-                            <i className="fa-solid fa-cloud-arrow-up"></i> Update Logistics & PDF
+                            <i className="fa-solid fa-cloud-arrow-up"></i> 
+                            <span>{user?.role === 'technician' ? 'Submit Requirements' : 'Update Logistics & PDF'}</span>
                           </button>
                         )}
                       </div>
@@ -3740,10 +3801,9 @@ const App: React.FC = () => {
                           onClick={() => setAssetTab('assigned')}
                           className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'assigned' ? 'bg-white text-emerald-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
                         >
-                          Assigned
+                          Requirements
                         </button>
                         <button
-                          onClick={() => setAssetTab('crosscheck')}
                           className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'crosscheck' ? 'bg-white text-orange-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
                         >
                           Crosscheck
@@ -3788,7 +3848,72 @@ const App: React.FC = () => {
                     <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-[400px]">
                       {assetTab === 'available' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {assets.filter(a => {
+                           {!quickAddInput ? (
+                             <div className="col-span-2 space-y-8">
+                               <ScanPrompt subtitle="Type SKU or scan QR code to allocate assets" />
+                               
+                               {/* Requirements List (for Tech) or Progress List (for Godown) */}
+                               {user?.role === 'technician' ? (
+                                 conferenceFormData.requirements.length > 0 && (
+                                   <div className="space-y-4 pt-6 border-t border-slate-100">
+                                     <div className="flex items-center justify-between px-1">
+                                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Requirements List</h4>
+                                       <span className="text-[10px] font-black text-sky-500 bg-sky-50 px-2 py-0.5 rounded-full">{conferenceFormData.requirements.length} ITEMS</span>
+                                     </div>
+                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                       {assets.filter(a => new Set(conferenceFormData.requirements.map(String)).has(String(a.id))).map(asset => (
+                                         <div key={asset.id} className="p-4 rounded-2xl border border-sky-100 bg-sky-50/20 flex items-center gap-4 transition-all hover:bg-sky-50/30">
+                                           <div className="w-10 h-10 bg-white border border-sky-100 text-sky-500 rounded-xl flex items-center justify-center text-lg shadow-sm">
+                                             <i className="fa-solid fa-list-check"></i>
+                                           </div>
+                                           <div className="min-w-0 flex-1">
+                                             <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                             <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5 truncate">{asset.type}</p>
+                                           </div>
+                                           <button
+                                             onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                             className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                             title="Remove Requirement"
+                                           >
+                                             <i className="fa-solid fa-trash-can text-xs"></i>
+                                           </button>
+                                         </div>
+                                       ))}
+                                     </div>
+                                   </div>
+                                 )
+                               ) : (
+                                 conferenceFormData.assets.length > 0 && (
+                                   <div className="space-y-4 pt-6 border-t border-slate-100">
+                                     <div className="flex items-center justify-between px-1">
+                                       <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Currently Scanned</h4>
+                                       <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{conferenceFormData.assets.length} ITEMS</span>
+                                     </div>
+                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                       {assets.filter(a => new Set(conferenceFormData.assets.map(String)).has(String(a.id))).map(asset => (
+                                         <div key={asset.id} className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 flex items-center gap-4 transition-all hover:bg-emerald-50/30">
+                                           <div className="w-10 h-10 bg-white border border-emerald-100 text-emerald-500 rounded-xl flex items-center justify-center text-lg shadow-sm">
+                                             <i className="fa-solid fa-check-double"></i>
+                                           </div>
+                                           <div className="min-w-0 flex-1">
+                                             <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                             <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5 truncate">{asset.type}</p>
+                                           </div>
+                                           <button
+                                             onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                             className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                             title="Hard Remove (Accidental Scan)"
+                                           >
+                                             <i className="fa-solid fa-trash-can text-xs"></i>
+                                           </button>
+                                         </div>
+                                       ))}
+                                     </div>
+                                   </div>
+                                 )
+                               )}
+                             </div>
+                           ) : (() => {
                             const currentConferenceId = editingConference?.id;
                             const bookedInOtherConferences = new Set<string>(
                               backendConferences
@@ -3800,38 +3925,26 @@ const App: React.FC = () => {
                             );
                             const selectedIds = new Set(conferenceFormData.assets.map((id: any) => String(id)));
                             const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
-                            
                             const q = quickAddInput.toLowerCase();
-                            const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
-                            const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
-                            const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
-                            const notDamaged = a.status !== AssetStatus.DAMAGED;
-                            return matchesSearch && notInCurrentConf && notInOtherConf && notDamaged;
-                          }).length === 0 ? (
-                            <div className="col-span-2 py-20 text-center space-y-4">
-                              <div className="text-slate-200 text-6xl"><i className="fa-solid fa-layer-group"></i></div>
-                              <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No available assets found</p>
-                            </div>
-                          ) : assets.filter(a => {
-                            const currentConferenceId = editingConference?.id;
-                            const bookedInOtherConferences = new Set<string>(
-                              backendConferences
-                                .filter(c => String(c.id) !== String(currentConferenceId))
-                                .flatMap(c => [
-                                  ...((c as any).assets || []).map(String),
-                                  ...((c.crosscheckAssets || []).map(String))
-                                ])
-                            );
-                            const selectedIds = new Set(conferenceFormData.assets.map((id: any) => String(id)));
-                            const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => String(id)));
-                            
-                            const q = quickAddInput.toLowerCase();
-                            const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
-                            const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
-                            const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
-                            const notDamaged = a.status !== AssetStatus.DAMAGED;
-                            return matchesSearch && notInCurrentConf && notInOtherConf && notDamaged;
-                          }).map(asset => (
+
+                            const availableFiltered = assets.filter(a => {
+                              const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                              const notInCurrentConf = !selectedIds.has(String(a.id)) && !crosscheckIds.has(String(a.id));
+                              const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
+                              const notDamaged = a.status !== AssetStatus.DAMAGED;
+                              return matchesSearch && notInCurrentConf && notInOtherConf && notDamaged;
+                            });
+
+                            if (availableFiltered.length === 0) {
+                              return (
+                                <div className="col-span-2 py-20 text-center space-y-4">
+                                  <div className="text-slate-200 text-6xl"><i className="fa-solid fa-layer-group"></i></div>
+                                  <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No matching assets found</p>
+                                </div>
+                              );
+                            }
+
+                            return availableFiltered.map(asset => (
                             <div 
                               key={asset.id} 
                               onClick={() => triggerAssetConferenceAction(asset, 'add')}
@@ -3846,37 +3959,102 @@ const App: React.FC = () => {
                               </div>
                               <i className="fa-solid fa-circle-plus text-slate-200 group-hover:text-sky-500 transition-colors"></i>
                             </div>
-                          ))}
+                            ))
+                          })()}
                         </div>
                       )}
-
+ 
                       {assetTab === 'assigned' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {conferenceFormData.assets.length === 0 ? (
-                             <div className="col-span-2 py-20 text-center space-y-4">
-                             <div className="text-slate-200 text-6xl"><i className="fa-solid fa-clipboard-list"></i></div>
-                             <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Scanning list is empty</p>
-                           </div>
-                          ) : assets.filter(a => new Set(conferenceFormData.assets.map(String)).has(String(a.id))).map(asset => (
-                            <div key={asset.id} className="p-5 rounded-[1.5rem] border border-emerald-100 bg-emerald-50/10 flex items-center gap-4 shadow-sm group">
-                              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-emerald-200">
-                                <i className="fa-solid fa-check-double"></i>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type}</p>
-                              </div>
-                              {(user?.is_staff || user?.role === 'technician' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                          {user?.role === 'technician' ? (
+                            // Technician Role List: Just show requirements
+                            conferenceFormData.requirements.length === 0 ? (
+                               <div className="col-span-2 py-20 text-center space-y-4">
+                               <div className="text-slate-200 text-6xl"><i className="fa-solid fa-clipboard-list"></i></div>
+                               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No requirements scanned yet</p>
+                             </div>
+                            ) : assets.filter(a => new Set(conferenceFormData.requirements.map(String)).has(String(a.id))).map(asset => (
+                              <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
+                                <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
+                                  <i className="fa-solid fa-list-check"></i>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                  <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type} (Requirement)</p>
+                                </div>
                                 <button
-                                  onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                                  onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
                                   className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                  title="Move to Crosscheck"
+                                  title="Remove Requirement"
                                 >
-                                  <i className="fa-solid fa-arrow-right-arrow-left"></i>
+                                  <i className="fa-solid fa-trash-can text-xs"></i>
                                 </button>
-                              )}
-                            </div>
-                          ))}
+                              </div>
+                            ))
+                          ) : (
+                            // Godown/Admin Role View: Show BOTH Pending Requirements and Extra Scans
+                            (() => {
+                              const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
+                              const assignedIds = new Set((conferenceFormData.assets || []).map(String));
+                              
+                              if (requirementIds.size === 0 && assignedIds.size === 0) {
+                                return (
+                                  <div className="col-span-2 py-20 text-center space-y-4">
+                                    <div className="text-slate-200 text-6xl"><i className="fa-solid fa-clipboard-list"></i></div>
+                                    <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No requirements or assignments</p>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <>
+                                  {/* Pending Requirements (items requested but NOT yet scanned) */}
+                                  {assets.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id))).map(asset => (
+                                    <div key={asset.id} className="p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
+                                      <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
+                                        <i className="fa-solid fa-hourglass-start"></i>
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                        <div className="flex gap-2 items-center mt-1">
+                                          <span className="px-2 py-0.5 bg-orange-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full">PENDING</span>
+                                          <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{asset.type}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {/* Actual Assignments (Fulfilled requirements or extra) */}
+                                  {assets.filter(a => assignedIds.has(String(a.id))).map(asset => {
+                                    const isExtra = !requirementIds.has(String(asset.id));
+                                    return (
+                                      <div key={asset.id} className={`p-5 rounded-[1.5rem] border flex items-center gap-4 shadow-sm group ${isExtra ? 'border-amber-200 bg-amber-50/20' : 'border-emerald-100 bg-emerald-50/10'}`}>
+                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner border ${isExtra ? 'bg-amber-100 text-amber-600 border-amber-200' : 'bg-emerald-100 text-emerald-600 border-emerald-200'}`}>
+                                          <i className={isExtra ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-check-double"}></i>
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                          <div className="flex gap-2 items-center mt-1">
+                                            <span className={`px-2 py-0.5 text-white text-[8px] font-black uppercase tracking-widest rounded-full ${isExtra ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+                                              {isExtra ? 'EXTRA SCAN' : 'ASSIGNED'}
+                                            </span>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{asset.type}</p>
+                                          </div>
+                                        </div>
+                                        <button
+                                          onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                          className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                          title="Hard Remove (Accidental Scan)"
+                                        >
+                                          <i className="fa-solid fa-trash-can text-xs"></i>
+                                        </button>
+                                      </div>
+                                    )
+                                  })}
+                                </>
+                              );
+                            })()
+                          )}
                         </div>
                       )}
 

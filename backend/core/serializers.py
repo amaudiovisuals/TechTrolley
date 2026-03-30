@@ -62,6 +62,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         assets_data = validated_data.pop('assets', [])
+        requirements_data = validated_data.pop('requirements', [])
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
         employees_data = validated_data.pop('assigned_employees', [])
         conference = Conference.objects.create(**validated_data)
@@ -75,6 +76,9 @@ class ConferenceSerializer(serializers.ModelSerializer):
             conference.crosscheck_assets.set(crosscheck_data)
             Asset.objects.filter(id__in=[a.id for a in crosscheck_data]).update(status='Crosscheck')
 
+        if requirements_data:
+            conference.requirements.set(requirements_data)
+
         if employees_data:
             conference.assigned_employees.set(employees_data)
             
@@ -82,6 +86,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         assets_data = validated_data.pop('assets', None)
+        requirements_data = validated_data.pop('requirements', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
         
@@ -132,6 +137,9 @@ class ConferenceSerializer(serializers.ModelSerializer):
                 if not in_any_conf and not in_other_cc:
                     asset.status = 'Available'
                     asset.save()
+
+        if requirements_data is not None:
+            instance.requirements.set(requirements_data)
 
         if employees_data is not None:
             instance.assigned_employees.set(employees_data)

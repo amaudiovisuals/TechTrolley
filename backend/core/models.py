@@ -113,6 +113,7 @@ class Conference(models.Model):
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     assets = models.ManyToManyField(Asset, blank=True, related_name='assigned_conferences')
+    requirements = models.ManyToManyField(Asset, blank=True, related_name='requirement_conferences')
     crosscheck_assets = models.ManyToManyField(Asset, blank=True, related_name='crosscheck_conferences')
     assigned_employees = models.ManyToManyField(Employee, blank=True, related_name='assigned_conferences')
     pdf_document = models.FileField(upload_to='conference_pdfs/', null=True, blank=True)
