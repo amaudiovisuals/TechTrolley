@@ -164,3 +164,12 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 ALLOWED_HOSTS = ['.elasticbeanstalk.com', 'localhost', '127.0.0.1', '40.192.34.67', 'techtrolley.amaudiovisuals.com']
 DEBUG = os.getenv('DJANGO_ENV') != 'production'
+# --- SECURITY HARDENING ---
+
+# Login Rate Limiting (Axes)
+
+# --- SECURITY ---
+# Session Security
+SESSION_COOKIE_AGE = 86400                  # 24 Hours
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True     # Logout on browser close
+SESSION_SAVE_EVERY_REQUEST = True          # Refresh session on each request

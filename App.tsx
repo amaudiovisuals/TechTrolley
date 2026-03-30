@@ -2921,9 +2921,7 @@ const App: React.FC = () => {
                   <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{conf.association}</p>
                   {conf.pdf_document && (
                     <a 
-                      href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
+                      href={`${API_BASE}/api/conferences/${conf.id}/download-pdf/`} 
                       onClick={(e) => e.stopPropagation()}
                       className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 bg-sky-500/10 text-sky-400 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-sky-500/20 transition-all border border-sky-500/10"
                     >
@@ -2998,9 +2996,7 @@ const App: React.FC = () => {
                       <p className="text-[9px] text-slate-500 font-black uppercase">ID: {conf.id}</p>
                       {conf.pdf_document && (
                         <a 
-                          href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                          href={`${API_BASE}/api/conferences/${conf.id}/download-pdf/`} 
                           className="flex items-center gap-1.5 px-2 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-md hover:bg-sky-500 hover:text-white transition-all group/pdf"
                           title="Download Logistics PDF"
                         >
@@ -3445,9 +3441,7 @@ const App: React.FC = () => {
                     {conferenceFormData.pdf_document && (
                       <div className="pt-2">
                         <a 
-                          href={conferenceFormData.pdf_document.startsWith('http') ? conferenceFormData.pdf_document : `${API_BASE}${conferenceFormData.pdf_document}`}
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                          href={`${API_BASE}/api/conferences/${conferenceFormData.id}/download-pdf/`}
                           className="inline-flex items-center gap-3 bg-sky-500 text-white px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-sky-500/30 hover:bg-sky-400 hover:scale-105 active:scale-95 transition-all"
                         >
                           <i className="fa-solid fa-file-pdf text-base"></i>
@@ -3676,9 +3670,7 @@ const App: React.FC = () => {
                              )}
                            </div>
                            <a 
-                             href={conferenceFormData.pdf_document.startsWith('http') ? conferenceFormData.pdf_document : `${API_BASE}${conferenceFormData.pdf_document}`}
-                             target="_blank"
-                             rel="noopener noreferrer"
+                             href={`${API_BASE}/api/conferences/${conferenceFormData.id}/download-pdf/`}
                              className="w-full flex items-center gap-4 bg-sky-500 text-white rounded-2xl px-6 py-5 hover:bg-sky-400 transition-all shadow-lg shadow-sky-500/30 active:scale-[0.98] ring-2 ring-sky-500/20"
                            >
                              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-white text-2xl">

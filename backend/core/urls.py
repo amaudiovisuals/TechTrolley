@@ -28,5 +28,6 @@ urlpatterns = [
     path('company-settings/', views.company_settings, name='company_settings'),
     path('upload-assets/', views.bulk_upload_assets, name='bulk_upload_assets'),
     path('download-template/', views.download_asset_template, name='download_asset_template'),
+    path('conferences/<int:conference_id>/download-pdf/', views.download_conference_pdf, name='download_conference_pdf'),
 ]
 
