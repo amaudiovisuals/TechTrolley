@@ -3752,6 +3752,7 @@ const App: React.FC = () => {
 
                       <div className="pt-4 grid grid-cols-1 gap-3">
                         <button 
+                          type="button"
                           onClick={() => handlePrintChallan(editingConference)}
                           className="w-full py-4 md:py-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/20 transition-all active:scale-95 leading-tight"
                         >
@@ -3759,6 +3760,7 @@ const App: React.FC = () => {
                         </button>
                         {(user?.is_staff || user?.role === 'technician') && (
                           <button 
+                            type="button"
                             onClick={() => handleUpdateLogistics()}
                             className="w-full py-4 md:py-5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-sky-600/20 transition-all active:scale-95 leading-tight text-center"
                           >
