@@ -158,11 +158,36 @@ def generate_pdf_challan(request, conference_id):
     p.save()
     
     buffer.seek(0)
-    buffer.seek(0)
-    return HttpResponse(buffer, content_type='application/pdf')
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="Challan_Conf_{conference_id}.pdf"'
+    return response
 
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import permission_classes, api_view
+from django.conf import settings
+import os
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def download_conference_pdf(request, conference_id):
+    """
+    Forces the download of an uploaded logistics PDF instead of opening it in a tab.
+    """
+    conference = get_object_or_404(Conference, id=conference_id)
+    if not conference.pdf_document:
+        return Response({'detail': 'No document attached to this conference'}, status=404)
+        
+    path = conference.pdf_document.path
+    if not os.path.exists(path):
+        return Response({'detail': 'File not found on server'}, status=404)
+        
+    filename = os.path.basename(path)
+    with open(path, 'rb') as f:
+        response = HttpResponse(f.read(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename=\"{filename}\"'
+        return response
+
+from rest_framework.decorators import api_view
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
