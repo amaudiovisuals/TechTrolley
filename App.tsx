@@ -3991,8 +3991,174 @@ const App: React.FC = () => {
                                 </button>
                               </div>
                             ))
+                          ) : user?.role === 'godown_incharge' ? (
+                             <div className="col-span-2 space-y-12">
+                                {/* 1. Pending Requirements (From Tech) */}
+                                <div className="space-y-4">
+                                  <div className="flex items-center justify-between px-1">
+                                    <h4 className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Pending from Technician</h4>
+                                    <span className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">{(conferenceFormData.requirements || []).length} PENDING</span>
+                                  </div>
+                                  {(conferenceFormData.requirements || []).length === 0 ? (
+                                    <div className="p-8 text-center bg-slate-50/50 rounded-3xl border border-dashed border-slate-200">
+                                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No pending requirements</p>
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      {assets.filter(a => new Set((conferenceFormData.requirements || []).map(String)).has(String(a.id))).map(asset => {
+                                        const isAssigned = new Set((conferenceFormData.assets || []).map(String)).has(String(asset.id)) || new Set((conferenceFormData.staged_assets || []).map(String)).has(String(asset.id));
+                                        if (isAssigned) return null; // Only show truly pending here
+                                        return (
+                                          <div key={asset.id} className="p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4">
+                                            <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
+                                              <i className="fa-solid fa-hourglass-start"></i>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type} • PENDING SCAN</p>
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* 2. Godown Search/Scan Bar */}
+                                <div className="space-y-4">
+                                  <div className="relative group">
+                                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                                      <i className="fa-solid fa-magnifying-glass"></i>
+                                    </div>
+                                    <input 
+                                      type="text"
+                                      placeholder="SCAN OR SEARCH ASSETS TO PACK..."
+                                      value={quickAddInput}
+                                      onChange={(e) => setQuickAddInput(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          const val = (e.target as HTMLInputElement).value.trim();
+                                          if (val) {
+                                             const handled = handleScan(val, true);
+                                             if (handled) setQuickAddInput('');
+                                          }
+                                        }
+                                      }}
+                                      className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                                    />
+                                  </div>
+                                  {quickAddInput && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                      {(() => {
+                                         const q = quickAddInput.toLowerCase();
+                                         const avail = assets.filter(a => {
+                                           const matches = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q));
+                                           const notUsed = !new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)) && !new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id));
+                                           return matches && notUsed && a.status !== AssetStatus.DAMAGED;
+                                         });
+                                         if (avail.length === 0) return <div className="col-span-2 text-center text-xs font-bold text-slate-400">No matches found.</div>;
+                                         return avail.slice(0, 6).map(asset => (
+                                           <div 
+                                             key={asset.id} 
+                                             onClick={() => {
+                                                triggerAssetConferenceAction(asset, 'add');
+                                                setQuickAddInput('');
+                                             }}
+                                             className="p-4 rounded-2xl border border-slate-100 bg-white hover:bg-sky-50/50 cursor-pointer transition-all flex items-center gap-3 border-l-4 border-l-sky-500"
+                                           >
+                                             <div className="min-w-0 flex-1">
+                                               <p className="font-black uppercase text-[10px] text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                               <p className="text-[8px] text-slate-400 font-bold uppercase">{asset.type}</p>
+                                             </div>
+                                             <i className="fa-solid fa-plus-circle text-sky-500"></i>
+                                           </div>
+                                         ));
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* 3. Staged / Assigned Items */}
+                                <div className="space-y-6">
+                                  <div className="flex items-center justify-between px-1 border-t border-slate-200 pt-8">
+                                    <div className="flex items-center gap-3">
+                                      <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Staged / Packed Items</h4>
+                                    </div>
+                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{(conferenceFormData.assets || []).length + (conferenceFormData.staged_assets || []).length} READY</span>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Show officially packed assets first */}
+                                    {assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))).map(asset => {
+                                      const isExtra = !new Set((conferenceFormData.requirements || []).map(String)).has(String(asset.id));
+                                      return (
+                                        <div key={asset.id} className={`p-5 rounded-[1.5rem] border items-center gap-4 shadow-sm group flex ${isExtra ? 'border-amber-200 bg-amber-50/20' : 'border-emerald-100 bg-emerald-50/10'}`}>
+                                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner border ${isExtra ? 'bg-amber-100 text-amber-600 border-amber-200' : 'bg-emerald-100 text-emerald-600 border-emerald-200'}`}>
+                                            <i className={isExtra ? "fa-solid fa-layer-group" : "fa-solid fa-check-double"}></i>
+                                          </div>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                            <div className="flex gap-2 items-center mt-1">
+                                              <span className={`px-2 py-0.5 text-white text-[8px] font-black uppercase tracking-widest rounded-full ${isExtra ? 'bg-amber-500' : 'bg-emerald-500'}`}>
+                                                {isExtra ? 'EXTRA INCIDENT' : 'FULFILLED'}
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <button
+                                            onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                            className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                            title="Undo Packing"
+                                          >
+                                            <i className="fa-solid fa-trash-can text-xs"></i>
+                                          </button>
+                                        </div>
+                                      )
+                                    })}
+
+                                    {/* Show staged (just scanned) assets */}
+                                    {assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id))).map(asset => (
+                                      <div key={`staged-${asset.id}`} className="p-5 rounded-[1.5rem] border border-sky-200 bg-sky-50/30 flex items-center gap-4 shadow-sm group">
+                                        <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-300 animate-pulse">
+                                          <i className="fa-solid fa-box"></i>
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                          <p className="text-[9px] text-sky-600 font-bold uppercase mt-1">Staged • Unsaved</p>
+                                        </div>
+                                        <button
+                                          onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                          className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                        >
+                                          <i className="fa-solid fa-xmark text-xs"></i>
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {(conferenceFormData.staged_assets || []).length > 0 && (
+                                    <div className="pt-6">
+                                      <button 
+                                        onClick={() => {
+                                          if (confirm(`Submit ${(conferenceFormData.staged_assets || []).length} items to Packup phase?`)) {
+                                            setConferenceFormData((prev: any) => ({
+                                              ...prev,
+                                              assets: [...prev.assets, ...(prev.staged_assets || [])],
+                                              staged_assets: []
+                                            }));
+                                            showScanToast('✅ Dispatched to Packup!', 'success');
+                                            setAssetTab('packup');
+                                          }
+                                        }}
+                                        className="w-full py-6 bg-sky-500 text-white rounded-3xl font-black uppercase text-sm tracking-[0.2em] shadow-xl shadow-sky-500/20 hover:bg-sky-400 hover:-translate-y-1 transition-all flex items-center justify-center gap-3"
+                                      >
+                                        <i className="fa-solid fa-truck-fast"></i> Finalize Dispatch to Packup
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                             </div>
                           ) : (
-                            // Godown/Admin Role View: Show BOTH Pending Requirements and Extra Scans
+                            // Admin Role View: Show BOTH Pending Requirements and Extra Scans
                             (() => {
                               const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
                               const assignedIds = new Set((conferenceFormData.assets || []).map(String));
