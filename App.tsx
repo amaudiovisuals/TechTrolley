@@ -911,6 +911,28 @@ const App: React.FC = () => {
     const scanned = (decodedText || '').trim();
     if (!scanned) return null;
 
+    // A. FIRST: Check full string exact match (highest priority)
+    const exactMatch = assets.find(a =>
+      a.sku === scanned ||
+      a.barcode === scanned ||
+      (a.qrCode && a.qrCode === scanned) ||
+      a.serialNumber === scanned ||
+      String(a.id) === scanned
+    );
+    if (exactMatch) return exactMatch;
+
+    // B. SECOND: Check normalized full string
+    const normScanned = normalizeId(scanned);
+    const normMatch = assets.find(a =>
+      normalizeId(a.sku) === normScanned ||
+      normalizeId(a.barcode) === normScanned ||
+      (a.qrCode && normalizeId(a.qrCode) === normScanned) ||
+      normalizeId(a.serialNumber) === normScanned ||
+      normalizeId(a.id) === normScanned
+    );
+    if (normMatch) return normMatch;
+
+    // C. THIRD: Split logic for multipart scans (legacy/special)
     const scanParts = scanned.split(/[ ,;]+/).map(p => p.trim()).filter(Boolean);
     const normalizedParts = scanParts.map(p => normalizeId(p));
 
@@ -1205,9 +1227,15 @@ const App: React.FC = () => {
     const asset = findAssetFromScan(scanned);
 
     // 1. ASSET LINKING MODAL (Only for Assets Page)
-    if (!asset && currentPage === 'Assets' && scanned.length > 3) {
+    if (!asset && currentPage === 'Assets' && scanned.length > 2) {
       console.warn('No match for:', scanned);
       setUnrecognizedScan(scanned);
+
+      // NEW: If already viewing an asset, suggest linking this QR to IT!
+      if (viewingAsset) {
+        setLinkingAsset(viewingAsset);
+        showScanToast(`🔍 Unrecognized QR. Link to current asset?`, 'warning');
+      }
       return;
     }
 
@@ -1982,8 +2010,8 @@ const App: React.FC = () => {
                     });
                   }}
                   className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${(viewingAsset.flag || '') === f
-                      ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-500/20'
-                      : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600'
+                    ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-500/20'
+                    : 'bg-slate-800 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600'
                     }`}
                 >
                   {f || 'None'}
@@ -4283,44 +4311,72 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-8 space-y-6">
-              <p className="text-xs text-slate-400">Search for the asset you want to link this QR code to:</p>
-
-              <div className="relative">
-                <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
-                <input
-                  type="text"
-                  placeholder="SEARCH ASSETS BY NAME, BRAND OR SERIAL..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-4 text-white uppercase font-black text-xs tracking-wider focus:border-sky-500 outline-none transition"
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                {assets
-                  .filter(a => !searchQuery ||
-                    (a.aliasName && a.aliasName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                    (a.sku && a.sku.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                    (a.type && a.type.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                    (a.serialNumber && a.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()))
-                  )
-                  .slice(0, 10)
-                  .map(a => (
-                    <button
-                      key={a.id}
-                      onClick={() => setLinkingAsset(a)}
-                      className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between ${linkingAsset?.id === a.id
-                        ? 'bg-sky-500/10 border-sky-500'
-                        : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
-                        }`}
-                    >
-                      <div>
-                        <p className="text-xs font-black text-white uppercase">{a.aliasName || a.sku} • <span className="text-sky-400 font-mono text-[9px]">{a.type}</span></p>
-                        <p className="text-[10px] text-slate-500">SN: {a.serialNumber} • SKU: {a.sku}</p>
+              {linkingAsset && viewingAsset && linkingAsset.id === viewingAsset.id ? (
+                <div className="space-y-4">
+                  <div className="bg-sky-500/10 border-2 border-sky-500 p-6 rounded-3xl animate-in zoom-in duration-300">
+                    <p className="text-[10px] font-black text-sky-500 uppercase tracking-widest mb-3">Suggested Linkage</p>
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-sky-500 text-white rounded-2xl flex items-center justify-center text-xl shadow-lg">
+                        <i className="fa-solid fa-link"></i>
                       </div>
-                      {linkingAsset?.id === a.id && <i className="fa-solid fa-circle-check text-sky-500 text-xl"></i>}
-                    </button>
-                  ))}
-              </div>
+                      <div>
+                        <p className="text-sm font-black text-white uppercase">{viewingAsset.aliasName || viewingAsset.sku}</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase">{viewingAsset.type} • ID: {viewingAsset.id}</p>
+                      </div>
+                    </div>
+                    <p className="mt-4 text-[10px] text-slate-400 leading-relaxed font-bold uppercase italic">
+                      You were already viewing this asset. Click "Confirm Linkage" below to associate this QR code with it.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setLinkingAsset(null)}
+                    className="w-full py-3 bg-slate-800/50 hover:bg-slate-800 text-slate-500 hover:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+                  >
+                    OR SEARCH FOR ANOTHER ASSET
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Search for target asset:</p>
+                  <div className="relative">
+                    <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                    <input
+                      type="text"
+                      placeholder="SEARCH BY NAME, SKU OR SN..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-4 text-white uppercase font-black text-xs tracking-wider focus:border-sky-500 outline-none transition"
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    {assets
+                      .filter(a => !searchQuery ||
+                        (a.aliasName && a.aliasName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (a.sku && a.sku.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (a.type && a.type.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (a.serialNumber && a.serialNumber.toLowerCase().includes(searchQuery.toLowerCase()))
+                      )
+                      .slice(0, 5)
+                      .map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => setLinkingAsset(a)}
+                          className={`w-full p-4 rounded-2xl border text-left transition flex items-center justify-between ${linkingAsset?.id === a.id
+                            ? 'bg-sky-500/10 border-sky-500'
+                            : 'bg-slate-950/50 border-slate-800 hover:border-slate-700'
+                            }`}
+                        >
+                          <div>
+                            <p className="text-xs font-black text-white uppercase">{a.aliasName || a.sku} • <span className="text-sky-400 font-mono text-[9px]">{a.type}</span></p>
+                            <p className="text-[10px] text-slate-500">SN: {a.serialNumber} • SKU: {a.sku}</p>
+                          </div>
+                          {linkingAsset?.id === a.id && <i className="fa-solid fa-circle-check text-sky-500 text-xl"></i>}
+                        </button>
+                      ))}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="p-8 border-t border-slate-800 bg-slate-950/50 flex gap-4">
