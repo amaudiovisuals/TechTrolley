@@ -697,6 +697,11 @@ const App: React.FC = () => {
   const handleUpdateLogistics = async () => {
     const { id, vehicle_number, driver_phone, assets: assetIds, crosscheck_assets, assigned_employees } = conferenceFormData;
     
+    if (!id) {
+      handleSaveConference();
+      return;
+    }
+
     try {
       let body: any;
       if (pdfFile) {
@@ -4039,8 +4044,8 @@ const App: React.FC = () => {
                                         if (e.key === 'Enter') {
                                           const val = (e.target as HTMLInputElement).value.trim();
                                           if (val) {
-                                             const handled = handleScan(val, true);
-                                             if (handled) setQuickAddInput('');
+                                             handleScan(val, true);
+                                             setQuickAddInput('');
                                           }
                                         }
                                       }}
