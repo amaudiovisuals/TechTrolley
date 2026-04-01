@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Asset, Booking, Employee, AssetCategory, AssetFlag } from '../types';
+import { Asset, Booking, Employee, AssetCategory, AssetFlag, AssetStatus } from '../types';
 import jsPDFLib from 'jspdf';
 import * as XLSX from 'xlsx';
 
@@ -162,8 +162,17 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
 
     const filteredFlaggedAssets = useMemo(() => {
         return assets.filter(a => {
-            if (!a.flag || a.flag === AssetFlag.NONE) return false;
-            if (flagFilter !== 'All' && a.flag !== flagFilter) return false;
+            // Include if explicitly flagged OR if status is Damaged
+            const isFlagged = a.flag && a.flag !== AssetFlag.NONE;
+            const isDamaged = a.status === AssetStatus.DAMAGED || a.status === 'Damaged';
+            
+            if (!isFlagged && !isDamaged) return false;
+            
+            if (flagFilter !== 'All') {
+                if (flagFilter === AssetFlag.MISSING) return a.flag === AssetFlag.MISSING;
+                if (flagFilter === AssetFlag.REQUIRED_SERVICE) return a.flag === AssetFlag.REQUIRED_SERVICE || isDamaged;
+                return a.flag === flagFilter;
+            }
             return true;
         });
     }, [assets, flagFilter]);

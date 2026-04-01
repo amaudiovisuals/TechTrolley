@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => {
           runtimeCaching: [
             {
               // Cache API calls to the Django backend
-              urlPattern: /^http:\/\/127\.0\.0\.1:8000\/api\//,
+              urlPattern: /^https?:\/\/.*\/api\//,
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'api-cache',

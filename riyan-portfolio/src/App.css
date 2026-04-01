@@ -1,0 +1,238 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  padding: 2rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(5, 5, 5, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nav-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  font-size: 1.5rem;
+  letter-spacing: -1px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 2rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.nav-links a {
+  transition: color 0.3s ease;
+  position: relative;
+}
+
+.nav-links a:hover {
+  color: #38bdf8;
+}
+
+/* HERO SECTION */
+.hero {
+  min-height: 85vh;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(56,189,248,0.15) 0%, rgba(5,5,5,0) 70%);
+  z-index: -1;
+}
+
+.hero-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+}
+
+.hero-text h1 {
+  font-size: 4rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.hero-text p {
+  font-size: 1.25rem;
+  color: #94a3b8;
+  max-width: 500px;
+  margin-bottom: 2.5rem;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: white;
+  color: black;
+  padding: 1rem 2rem;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 1rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.btn-primary:hover {
+  background: #38bdf8;
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(56, 189, 248, 0.4);
+}
+
+.hero-visual {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.profile-image-wrapper {
+  position: relative;
+  width: 350px;
+  height: 350px;
+  border-radius: 50%;
+  padding: 10px;
+  background: linear-gradient(135deg, rgba(56,189,248,0.5), rgba(129,140,248,0.1));
+  animation: float 6s ease-in-out infinite;
+}
+
+.profile-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 4px solid #050505;
+}
+
+/* PROJECTS SECTION */
+.projects {
+  padding: 8rem 0;
+  position: relative;
+}
+
+.section-label {
+  font-size: 0.875rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #38bdf8;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.section-title {
+  font-size: 3rem;
+  margin-bottom: 4rem;
+}
+
+.project-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+  padding: 3rem;
+  transition: transform 0.4s ease;
+}
+
+.project-card:hover {
+  transform: translateY(-10px);
+}
+
+.project-info h3 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.project-info p {
+  color: #94a3b8;
+  font-size: 1.125rem;
+  margin-bottom: 2rem;
+}
+
+.tech-stack {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 2.5rem;
+}
+
+.tech-tag {
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #cbd5e1;
+}
+
+.project-image-wrapper {
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.project-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-card:hover .project-image {
+  transform: scale(1.05);
+}
+
+/* FOOTER */
+footer {
+  padding: 4rem 0;
+  text-align: center;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  margin-top: 4rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .hero-content, .project-card {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  
+  .hero-text p {
+    margin: 0 auto 2.5rem;
+  }
+  
+  .tech-stack {
+    justify-content: center;
+  }
+  
+  .hero-text h1 {
+    font-size: 3rem;
+  }
+}

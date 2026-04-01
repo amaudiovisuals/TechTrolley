@@ -15,9 +15,11 @@ import { CompanySettings, Employee } from '../types';
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) => {
     const API_BASE = '';
-    const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'team' | 'users'>(user?.is_staff ? 'general' : 'profile');
+    const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'users'>(user?.is_staff ? 'general' : 'profile');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
+    const [userSearchQuery, setUserSearchQuery] = useState('');
+    const [roleFilter, setRoleFilter] = useState<'All' | 'admin' | 'godown_incharge' | 'technician'>('All');
 
     // Company Settings State
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
@@ -48,8 +50,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     const [addEmployeeMsg, setAddEmployeeMsg] = useState({ type: '', text: '' });
 
     useEffect(() => {
-        if (activeTab === 'team') fetchUsers();
-        if (activeTab === 'users') fetchEmployees();
+        if (activeTab === 'users') {
+            fetchEmployees();
+            fetchUsers();
+        }
         if (activeTab === 'general') fetchCompanySettings();
     }, [activeTab]);
 
@@ -272,6 +276,57 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         } catch (e) { alert('Connection error'); }
     };
 
+    // Consolidated Merge Logic
+    const allConsolidatedUsers = React.useMemo(() => {
+        // Map employees and system users into a unified format
+        const merged = new Map<string, any>();
+
+        // Add employees first
+        employees.forEach(emp => {
+            merged.set(emp.email.toLowerCase(), {
+                ...emp,
+                source: 'employee',
+                displayName: emp.name || emp.email
+            });
+        });
+
+        // Add system users if not already present (standalone admins)
+        users.forEach(sys => {
+            const email = sys.email.toLowerCase();
+            if (!merged.has(email)) {
+                merged.set(email, {
+                    id: sys.id,
+                    email: sys.email,
+                    name: 'System Admin',
+                    displayName: sys.email,
+                    role: 'admin',
+                    source: 'system'
+                });
+            } else {
+                // If already present, ensure role is reflected if it's admin
+                const existing = merged.get(email);
+                if (existing.role !== 'admin') {
+                    // Update role if sys list says they are staff
+                    // But usually employees list is more current
+                }
+            }
+        });
+
+        return Array.from(merged.values())
+            .filter(u => {
+                const search = userSearchQuery.toLowerCase();
+                const matchesSearch = !search || 
+                    (u.displayName && u.displayName.toLowerCase().includes(search)) ||
+                    (u.email && u.email.toLowerCase().includes(search)) ||
+                    (u.employee_id && u.employee_id.toLowerCase().includes(search));
+                
+                const matchesRole = roleFilter === 'All' || u.role === roleFilter;
+                
+                return matchesSearch && matchesRole;
+            })
+            .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    }, [employees, users, userSearchQuery, roleFilter]);
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <h2 className="text-5xl font-black text-orange-500 uppercase">System Settings</h2>
@@ -289,9 +344,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                     <>
                         <button onClick={() => setActiveTab('users')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'users' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
                             Users
-                        </button>
-                        <button onClick={() => setActiveTab('team')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'team' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
-                            System Administrators
                         </button>
                     </>
                 )}
@@ -463,118 +515,119 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             )}
 
             {activeTab === 'users' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Employee List */}
-                    <div className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50">
-                        <h3 className="text-2xl font-black text-white uppercase mb-8">Users</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                    <div className="lg:col-span-8 bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+                            <h3 className="text-2xl font-black text-white uppercase">Management</h3>
+                            
+                            <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto flex-1 md:max-w-md">
+                                <div className="relative flex-1">
+                                    <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                                    <input 
+                                        type="text" 
+                                        placeholder="SEARCH..." 
+                                        value={userSearchQuery}
+                                        onChange={e => setUserSearchQuery(e.target.value)}
+                                        className="w-full bg-slate-950/40 border border-slate-800 rounded-xl pl-10 pr-4 py-2.5 text-[10px] font-black uppercase text-white focus:border-sky-500 outline-none transition"
+                                    />
+                                </div>
+                                <select 
+                                    value={roleFilter}
+                                    onChange={e => setRoleFilter(e.target.value as any)}
+                                    className="bg-slate-950/40 border border-slate-800 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase text-slate-400 outline-none focus:border-sky-500 transition cursor-pointer"
+                                >
+                                    <option value="All">All Roles</option>
+                                    <option value="admin">Admins Only</option>
+                                    <option value="godown_incharge">Incharges</option>
+                                    <option value="technician">Technicians</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <div className="space-y-4">
-                            {employees.map(emp => (
-                                <div key={emp.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900 gap-4">
+                            {allConsolidatedUsers.map(u => (
+                                <div key={u.email} className="flex flex-wrap sm:flex-nowrap items-center justify-between p-5 bg-slate-950/50 rounded-2xl border border-slate-900 group hover:border-slate-700 transition gap-4">
                                     <div className="flex items-center gap-4 min-w-0 flex-1">
-                                        <div className="w-12 h-12 bg-slate-900/80 rounded-2xl flex shrink-0 items-center justify-center text-teal-500 shadow-inner">
-                                            <i className="fa-solid fa-user-tag text-lg"></i>
+                                        <div className={`w-12 h-12 rounded-2xl flex shrink-0 items-center justify-center shadow-inner ${
+                                            u.role === 'admin' ? 'bg-orange-500/10 text-orange-400' :
+                                            u.role === 'godown_incharge' ? 'bg-sky-500/10 text-sky-400' : 
+                                            'bg-teal-500/10 text-teal-400'
+                                        }`}>
+                                            <i className={`fa-solid ${
+                                                u.role === 'admin' ? 'fa-user-shield' :
+                                                u.role === 'godown_incharge' ? 'fa-warehouse' : 
+                                                'fa-user-tag'
+                                            } text-lg`}></i>
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-black text-white uppercase truncate tracking-tight">{emp.name}</p>
-                                            <p className="text-[10px] text-slate-500 font-medium truncate opacity-70">ID: {emp.employee_id} • {emp.email}</p>
+                                            <div className="flex items-center gap-3">
+                                                <p className="text-sm font-black text-white uppercase truncate tracking-tight">{u.displayName}</p>
+                                                {u.source === 'system' && (
+                                                    <span className="px-2 py-0.5 bg-orange-500/20 text-[8px] font-black uppercase text-orange-400 rounded-md border border-orange-500/20">System Admin</span>
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 font-medium truncate opacity-70 mt-0.5 uppercase tracking-wider">{u.email} {u.department ? `• ${u.department}` : ''}</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-end gap-3 shrink-0">
                                         <select
-                                            value={emp.role || 'technician'}
-                                            onChange={(e) => handleUpdateRole(emp.email, e.target.value)}
+                                            value={u.role || 'technician'}
+                                            onChange={(e) => handleUpdateRole(u.email, e.target.value)}
                                             className="bg-slate-900/80 border border-slate-800 rounded-xl text-white text-[10px] font-black p-2.5 uppercase outline-none focus:border-sky-500 transition cursor-pointer hover:bg-slate-800"
                                         >
                                             <option value="admin">Admin</option>
                                             <option value="godown_incharge">Incharge</option>
                                             <option value="technician">Technician</option>
                                         </select>
-                                        <button onClick={() => handleDeleteEmployee(emp.id!)} className="w-10 h-10 flex items-center justify-center text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition">
+                                        <button 
+                                            onClick={() => u.source === 'system' ? handleDeleteUser(u.id) : handleDeleteEmployee(u.id!)} 
+                                            className="w-10 h-10 flex items-center justify-center text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition"
+                                            title="Delete User"
+                                        >
                                             <i className="fa-solid fa-trash text-sm"></i>
                                         </button>
                                     </div>
                                 </div>
                             ))}
-                            {employees.length === 0 && (
-                                <div className="text-center py-8">
-                                    <p className="text-slate-500 font-black tracking-widest uppercase text-xs">No users found.</p>
+                            {allConsolidatedUsers.length === 0 && (
+                                <div className="text-center py-20 bg-slate-950/20 rounded-[2rem] border border-dashed border-slate-800">
+                                    <i className="fa-solid fa-users-slash text-4xl text-slate-800 mb-4 block"></i>
+                                    <p className="text-slate-500 font-black tracking-widest uppercase text-xs">No users found matching filters.</p>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Add Employee Form */}
-                    <div>
+                    <div className="lg:col-span-4 sticky top-24">
                         <form onSubmit={handleAddEmployee} className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
-                            <h3 className="text-2xl font-black text-white uppercase mb-4">Add New User</h3>
+                            <div className="flex items-center gap-4 mb-2">
+                                <div className="w-10 h-10 bg-teal-500/10 text-teal-500 rounded-xl flex items-center justify-center">
+                                    <i className="fa-solid fa-plus" />
+                                </div>
+                                <h3 className="text-2xl font-black text-white uppercase">New User</h3>
+                            </div>
                             {addEmployeeMsg.text && (
-                                <div className={`p-4 rounded-xl text-xs font-bold uppercase ${addEmployeeMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                <div className={`p-4 rounded-xl text-xs font-bold uppercase animate-in fade-in zoom-in-95 ${addEmployeeMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                                     {addEmployeeMsg.text}
                                 </div>
                             )}
-                            <div>
-                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Name</label>
-                                <input type="text" value={newEmployeeName} onChange={e => setNewEmployeeName(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="User Name" required />
-                            </div>
-                            <div>
-                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Login Credential</label>
-                                <input type="text" value={newEmployeeEmail} onChange={e => setNewEmployeeEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="Login ID or Email" required />
-                            </div>
-                            <div>
-                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Password</label>
-                                <input type="password" value={newEmployeePassword} onChange={e => setNewEmployeePassword(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="••••••••" required />
-                            </div>
-                            <button type="submit" className="w-full py-4 bg-teal-500 text-white rounded-xl font-black uppercase hover:bg-teal-400 transition">Create User</button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {activeTab === 'team' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* User List */}
-                    <div className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50">
-                        <h3 className="text-2xl font-black text-orange-500 uppercase mb-8">System Admins</h3>
-                        <div className="space-y-4">
-                            {users.map(user => (
-                                <div key={user.id} className="flex flex-wrap sm:flex-nowrap items-center justify-between p-4 bg-slate-950/50 rounded-2xl border border-slate-900 gap-4">
-                                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                                        <div className="w-10 h-10 bg-slate-900 rounded-full flex shrink-0 items-center justify-center text-orange-500">
-                                            <i className="fa-solid fa-crown"></i>
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-bold text-white uppercase truncate">{user.email}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono">Admin ID: {user.id}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end w-full sm:w-auto">
-                                        <button onClick={() => handleDeleteUser(user.id)} className="text-slate-600 hover:text-red-500 transition px-4 py-2 bg-slate-900/50 sm:bg-transparent rounded-lg">
-                                            <i className="fa-solid fa-trash"></i>
-                                        </button>
-                                    </div>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Full Name</label>
+                                    <input type="text" value={newEmployeeName} onChange={e => setNewEmployeeName(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold text-xs focus:border-teal-500 outline-none transition-all" placeholder="e.g. John Doe" required />
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Add User Form */}
-                    <div>
-                        <form onSubmit={handleAddUser} className="bg-slate-900/30 p-5 md:p-10 rounded-[2.5rem] border border-slate-800/50 space-y-6">
-                            <h3 className="text-2xl font-black text-white uppercase mb-4">Add New Admin</h3>
-                            {addUserMsg.text && (
-                                <div className={`p-4 rounded-xl text-xs font-bold uppercase ${addUserMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                                    {addUserMsg.text}
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Login ID / Email</label>
+                                    <input type="text" value={newEmployeeEmail} onChange={e => setNewEmployeeEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold text-xs focus:border-teal-500 outline-none transition-all" placeholder="name@company.com" required />
                                 </div>
-                            )}
-                            <div>
-                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Admin Login Email</label>
-                                <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="admin@amaudiovisuals.com" required />
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Initial Password</label>
+                                    <input type="password" value={newEmployeePassword} onChange={e => setNewEmployeePassword(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold text-xs focus:border-teal-500 outline-none transition-all" placeholder="••••••••" required />
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Password</label>
-                                <input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold" placeholder="••••••••" required />
-                            </div>
-                            <button type="submit" className="w-full py-4 bg-orange-500 text-white rounded-xl font-black uppercase hover:bg-orange-400 transition">Create Admin</button>
+                            <button type="submit" className="w-full py-5 bg-teal-500 text-white rounded-xl font-black uppercase hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20 active:scale-95">
+                                Register User Record
+                            </button>
                         </form>
                     </div>
                 </div>

@@ -19,6 +19,7 @@ def get_my_profile(request):
         'user_id': user.pk,
         'username': user.username,
         'email': user.email,
+        'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
         'is_staff': user.is_staff,
         'employee_id': employee_id,
         'role': user.profile.role if hasattr(user, 'profile') else ('admin' if user.is_staff else 'technician')

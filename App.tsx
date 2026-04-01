@@ -98,6 +98,8 @@ const App: React.FC = () => {
   const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
     ? 'http://localhost:8000' 
     : 'https://techtrolley.amaudiovisuals.com';
+
+  const showUnknownError = true;
   const isMobilePhone = useMemo(() => {
     const ua = navigator.userAgent;
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
@@ -521,6 +523,7 @@ const App: React.FC = () => {
   // Unrecognized Scan Linking state
   const [unrecognizedScan, setUnrecognizedScan] = useState<string | null>(null);
   const [linkingAsset, setLinkingAsset] = useState<Asset | null>(null);
+  const [flagMenuAssetId, setFlagMenuAssetId] = useState<string | null>(null);
 
   // Dedicated refs for deduplication (to prevent double-processing on hardware scanners)
   const lastScannedCode = useRef('');
@@ -548,7 +551,7 @@ const App: React.FC = () => {
   // --- CONFERENCE STATE & HANDLERS ---
   const [editingConference, setEditingConference] = useState<Booking | null>(null);
   const [expandedConferenceId, setExpandedConferenceId] = useState<string | number | null>(null);
-  const [assetTab, setAssetTab] = useState<'available' | 'assigned' | 'crosscheck'>('available');
+  const [assetTab, setAssetTab] = useState<'available' | 'assigned' | 'packup' | 'crosscheck'>('available');
   const [conferenceFormData, setConferenceFormData] = useState<any>({
     name: '',
     association_name: '',
@@ -563,8 +566,8 @@ const App: React.FC = () => {
     start_date: '',
     end_date: '',
     conference_type: 'Medical Conference',
-    assets: [],
-    crosscheck_assets: [],
+    requirements: [],
+    staged_assets: [],
     assigned_employees: [],
     pdf_document: null
   });
@@ -595,6 +598,7 @@ const App: React.FC = () => {
             contactEmail: c.contact_email,
             challanNumber: (1000 + parseInt(c.id)).toString(),
             assets: (c.assets || []).map((id: any) => id.toString()),
+            requirements: (c.requirements || []).map((id: any) => id.toString()),
             crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
             pdf_document: c.pdf_document
@@ -616,6 +620,30 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch conferences", err));
   };
 
+  const handleQuickUpdateAsset = async (asset: Asset, updates: Partial<Asset>) => {
+    try {
+      // Optimistic Update
+      setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, ...updates } as Asset : a));
+
+      const res = await apiFetch(`${API_BASE}/api/assets/${asset.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        showScanToast(`✅ Asset Updated Successfully`, 'success');
+        fetchAssets(); // Full refresh to ensure consistency
+      } else {
+        showScanToast(`⚠️ Failed to update asset status.`, 'error');
+        fetchAssets(); // Revert on failure
+      }
+    } catch (err) {
+      console.error("Quick update failed", err);
+      showScanToast(`⚠️ Connection error.`, 'error');
+    } finally {
+      setFlagMenuAssetId(null);
+    }
+  };
+
   const handleSaveConference = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const url = editingConference
@@ -631,6 +659,7 @@ const App: React.FC = () => {
       start_date: conferenceFormData.start_date || null,
       end_date: conferenceFormData.end_date || null,
       assets: (conferenceFormData.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+      requirements: (conferenceFormData.requirements || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       crosscheck_assets: (conferenceFormData.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       assigned_employees: (conferenceFormData.assigned_employees || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
     };
@@ -670,10 +699,11 @@ const App: React.FC = () => {
           setConferenceFormData({
             name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
             vehicle_number: '', driver_phone: '',
-            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
+            contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', 
+            assets: [], requirements: [], staged_assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
           });
           setPdfFile(null);
-          setAssetTab('available'); // Reset tab for next open
+          setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Smart default tab
         } else {
           const errData = await res.json().catch(() => ({}));
           alert(`Failed to save conference. Status: ${res.status}\n${JSON.stringify(errData)}`);
@@ -697,7 +727,7 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLogistics = async () => {
-    const { id, vehicle_number, driver_phone, assets: assetIds, crosscheck_assets, assigned_employees } = conferenceFormData;
+    const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees } = conferenceFormData;
     
     if (!id) {
       handleSaveConference();
@@ -713,6 +743,7 @@ const App: React.FC = () => {
         body.append('pdf_document', pdfFile);
         // Append collections properly for FormData compatibility
         (assetIds || []).forEach((id: any) => body.append('assets', id));
+        (requirements || []).forEach((id: any) => body.append('requirements', id));
         (crosscheck_assets || []).forEach((id: any) => body.append('crosscheck_assets', id));
         (assigned_employees || []).forEach((id: any) => body.append('assigned_employees', id));
       } else {
@@ -720,6 +751,7 @@ const App: React.FC = () => {
           vehicle_number,
           driver_phone,
           assets: assetIds,
+          requirements,
           crosscheck_assets,
           assigned_employees
         });
@@ -754,7 +786,7 @@ const App: React.FC = () => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
     setEditingConference(null);
-    setAssetTab('available'); // Always start on available tab
+    setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Smart default tab
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
@@ -770,7 +802,7 @@ const App: React.FC = () => {
     fetchConferences(); // Refresh backend conference data too
     fetchEmployees();   // Ensure technician names are loaded
     setEditingConference(conf);
-    setAssetTab(user?.role === 'technician' ? 'assigned' : 'available'); // Reset to default tab based on role
+    setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Reset to default tab based on role
     setConferenceFormData({
       id: conf.id,
       name: conf.name,
@@ -1032,24 +1064,21 @@ const App: React.FC = () => {
           }));
           showScanToast(`📋 Requirement Added: "${asset.aliasName || asset.sku}"`, 'success');
         } else {
-          // Admin/Godown adds to ACTUAL ASSETS
+          // Admin/Godown: Items go to STAGED first in Requirements/Packing tab
           setConferenceFormData((prev: any) => {
-            // Fulfillment logic: if it was in requirements, remove it from there
             const updatedRequirements = (prev.requirements || []).filter((id: any) => id.toString() !== assetIdStr);
+            // If we are in the 'assigned' (Requirements) tab, it stages. Otherwise (Select) it might go direct or stage.
+            // Let's make it stage by default for consistency during packing.
             return {
               ...prev,
-              assets: [...prev.assets, assetIdStr],
+              staged_assets: [...(prev.staged_assets || []), assetIdStr],
               requirements: updatedRequirements
             };
           });
-          showScanToast(`✅ Assigned Successfully: "${asset.aliasName || asset.sku}"`, 'success');
+          showScanToast(`📦 Staged for Packing: "${asset.aliasName || asset.sku}"`, 'success');
         }
       }
     } else if (action === 'remove') {
-      if (user?.role === 'godown_incharge') {
-        showScanToast(`❌ Godown Incharge cannot move assets to crosscheck.`, 'error');
-        return;
-      }
       if (!existingAssets.includes(assetIdStr)) {
         showScanToast(`⚠️ Not In Conference: "${asset.aliasName || asset.sku}" is not currently assigned to this conference.`, 'warning');
         return;
@@ -1077,10 +1106,11 @@ const App: React.FC = () => {
         }));
         showScanToast(`🗑️ Requirement Removed: "${asset.aliasName || asset.sku}"`, 'success');
       } else {
-        // Admin/Godown unassigns from ACTUAL ASSETS
+        // Admin/Godown unassigns from ACTUAL ASSETS or STAGED
         setConferenceFormData((prev: any) => ({
           ...prev,
           assets: prev.assets.filter((id: any) => id.toString() !== assetIdStr),
+          staged_assets: (prev.staged_assets || []).filter((id: any) => id.toString() !== assetIdStr),
           crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => id.toString() !== assetIdStr)
         }));
         showScanToast(`🗑️ Removed Accident: "${asset.aliasName || asset.sku}"`, 'success');
@@ -1112,7 +1142,7 @@ const App: React.FC = () => {
         ...prev,
         crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => id.toString() !== assetIdStr)
       }));
-      showScanToast(`✅ Verified at Godown: "${asset.aliasName || asset.sku}" — save conference to confirm.`, 'success');
+      showScanToast(`✅ Verified locally: "${asset.aliasName || asset.sku}" (Click Submit to release)`, 'success');
     }
   };
 
@@ -1201,7 +1231,7 @@ const App: React.FC = () => {
       .catch(() => showScanToast('❌ Network error during quantity assignment', 'error'));
   };
 
-  const handleScan = (decodedText: string, showUnknownError = false) => {
+  const handleScan = (decodedText: string, isAddingVal: boolean | null = null) => {
     setShowScanner(false);
     const scanned = (decodedText || '').trim();
     if (!scanned) return;
@@ -1297,7 +1327,7 @@ const App: React.FC = () => {
                   ...prev,
                   crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.includes(id.toString()))
                 }));
-                showScanToast(`✅ Verified "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components at Godown`, 'success');
+                showScanToast(`✅ Verified locally: "${pendingParentAsset.aliasName || pendingParentAsset.sku}" (Click Submit to release)`, 'success');
               }
 
               // Reset pending state
@@ -1315,7 +1345,8 @@ const App: React.FC = () => {
       }
 
       if (assetTab === 'assigned') {
-        triggerAssetConferenceAction(asset, 'remove');
+        const scanAction = (isAddingVal === true || user?.role === 'technician' || user?.role === 'godown_incharge') ? 'add' : 'remove';
+        triggerAssetConferenceAction(asset, scanAction);
       } else if (assetTab === 'crosscheck') {
         if (user?.role === 'godown_incharge' || user?.is_staff) {
           verifyCrosscheckAsset(asset);
@@ -3835,7 +3866,8 @@ const App: React.FC = () => {
                     {/* Scanning Control Bar */}
                     <div className="space-y-6">
                       <div className="flex gap-1 p-1.5 bg-sky-50/50 rounded-2xl border border-sky-100/50">
-                        {(user?.is_staff || user?.role === 'godown_incharge' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                        {/* 1. SELECT TAB (Admin Only) */}
+                        {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
                           <button
                             onClick={() => setAssetTab('available')}
                             className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'available' ? 'bg-white text-sky-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
@@ -3843,22 +3875,38 @@ const App: React.FC = () => {
                             Select
                           </button>
                         )}
+                        
+                        {/* 2. REQUIREMENTS TAB (Everyone) */}
                         <button
                           onClick={() => setAssetTab('assigned')}
                           className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'assigned' ? 'bg-white text-emerald-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
                         >
                           Requirements
                         </button>
+
+                        {/* 3. PACKUP TAB (Everyone) - Middle Section */}
                         <button
-                          className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'crosscheck' ? 'bg-white text-orange-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
+                          onClick={() => setAssetTab('packup')}
+                          className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'packup' ? 'bg-white text-sky-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
                         >
-                          Crosscheck
+                          Packup
                         </button>
+
+                        {/* 4. CROSSCHECK TAB (Admin/Godown Only) */}
+                        {(user?.is_staff || user?.role === 'godown_incharge' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                          <button
+                            onClick={() => setAssetTab('crosscheck')}
+                            className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'crosscheck' ? 'bg-white text-orange-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
+                          >
+                            Crosscheck
+                          </button>
+                        )}
                       </div>
 
                       {/* Scanner visibility logic per role */}
-                      {((assetTab === 'available') ||
-                        ((user?.is_staff || user?.role === 'technician' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') ||
+                      {((assetTab === 'available') || 
+                        ((user?.is_staff || user?.role === 'technician' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
+                        (assetTab === 'packup') ||
                         ((user?.role === 'godown_incharge' || user?.is_staff) && assetTab === 'crosscheck')) && (
                           <div className="relative group">
                             <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
@@ -3888,7 +3936,7 @@ const App: React.FC = () => {
                             )}
                           </div>
                         )}
-                    </div>
+                      </div>
 
                     {/* Asset List Area */}
                     <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-[400px]">
@@ -4014,29 +4062,72 @@ const App: React.FC = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {user?.role === 'technician' ? (
                             // Technician Role List: Just show requirements
-                            conferenceFormData.requirements.length === 0 ? (
-                              <div className="col-span-2 py-20 text-center space-y-4">
-                                <div className="text-slate-200 text-6xl"><i className="fa-solid fa-clipboard-list"></i></div>
-                                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No requirements scanned yet</p>
-                              </div>
-                            ) : assets.filter(a => new Set(conferenceFormData.requirements.map(String)).has(String(a.id))).map(asset => (
-                              <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
-                                <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
-                                  <i className="fa-solid fa-list-check"></i>
+                             <>
+                               {quickAddInput && (
+                                 <div className="col-span-2 space-y-4 mb-8">
+                                   <div className="flex items-center justify-between px-1">
+                                     <h4 className="text-[10px] font-black text-sky-500 uppercase tracking-widest">Search Results</h4>
+                                     <button onClick={() => setQuickAddInput('')} className="text-[10px] font-black text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest">Clear Search</button>
+                                   </div>
+                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                     {(() => {
+                                       const q = quickAddInput.toLowerCase();
+                                       const filtered = assets.filter(a => {
+                                         const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                                         const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
+                                         const notInCurrent = !conferenceFormData.assets.some((id: any) => String(id) === String(a.id));
+                                         const notDamaged = a.status !== AssetStatus.DAMAGED;
+                                         return matchesSearch && notInReqs && notInCurrent && notDamaged;
+                                       });
+                                       if (filtered.length === 0) return <div className="col-span-2 text-center text-xs font-bold text-slate-400 py-6">No matching assets to add as requirement</div>;
+                                       return filtered.slice(0, 6).map(asset => (
+                                         <div 
+                                           key={asset.id} 
+                                           onClick={() => {
+                                             triggerAssetConferenceAction(asset, 'add');
+                                             setQuickAddInput('');
+                                           }}
+                                           className="p-5 rounded-[1.5rem] border border-slate-100 bg-white hover:border-sky-500/50 hover:bg-sky-50/30 cursor-pointer transition-all group flex items-center gap-4 shadow-sm border-l-4 border-l-sky-500"
+                                         >
+                                           <div className="w-12 h-12 bg-sky-50 text-sky-500 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-100 group-hover:scale-110 transition-transform">
+                                             <i className="fa-solid fa-list-check"></i>
+                                           </div>
+                                           <div className="min-w-0 flex-1">
+                                             <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                             <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type}</p>
+                                           </div>
+                                           <i className="fa-solid fa-circle-plus text-sky-500"></i>
+                                         </div>
+                                       ));
+                                     })()}
+                                   </div>
+                                   <div className="border-b border-slate-100 pt-4" />
+                                 </div>
+                               )}
+                              {conferenceFormData.requirements.length === 0 ? (
+                                <div className="col-span-2 py-20 text-center space-y-4">
+                                  <div className="text-slate-200 text-6xl"><i className="fa-solid fa-clipboard-list"></i></div>
+                                  <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No requirements matched yet</p>
                                 </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                  <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type} (Requirement)</p>
+                              ) : assets.filter(a => new Set(conferenceFormData.requirements.map(String)).has(String(a.id))).map(asset => (
+                                <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
+                                  <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
+                                    <i className="fa-solid fa-list-check"></i>
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type} (Requirement)</p>
+                                  </div>
+                                  <button
+                                    onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                    className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                    title="Remove Requirement"
+                                  >
+                                    <i className="fa-solid fa-trash-can text-xs"></i>
+                                  </button>
                                 </div>
-                                <button
-                                  onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                  className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                  title="Remove Requirement"
-                                >
-                                  <i className="fa-solid fa-trash-can text-xs"></i>
-                                </button>
-                              </div>
-                            ))
+                              ))}
+                            </>
                           ) : user?.role === 'godown_incharge' ? (
                              <div className="col-span-2 space-y-12">
                                 {/* 1. Pending Requirements (From Tech) */}
@@ -4182,23 +4273,48 @@ const App: React.FC = () => {
                                   </div>
 
                                   {(conferenceFormData.staged_assets || []).length > 0 && (
-                                    <div className="pt-6">
+                                    <div className="pt-8 border-t border-slate-200 mt-4">
                                       <button 
-                                        onClick={() => {
-                                          if (confirm(`Submit ${(conferenceFormData.staged_assets || []).length} items to Packup phase?`)) {
+                                        onClick={async () => {
+                                          const itemCount = (conferenceFormData.staged_assets || []).length;
+                                          if (confirm(`⚠️ FINAL DISPATCH CHECK:\n\nAre you sure you want to finalize and submit these ${itemCount} item(s) for dispatch? \n\nThis will officially move them to the Packup phase and notify the team.`)) {
+                                            const newAssets = [...(conferenceFormData.assets || []), ...(conferenceFormData.staged_assets || [])];
+                                            const newStaged = [];
+                                            
+                                            // Update local state
                                             setConferenceFormData((prev: any) => ({
                                               ...prev,
-                                              assets: [...prev.assets, ...(prev.staged_assets || [])],
-                                              staged_assets: []
+                                              assets: newAssets,
+                                              staged_assets: newStaged
                                             }));
-                                            showScanToast('✅ Dispatched to Packup!', 'success');
-                                            setAssetTab('packup');
+
+                                            // Trigger save to backend immediately
+                                            try {
+                                              const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/`, {
+                                                method: 'POST',
+                                                body: JSON.stringify({
+                                                  assets: newAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),
+                                                  requirements: (conferenceFormData.requirements || []).map(id => parseInt(String(id), 10)).filter(id => !isNaN(id))
+                                                })
+                                              });
+                                              
+                                              if (res.ok) {
+                                                showScanToast('🚚 DISPATCHED: Items moved to Packup!', 'success');
+                                                setAssetTab('packup'); // Switch to view the list
+                                                fetchConferences();
+                                              } else {
+                                                showScanToast('⚠️ FAILED: Could not save to server.', 'error');
+                                              }
+                                            } catch (err) {
+                                              console.error("Auto-save failed", err);
+                                            }
                                           }
                                         }}
-                                        className="w-full py-6 bg-sky-500 text-white rounded-3xl font-black uppercase text-sm tracking-[0.2em] shadow-xl shadow-sky-500/20 hover:bg-sky-400 hover:-translate-y-1 transition-all flex items-center justify-center gap-3"
+                                        className="w-full py-6 bg-emerald-600 text-white rounded-3xl font-black uppercase text-sm tracking-[0.2em] shadow-xl shadow-emerald-500/20 hover:bg-emerald-500 hover:-translate-y-1 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
                                       >
-                                        <i className="fa-solid fa-truck-fast"></i> Finalize Dispatch to Packup
+                                        <i className="fa-solid fa-paper-plane"></i> Submit Dispatch to Show
                                       </button>
+                                      <p className="text-center text-[10px] text-slate-400 font-bold uppercase mt-4 tracking-widest italic animate-pulse">Finalize items to clear current packing station</p>
                                     </div>
                                   )}
                                 </div>
@@ -4220,6 +4336,19 @@ const App: React.FC = () => {
 
                               return (
                                 <>
+                                  {/* Staged Items (Just scanned, not yet dispatched) */}
+                                  {assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id))).map(asset => (
+                                    <div key={`staged-${asset.id}`} className="p-5 rounded-[1.5rem] border border-sky-200 bg-sky-50/30 flex items-center gap-4 shadow-sm group">
+                                      <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-300 animate-pulse">
+                                        <i className="fa-solid fa-box"></i>
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                        <p className="text-[9px] text-sky-600 font-bold uppercase mt-1">Staged • Unsaved</p>
+                                      </div>
+                                    </div>
+                                  ))}
+
                                   {/* Pending Requirements (items requested but NOT yet scanned) */}
                                   {assets.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id))).map(asset => (
                                     <div key={asset.id} className="p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
@@ -4270,6 +4399,81 @@ const App: React.FC = () => {
                         </div>
                       )}
 
+                      {assetTab === 'packup' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {(conferenceFormData.assets || []).length === 0 ? (
+                             <div className="col-span-2 py-20 text-center space-y-4">
+                               <div className="text-slate-200 text-6xl"><i className="fa-solid fa-truck-ramp-box"></i></div>
+                               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets dispatched to site yet</p>
+                             </div>
+                          ) : (
+                            assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))).map(asset => (
+                              <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
+                                <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
+                                  <i className="fa-solid fa-check-double"></i>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                  <div className="flex gap-2 items-center mt-1">
+                                    <span className="px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full">ON-SITE / PACKED</span>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{asset.type}</p>
+                                  </div>
+                                </div>
+                                {user?.role === 'technician' && (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
+                                      className={`w-10 h-10 border rounded-xl flex items-center justify-center transition-all ${
+                                        asset.status === 'Damaged' || asset.flag === 'Missing'
+                                          ? 'bg-red-500 border-red-400 text-white animate-pulse'
+                                          : 'bg-white border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-500/50'
+                                      }`}
+                                      title="Report Issue (Damaged/Missing)"
+                                    >
+                                      <i className="fa-solid fa-circle-exclamation text-xs"></i>
+                                    </button>
+                                    <button
+                                      onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                                      className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-orange-500 hover:border-orange-500/50 transition-all flex items-center justify-center"
+                                      title="Move to Crosscheck (Return)"
+                                    >
+                                      <i className="fa-solid fa-arrow-right-from-bracket text-xs"></i>
+                                    </button>
+                                  </div>
+                                )}
+                                
+                                {/* Floating Issue Menu */}
+                                {flagMenuAssetId === asset.id && (
+                                  <div className="absolute top-full right-0 mt-2 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <button 
+                                      onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING })}
+                                      className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                    >
+                                      <i className="fa-solid fa-flag text-red-500 text-xs"></i>
+                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
+                                    </button>
+                                    <button 
+                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE })}
+                                      className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                    >
+                                      <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
+                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
+                                    </button>
+                                    <button 
+                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE })}
+                                      className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
+                                    >
+                                      <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
+                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+
                       {assetTab === 'crosscheck' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {(conferenceFormData.crosscheck_assets || []).length === 0 ? (
@@ -4287,16 +4491,69 @@ const App: React.FC = () => {
                                 <p className="text-[9px] text-orange-600/60 font-black uppercase mt-1 truncate tracking-tighter">Pending Godown Receipt</p>
                               </div>
                               {(user?.role === 'godown_incharge' || user?.is_staff) && (
-                                <button
-                                  onClick={() => verifyCrosscheckAsset(asset)}
-                                  className="w-10 h-10 bg-orange-500 text-white rounded-xl shadow-lg shadow-orange-500/30 flex items-center justify-center transition-all active:scale-95"
-                                  title="Verify Receipt"
-                                >
-                                  <i className="fa-solid fa-check"></i>
-                                </button>
+                                <div className="flex gap-2">
+                                  <button 
+                                    onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
+                                    className={`w-10 h-10 border rounded-xl flex items-center justify-center transition-all ${
+                                      asset.status === 'Damaged' || asset.flag === 'Missing'
+                                        ? 'bg-red-500 border-red-400 text-white animate-pulse'
+                                        : 'bg-white border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-500/50'
+                                    }`}
+                                    title="Report Issue (Damaged/Missing)"
+                                  >
+                                    <i className="fa-solid fa-circle-exclamation text-xs"></i>
+                                  </button>
+                                  <button
+                                    onClick={() => verifyCrosscheckAsset(asset)}
+                                    className="w-10 h-10 bg-orange-500 text-white rounded-xl shadow-lg shadow-orange-500/30 flex items-center justify-center transition-all active:scale-95"
+                                    title="Verify Receipt"
+                                  >
+                                    <i className="fa-solid fa-check"></i>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Floating Issue Menu */}
+                              {flagMenuAssetId === asset.id && (
+                                <div className="absolute top-full right-0 mt-2 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                  <button 
+                                    onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING })}
+                                    className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                  >
+                                    <i className="fa-solid fa-flag text-red-500 text-xs"></i>
+                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
+                                  </button>
+                                  <button 
+                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE })}
+                                    className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                  >
+                                    <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
+                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
+                                  </button>
+                                  <button 
+                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE })}
+                                    className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
+                                  >
+                                    <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
+                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           ))}
+                          
+                          {(user?.role === 'godown_incharge' || user?.is_staff) && (
+                            <div className="col-span-2 pt-10 border-t border-slate-100 mt-6">
+                              <button 
+                                onClick={handleUpdateLogistics}
+                                className="w-full py-6 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-[2rem] font-black uppercase text-xs tracking-[0.3em] shadow-2xl shadow-orange-500/30 hover:from-orange-600 hover:to-amber-600 hover:-translate-y-1 active:scale-[0.96] transition-all flex items-center justify-center gap-4 border-b-4 border-orange-700/50 group"
+                              >
+                                <span className="opacity-70 group-hover:translate-x-1 transition-transform"><i className="fa-solid fa-paper-plane"></i></span>
+                                SUBMIT
+                              </button>
+                              <p className="text-center text-[10px] text-slate-400 font-black uppercase mt-5 tracking-[0.2em] opacity-60 italic">Verify all items locally then click to finalize returns</p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
