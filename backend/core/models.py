@@ -191,3 +191,42 @@ def create_or_save_user_profile(sender, instance, created, **kwargs):
             UserProfile.objects.create(user=instance, role=role)
         else:
             instance.profile.save()
+from django.db.models.signals import m2m_changed
+
+@receiver(m2m_changed, sender=Conference.assets.through)
+def update_asset_status_on_assets_change(sender, instance, action, pk_set, **kwargs):
+    if not pk_set:
+        return
+    if action == 'post_add':
+        Asset.objects.filter(pk__in=pk_set).update(status='In Use')
+    elif action in ('post_remove', 'pre_clear'):
+        for asset in Asset.objects.filter(pk__in=pk_set):
+            is_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
+            is_active = Conference.objects.filter(assets=asset).exists()
+            if is_crosscheck:
+                asset.status = 'Crosscheck'
+            elif is_active:
+                asset.status = 'In Use'
+            else:
+                if asset.status != 'Damaged':
+                    asset.status = 'Available'
+            asset.save()
+
+@receiver(m2m_changed, sender=Conference.crosscheck_assets.through)
+def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, **kwargs):
+    if not pk_set:
+        return
+    if action == 'post_add':
+        Asset.objects.filter(pk__in=pk_set).update(status='Crosscheck')
+    elif action in ('post_remove', 'pre_clear'):
+        for asset in Asset.objects.filter(pk__in=pk_set):
+            is_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
+            is_active = Conference.objects.filter(assets=asset).exists()
+            if is_crosscheck:
+                asset.status = 'Crosscheck'
+            elif is_active:
+                asset.status = 'In Use'
+            else:
+                if asset.status != 'Damaged':
+                    asset.status = 'Available'
+            asset.save()

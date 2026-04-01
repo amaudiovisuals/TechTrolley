@@ -72,7 +72,7 @@ const GlobalQRPreview: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  const API_BASE = 'https://techtrolley.amaudiovisuals.com';
+  const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8000' : 'https://techtrolley.amaudiovisuals.com';
   const isMobilePhone = useMemo(() => {
     const ua = navigator.userAgent;
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
@@ -2921,10 +2921,10 @@ const App: React.FC = () => {
                   <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{conf.association}</p>
                   {conf.pdf_document && (
                     <a 
-                      href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
+                        href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                       className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 bg-sky-500/10 text-sky-400 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-sky-500/20 transition-all border border-sky-500/10"
                     >
                       <i className="fa-solid fa-file-pdf"></i>
@@ -3001,6 +3001,7 @@ const App: React.FC = () => {
                           href={conf.pdf_document.startsWith('http') ? conf.pdf_document : `${API_BASE}${conf.pdf_document}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="flex items-center gap-1.5 px-2 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-md hover:bg-sky-500 hover:text-white transition-all group/pdf"
                           title="Download Logistics PDF"
                         >
@@ -3448,6 +3449,7 @@ const App: React.FC = () => {
                           href={conferenceFormData.pdf_document.startsWith('http') ? conferenceFormData.pdf_document : `${API_BASE}${conferenceFormData.pdf_document}`}
                           target="_blank" 
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="inline-flex items-center gap-3 bg-sky-500 text-white px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl shadow-sky-500/30 hover:bg-sky-400 hover:scale-105 active:scale-95 transition-all"
                         >
                           <i className="fa-solid fa-file-pdf text-base"></i>
