@@ -95,7 +95,9 @@ const GlobalQRPreview: React.FC = () => {
 };
 
 const App: React.FC = () => {
-  const API_BASE = 'https://techtrolley.amaudiovisuals.com';
+  const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+    ? 'http://localhost:8000' 
+    : 'https://techtrolley.amaudiovisuals.com';
   const isMobilePhone = useMemo(() => {
     const ua = navigator.userAgent;
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
@@ -709,10 +711,10 @@ const App: React.FC = () => {
         body.append('vehicle_number', vehicle_number || '');
         body.append('driver_phone', driver_phone || '');
         body.append('pdf_document', pdfFile);
-        // Append collections as JSON strings for FormData compatibility
-        body.append('assets', JSON.stringify(assetIds || []));
-        body.append('crosscheck_assets', JSON.stringify(crosscheck_assets || []));
-        body.append('assigned_employees', JSON.stringify(assigned_employees || []));
+        // Append collections properly for FormData compatibility
+        (assetIds || []).forEach((id: any) => body.append('assets', id));
+        (crosscheck_assets || []).forEach((id: any) => body.append('crosscheck_assets', id));
+        (assigned_employees || []).forEach((id: any) => body.append('assigned_employees', id));
       } else {
         body = JSON.stringify({
           vehicle_number,
@@ -3558,12 +3560,12 @@ const App: React.FC = () => {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Conference Name</label>
-                          <input value={conferenceFormData.name} onChange={e => setConferenceFormData({ ...conferenceFormData, name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Conference Name" />
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Conference Name <span className="text-red-500">*</span></label>
+                          <input value={conferenceFormData.name} onChange={e => setConferenceFormData({ ...conferenceFormData, name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Conference Name" required />
                         </div>
                         <div>
-                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Association Name</label>
-                          <input value={conferenceFormData.association_name} onChange={e => setConferenceFormData({ ...conferenceFormData, association_name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Association Name" />
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Association Name <span className="text-red-500">*</span></label>
+                          <input value={conferenceFormData.association_name} onChange={e => setConferenceFormData({ ...conferenceFormData, association_name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Association Name" required />
                         </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -3575,12 +3577,12 @@ const App: React.FC = () => {
                           </select>
                         </div>
                         <div>
-                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Start Date</label>
-                          <input type="date" value={conferenceFormData.start_date} onChange={e => setConferenceFormData({ ...conferenceFormData, start_date: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" />
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Start Date <span className="text-red-500">*</span></label>
+                          <input type="date" value={conferenceFormData.start_date} onChange={e => setConferenceFormData({ ...conferenceFormData, start_date: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" required />
                         </div>
                         <div>
-                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">End Date</label>
-                          <input type="date" value={conferenceFormData.end_date} onChange={e => setConferenceFormData({ ...conferenceFormData, end_date: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" />
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">End Date <span className="text-red-500">*</span></label>
+                          <input type="date" value={conferenceFormData.end_date} onChange={e => setConferenceFormData({ ...conferenceFormData, end_date: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" required />
                         </div>
                       </div>
                     </div>
@@ -3595,8 +3597,8 @@ const App: React.FC = () => {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Billing Address</label>
-                          <textarea value={conferenceFormData.billing_address} onChange={e => setConferenceFormData({ ...conferenceFormData, billing_address: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold h-24 resize-none focus:ring-2 focus:ring-sky-500/20" placeholder="Billing Address" />
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Billing Address <span className="text-red-500">*</span></label>
+                          <textarea value={conferenceFormData.billing_address} onChange={e => setConferenceFormData({ ...conferenceFormData, billing_address: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold h-24 resize-none focus:ring-2 focus:ring-sky-500/20" placeholder="Billing Address" required />
                         </div>
                         <div className="space-y-4">
                           <div>
@@ -3690,21 +3692,23 @@ const App: React.FC = () => {
 
                     <div className="space-y-6 relative">
                       <div>
-                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Vehicle Number *</label>
+                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Vehicle Number <span className="text-red-500">*</span></label>
                         <input 
                           value={conferenceFormData.vehicle_number} 
                           onChange={e => setConferenceFormData({ ...conferenceFormData, vehicle_number: e.target.value })} 
                           className="w-full bg-sky-50/50 border-none rounded-2xl px-6 py-5 text-sm font-black text-slate-800 focus:ring-2 focus:ring-sky-500/30 transition-shadow placeholder:text-slate-300"
                           placeholder="e.g. KL 01 HJ 5241"
+                          required
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Driver Phone *</label>
+                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Driver Phone <span className="text-red-500">*</span></label>
                         <input 
                           value={conferenceFormData.driver_phone} 
                           onChange={e => setConferenceFormData({ ...conferenceFormData, driver_phone: e.target.value })} 
                           className="w-full bg-sky-50/50 border-none rounded-2xl px-6 py-5 text-sm font-black text-slate-800 focus:ring-2 focus:ring-sky-500/30 transition-shadow placeholder:text-slate-300"
                           placeholder="9021457863"
+                          required
                         />
                       </div>
 
