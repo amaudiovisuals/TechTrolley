@@ -23,69 +23,124 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ sku, assetName, onCl
     }
   }, [sku]);
 
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank', 'width=400,height=500');
-    if (!printWindow) return;
+  const handlePrint = async () => {
+    try {
+      // Generate QR data URL directly for the print window
+      const qrDataUrl = await QRCode.toDataURL(sku, {
+        width: 150,
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#ffffff',
+        },
+      });
 
-    const canvas = canvasRef.current;
-    const dataUrl = canvas ? canvas.toDataURL('image/png') : '';
+      const printWindow = window.open('', '_blank', 'width=800,height=400');
+      if (!printWindow) return;
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>QR Label - ${sku}</title>
-          <style>
-            body {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              min-height: 100vh;
-              margin: 0;
-              font-family: 'Courier New', monospace;
-              background: white;
-            }
-            .label {
-              border: 2px solid #000;
-              padding: 20px;
-              text-align: center;
-              display: inline-block;
-              border-radius: 8px;
-            }
-            .asset-name {
-              font-size: 11px;
-              font-weight: bold;
-              text-transform: uppercase;
-              color: #333;
-              margin-bottom: 10px;
-              letter-spacing: 1px;
-            }
-            .sku {
-              font-size: 14px;
-              font-weight: bold;
-              letter-spacing: 2px;
-              margin-top: 10px;
-              color: #000;
-            }
-            img { display: block; }
-            @media print {
-              @page { margin: 5mm; }
-              body { margin: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="label">
-            <div class="asset-name">${assetName}</div>
-            <img src="${dataUrl}" width="200" height="200" />
-            <div class="sku">${sku}</div>
-          </div>
-          <script>window.onload = () => { window.print(); window.close(); }<\/script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>&nbsp;</title>
+            <style>
+              @page {
+                size: 100mm 20mm;
+                margin: 0;
+              }
+              body {
+                margin: 0;
+                padding: 0;
+                width: 100mm;
+                height: 20mm;
+                background: white;
+                color: black !important;
+                font-family: Arial, sans-serif;
+                overflow: hidden;
+              }
+              .label-table {
+                width: 100mm;
+                height: 20mm;
+                border: 0; /* Removed debug border */
+                border-collapse: collapse;
+              }
+              .qr-cell {
+                width: 25mm;
+                text-align: center;
+                vertical-align: middle;
+                padding: 0;
+              }
+              .qr-img {
+                width: 18mm;
+                height: 18mm;
+                display: block;
+                margin: 0 auto;
+              }
+              .asset-name {
+                font-size: 4pt;
+                font-weight: bold;
+                white-space: nowrap;
+                overflow: hidden;
+                width: 24mm;
+                margin: 0 auto;
+                text-align: center;
+              }
+              .text-cell {
+                padding-left: 2mm;
+                padding-top: 1mm;
+                vertical-align: top;
+                text-align: left;
+              }
+              .company {
+                font-size: 9pt;
+                font-weight: 800;
+                margin-bottom: 0px;
+                text-transform: lowercase;
+                line-height: 1;
+              }
+              .phone {
+                font-size: 8pt;
+                font-weight: 700;
+                margin-bottom: 2mm;
+                line-height: 1;
+              }
+              .sku {
+                font-size: 13pt;
+                font-weight: 900;
+                letter-spacing: 0.5px;
+                line-height: 1;
+              }
+            </style>
+          </head>
+          <body>
+            <table class="label-table">
+              <tr>
+                <td class="qr-cell">
+                  <img src="${qrDataUrl}" class="qr-img" />
+                  <div class="asset-name">${assetName}</div>
+                </td>
+                <td class="text-cell">
+                  <div class="company">a m audiovisuals</div>
+                  <div class="phone">9845204137</div>
+                  <div class="sku">${sku}</div>
+                </td>
+              </tr>
+            </table>
+            <script>
+              window.onload = () => { 
+                setTimeout(() => {
+                  window.print();
+                  window.close();
+                }, 750);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (err) {
+      console.error('Print error:', err);
+    }
   };
 
   return (
