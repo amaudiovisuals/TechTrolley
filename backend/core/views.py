@@ -593,20 +593,26 @@ def export_inventory(request):
     data = []
     for a in assets:
         data.append({
-            'SKU': a.sku,
+            'SKU': a.sku or "",
             'Alias Name': a.alias_name or "",
             'MAC Address': a.mac_address or "",
             'IMEI Number 1': a.imei_number_1 or "",
             'IMEI Number 2': a.imei_number_2 or "",
             'Serial Number': a.serial_number or "",
             'Description': a.description or "",
-            'Type': a.type,
-            'Status': a.status,
-            'Assigned To': a.assigned_to.name if a.assigned_to else "",
+            'Is barcode added': 'Yes' if a.is_barcode_added else 'No',
+            'Type': a.type or "",
+            'Purchased date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
             'Item price': float(a.item_price) if a.item_price else 0,
             'Depreciation': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
-            'Purchased date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
-            'QR Code': a.qr_code or ""
+            'Available from': a.available_from or "",
+            'Available till': a.available_till or "",
+            'Barcode type': a.barcode_type or "",
+            'Barcode': a.barcode or "",
+            'QR Code': a.qr_code or "",
+            # Audit columns (not in original but useful)
+            'Current Status': a.status,
+            'Assigned To': a.assigned_to.name if a.assigned_to else "Unassigned"
         })
 
     df = pd.DataFrame(data)
