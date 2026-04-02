@@ -70,8 +70,9 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt -q
 
-            # 4. Apply schema migrations
-            python manage.py migrate
+            # 4. Apply schema migrations (Synchronous and Forceful)
+            python manage.py migrate core --noinput
+            python manage.py migrate --noinput
 
             # 5. Apply static assets
             python manage.py collectstatic --noinput
