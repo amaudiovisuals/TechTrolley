@@ -1433,43 +1433,33 @@ const App: React.FC = () => {
   };
 
   const handleExportInventory = () => {
-    if (assets.length === 0) {
-      alert("No inventory data to export.");
-      return;
-    }
+    const token = localStorage.getItem('token');
+    apiFetch(`${API_BASE}/api/export-inventory/?token=${encodeURIComponent(token || '')}`)
+      .then(res => res.arrayBuffer())
+      .then(buffer => {
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => {
+          const base64data = reader.result as string;
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = base64data;
+          a.download = 'Master_Inventory_Export.xlsx';
 
-    // Map assets to a flat structure for Excel
-    const exportData = assets.map(asset => ({
-      'SKU': asset.sku || '',
-      'Name': asset.name || '',
-      'Alias Name': asset.aliasName || '',
-      'Category': asset.type || '',
-      'Status': asset.status || '',
-      'Description': asset.description || '',
-      'Serial Number': asset.serialNumber || '',
-      'MAC Address': asset.macAddress || '',
-      'IMEI 1': asset.imeiNumber1 || '',
-      'IMEI 2': asset.imeiNumber2 || '',
-      'Item Price': asset.itemPrice || 0,
-      'Depreciation %': asset.depreciationPercentage || 0,
-      'Purchased Date': asset.purchasedDate || '',
-      'Available From': asset.availableFrom || '',
-      'Available Till': asset.availableTill || '',
-      'Last Maintained': asset.lastMaintained || '',
-      'Assigned To': asset.assigned_to_name || 'Unassigned',
-      'Barcode Added': asset.isBarcodeAdded ? 'Yes' : 'No',
-    }));
+          document.body.appendChild(a);
+          a.click();
 
-    // Create workbook and worksheet
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
-
-    // Generate and download file
-    const fileName = `TechTrolley_Inventory_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
-
-    showScanToast("📊 Inventory exported successfully", "success");
+          setTimeout(() => {
+            document.body.removeChild(a);
+          }, 300);
+          showScanToast("📊 Master Inventory exported successfully", "success");
+        };
+      })
+      .catch(err => {
+        console.error('Failed to export inventory', err);
+        alert('Failed to export inventory. Please try again.');
+      });
   };
 
   const handleDownloadInventoryPDF = () => {
@@ -1521,6 +1511,7 @@ const App: React.FC = () => {
     }
     doc.save(`TechTrolley_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
+
 
   const handleDownloadTemplate = () => {
     // Ultimate fallback for strict Windows PC browsers: fetch the raw bytes,

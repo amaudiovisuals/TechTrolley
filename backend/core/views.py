@@ -6,6 +6,7 @@ from django.core.files.uploadedfile import UploadedFile
 from .forms import AssetForm, ConferenceForm
 from reportlab.pdfgen import canvas
 import io
+import pandas as pd
 
 def dashboard(request):
     total_assets = Asset.objects.count()
@@ -579,4 +580,46 @@ def download_asset_template(request):
     response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = 'attachment; filename="asset_inventory_template.xlsx"'
     
+    return response
+
+@api_view(['GET'])
+def export_inventory(request):
+    """
+    Generates a master Excel file from the current database state.
+    This allows the Godown In-Charge to 'sync' alias names and other edits
+    by simply downloading the latest version.
+    """
+    assets = Asset.objects.all().select_related('assigned_to')
+    data = []
+    for a in assets:
+        data.append({
+            'SKU': a.sku,
+            'Alias Name': a.alias_name or "",
+            'MAC Address': a.mac_address or "",
+            'IMEI Number 1': a.imei_number_1 or "",
+            'IMEI Number 2': a.imei_number_2 or "",
+            'Serial Number': a.serial_number or "",
+            'Description': a.description or "",
+            'Type': a.type,
+            'Status': a.status,
+            'Assigned To': a.assigned_to.name if a.assigned_to else "",
+            'Item price': float(a.item_price) if a.item_price else 0,
+            'Depreciation': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
+            'Purchased date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
+            'QR Code': a.qr_code or ""
+        })
+
+    df = pd.DataFrame(data)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Master Inventory')
+    
+    output.seek(0)
+    
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename=Master_Inventory_Export.xlsx'
     return response
