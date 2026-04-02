@@ -432,8 +432,12 @@ def bulk_upload_assets(request):
                     'condition':              'Good',
                 }
 
-                # Use only('id') to avoid reading back bad decimal fields on existing rows
+                # Smart Matching: Try Serial Number, then QR Code, then Barcode
                 existing = Asset.objects.filter(serial_number=serial).values_list('id', flat=True).first()
+                if not existing and qr_code_val:
+                    existing = Asset.objects.filter(qr_code=qr_code_val).values_list('id', flat=True).first()
+                if not existing and barcode_val:
+                    existing = Asset.objects.filter(barcode=barcode_val).values_list('id', flat=True).first()
 
                 if existing is None:
                     # CREATE new asset

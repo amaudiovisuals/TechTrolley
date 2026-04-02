@@ -2,12 +2,14 @@ import React, { useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 
 interface QRLabelModalProps {
+  assetId?: string;
   sku: string;
   assetName: string;
   onClose: () => void;
+  onPrint?: (assetId: string, sku: string) => void;
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ sku, assetName, onClose }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, onClose, onPrint }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -25,9 +27,9 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ sku, assetName, onCl
 
   const handlePrint = async () => {
     try {
-      // Generate QR data URL directly for the print window
+      // 1. Generate QR data URL
       const qrDataUrl = await QRCode.toDataURL(sku, {
-        width: 150,
+        width: 250, // Higher resolution for professional print
         margin: 1,
         color: {
           dark: '#000000',
@@ -35,18 +37,39 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ sku, assetName, onCl
         },
       });
 
-      const printWindow = window.open('', '_blank', 'width=800,height=400');
-      if (!printWindow) return;
+      // 2. Create or reuse hidden iframe (reliable alternative to window.open)
+      let iframe = document.getElementById('sticker-print-iframe') as HTMLIFrameElement;
+      if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'sticker-print-iframe';
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        iframe.style.visibility = 'hidden';
+        document.body.appendChild(iframe);
+      }
 
-      printWindow.document.write(`
+      const doc = iframe.contentWindow?.document;
+      if (!doc) return;
+
+      doc.open();
+      doc.write(`
         <!DOCTYPE html>
         <html>
           <head>
-            <title>&nbsp;</title>
+            <title>Print Label</title>
             <style>
               @page {
-                size: 100mm 20mm;
+                size: 100mm 20mm landscape;
                 margin: 0;
+              }
+              * {
+                box-sizing: border-box;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
               }
               body {
                 margin: 0;
@@ -54,92 +77,101 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ sku, assetName, onCl
                 width: 100mm;
                 height: 20mm;
                 background: white;
-                color: black !important;
-                font-family: Arial, sans-serif;
+                color: black;
+                font-family: 'Inter', -apple-system, sans-serif;
                 overflow: hidden;
               }
-              .label-table {
+              .sticker {
                 width: 100mm;
                 height: 20mm;
-                border: 0; /* Removed debug border */
-                border-collapse: collapse;
+                display: flex;
+                align-items: center;
+                padding: 1mm 2mm;
               }
-              .qr-cell {
-                width: 25mm;
-                text-align: center;
-                vertical-align: middle;
-                padding: 0;
+              .qr-box {
+                width: 18mm;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
               }
               .qr-img {
-                width: 18mm;
-                height: 18mm;
+                width: 16mm;
+                height: 16mm;
                 display: block;
-                margin: 0 auto;
               }
               .asset-name {
-                font-size: 4pt;
-                font-weight: bold;
+                font-size: 5pt;
+                font-weight: 800;
+                text-align: center;
                 white-space: nowrap;
                 overflow: hidden;
-                width: 24mm;
-                margin: 0 auto;
-                text-align: center;
+                width: 100%;
+                margin-top: -1px;
+                text-transform: uppercase;
               }
-              .text-cell {
-                padding-left: 2mm;
-                padding-top: 1mm;
-                vertical-align: top;
-                text-align: left;
+              .content-box {
+                flex: 1;
+                padding-left: 4mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
               }
               .company {
                 font-size: 9pt;
-                font-weight: 800;
-                margin-bottom: 0px;
-                text-transform: lowercase;
+                font-weight: 900;
+                margin: 0;
                 line-height: 1;
+                text-transform: uppercase;
+                letter-spacing: 0.2px;
               }
               .phone {
-                font-size: 8pt;
+                font-size: 7.5pt;
                 font-weight: 700;
-                margin-bottom: 2mm;
+                margin: 1mm 0 2mm 0;
                 line-height: 1;
               }
               .sku {
-                font-size: 13pt;
+                font-size: 14pt;
                 font-weight: 900;
-                letter-spacing: 0.5px;
+                margin: 0;
                 line-height: 1;
+                color: black;
+                letter-spacing: -0.3px;
               }
             </style>
           </head>
           <body>
-            <table class="label-table">
-              <tr>
-                <td class="qr-cell">
-                  <img src="${qrDataUrl}" class="qr-img" />
-                  <div class="asset-name">${assetName}</div>
-                </td>
-                <td class="text-cell">
-                  <div class="company">a m audiovisuals</div>
-                  <div class="phone">9845204137</div>
-                  <div class="sku">${sku}</div>
-                </td>
-              </tr>
-            </table>
+            <div class="sticker">
+              <div class="qr-box">
+                <img src="${qrDataUrl}" class="qr-img" />
+                <div class="asset-name">${assetName}</div>
+              </div>
+              <div class="content-box">
+                <p class="company">AM Audiovisuals</p>
+                <p class="phone">9845204137</p>
+                <p class="sku">${sku}</p>
+              </div>
+            </div>
             <script>
-              window.onload = () => { 
+              window.onload = () => {
                 setTimeout(() => {
                   window.print();
-                  window.close();
-                }, 750);
+                }, 500);
               };
             </script>
           </body>
         </html>
       `);
-      printWindow.document.close();
+      doc.close();
+      
+      // 3. Mark as assigned in backend if onPrint provided
+      if (assetId && onPrint) {
+        onPrint(assetId, sku);
+      }
     } catch (err) {
       console.error('Print error:', err);
+      alert("Failed to prepare label for printing.");
     }
   };
 

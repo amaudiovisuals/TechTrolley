@@ -1,0 +1,115 @@
+﻿python : Creating test 
+database for alias 
+'default'...
+At line:1 char:26
++ .\venv\Scripts\activate; 
+python manage.py test > 
+test_output.txt 2>&1
++                          ~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (Creatin  
+  g test d...as 'default'.   
+ ..:String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+
+EE..
+=============================
+=============================
+============
+ERROR: test_view_crash_v2 (un
+ittest.loader._FailedTest.tes
+t_view_crash_v2)
+-----------------------------
+-----------------------------
+------------
+ImportError: Failed to 
+import test module: 
+test_view_crash_v2
+Traceback (most recent call 
+last):
+  File "C:\Users\amoff\AppDat
+a\Local\Programs\Python\Pytho
+n312\Lib\unittest\loader.py",
+ line 396, in _find_test_path
+    module = self._get_module
+_from_name(name)
+             ^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
+  File "C:\Users\amoff\AppDat
+a\Local\Programs\Python\Pytho
+n312\Lib\unittest\loader.py",
+ line 339, in 
+_get_module_from_name
+    __import__(name)
+  File "C:\Users\amoff\OneDri
+ve\Desktop\tech-trolley-asset
+-tracker NEW\backend\test_vie
+w_crash_v2.py", line 28, in 
+<module>
+    sys.exit(0)
+SystemExit: 0
+
+
+=============================
+=============================
+============
+ERROR: test_view_crash_v3 (un
+ittest.loader._FailedTest.tes
+t_view_crash_v3)
+-----------------------------
+-----------------------------
+------------
+ImportError: Failed to 
+import test module: 
+test_view_crash_v3
+Traceback (most recent call 
+last):
+  File "C:\Users\amoff\AppDat
+a\Local\Programs\Python\Pytho
+n312\Lib\unittest\loader.py",
+ line 396, in _find_test_path
+    module = self._get_module
+_from_name(name)
+             ^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^
+  File "C:\Users\amoff\AppDat
+a\Local\Programs\Python\Pytho
+n312\Lib\unittest\loader.py",
+ line 339, in 
+_get_module_from_name
+    __import__(name)
+  File "C:\Users\amoff\OneDri
+ve\Desktop\tech-trolley-asset
+-tracker NEW\backend\test_vie
+w_crash_v3.py", line 34, in 
+<module>
+    sys.exit(0)
+SystemExit: 0
+
+
+-----------------------------
+-----------------------------
+------------
+Ran 4 tests in 0.011s
+
+FAILED (errors=2)
+Destroying test database for 
+alias 'default'...
+
+STATUS: 401
+DATA: {'detail': ErrorDetail(string='Authentication credentials were not provided.', code='not_authenticated')}
+DEBUG: Setting up Django...
+DEBUG: Django setup complete.
+DEBUG: Calling asset_list view...
+DEBUG: Status code: 401
+DEBUG: Error Data: {'detail': ErrorDetail(string='Authentication credentials were not provided.', code='not_authenticated')}
+DEBUG: Calling asset_list view with mock user...
+DEBUG: Status code: 200
+DEBUG: Success! Count: 1817
+Found 4 test(s).
+System check identified no issues (0 silenced).

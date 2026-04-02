@@ -1,0 +1,37 @@
+﻿python : Creating test 
+database for alias 
+'default'...
+At line:1 char:26
++ ... \venv\Scripts\act
+ivate; python 
+manage.py test > 
+test_results.txt 2>&1
++                      
+       ~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: (Creating test   
+  d...as 'default'.    
+..:String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+
+..
+-----------------------
+-----------------------
+-----------------------
+-
+Ran 2 tests in 0.008s
+
+OK
+Destroying test 
+database for alias 
+'default'...
+
+Found 2 test(s).
+System check identified no issues (0 silenced).

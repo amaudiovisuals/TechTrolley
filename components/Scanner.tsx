@@ -29,8 +29,12 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         await scannerRef.current.start(
           { facingMode: "environment" },
           {
-            fps: 10,
-            qrbox: { width: 250, height: 250 }
+            fps: 20,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+              const qrboxSize = Math.floor(minEdgeSize * 0.7);
+              return { width: qrboxSize, height: qrboxSize };
+            }
           },
           (decodedText) => {
             if (isMounted) onScan(decodedText.trim());

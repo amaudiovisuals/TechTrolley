@@ -518,7 +518,8 @@ const App: React.FC = () => {
   const [scanToast, setScanToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
 
   // QR Label modal state
-  const [qrTarget, setQrTarget] = useState<{ sku: string; name: string } | null>(null);
+  // QR Label modal state
+  const [qrTarget, setQrTarget] = useState<{ id?: string; sku: string; name: string } | null>(null);
 
   // Unrecognized Scan Linking state
   const [unrecognizedScan, setUnrecognizedScan] = useState<string | null>(null);
@@ -641,6 +642,27 @@ const App: React.FC = () => {
       showScanToast(`⚠️ Connection error.`, 'error');
     } finally {
       setFlagMenuAssetId(null);
+    }
+  };
+
+  const handlePrintAsset = async (assetId: string, sku: string) => {
+    if (sku === GLOBAL_CONSUMABLES_SKU) return; // Skip for global QR
+    
+    try {
+      const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          is_barcode_added: true,
+          qr_code: sku,
+          barcode: sku // Fallback barcode as well
+        })
+      });
+      if (res.ok) {
+        console.log(`Asset ${assetId} marked as QR-assigned.`);
+        fetchAssets(); // Sync local state
+      }
+    } catch (err) {
+      console.error("Failed to mark asset as QR-assigned", err);
     }
   };
 
@@ -957,6 +979,8 @@ const App: React.FC = () => {
       a.sku === scanned ||
       a.barcode === scanned ||
       (a.qrCode && a.qrCode === scanned) ||
+      (a.qrCode && scanned.includes(a.qrCode)) || // Match if scanned URL contains ID
+      (scanned.includes('/') && scanned.endsWith(a.qrCode)) || // Match if ID is end of scanned URL
       a.serialNumber === scanned ||
       String(a.id) === scanned
     );
@@ -1241,7 +1265,7 @@ const App: React.FC = () => {
     // 0. DEDUPLICATION (Safety for hardware scanners that send Enter immediately after typing)
     const now = Date.now();
     const upperScanned = scanned.toUpperCase();
-    if (upperScanned === lastScannedCode.current.toUpperCase() && (now - lastScannedTime.current) < 2000) {
+    if (upperScanned === lastScannedCode.current.toUpperCase() && (now - lastScannedTime.current) < 800) {
       console.log('Skipping duplicate hardware scan:', scanned);
       return;
     }
@@ -4609,8 +4633,10 @@ const App: React.FC = () => {
       {/* QR Label Modal */}
       {qrTarget && (
         <QRLabelModal
+          assetId={qrTarget.id}
           sku={qrTarget.sku}
           assetName={qrTarget.name}
+          onPrint={handlePrintAsset}
           onClose={() => setQrTarget(null)}
         />
       )}
