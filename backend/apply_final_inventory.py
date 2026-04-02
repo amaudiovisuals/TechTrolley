@@ -122,5 +122,5 @@ def apply_final_inventory(excel_path):
 
 if __name__ == "__main__":
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base_dir, 'allstockreportforproduction-1.xlsx')
+    path = os.path.join(base_dir, 'Main_Inventory_Master.xlsx')
     apply_final_inventory(path)
