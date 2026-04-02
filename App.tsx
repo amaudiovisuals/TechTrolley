@@ -4101,7 +4101,10 @@ const App: React.FC = () => {
                                              (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
                                              normalizeSearch(a.sku || '').includes(qNorm) || 
                                              normalizeSearch(a.aliasName || '').includes(qNorm) || 
+                                             normalizeSearch(a.name || '').includes(qNorm) || 
+                                             normalizeSearch(a.description || '').includes(qNorm) || 
                                              normalizeSearch(a.serialNumber || '').includes(qNorm) || 
+                                             normalizeSearch(a.barcode || '').includes(qNorm) || 
                                              normalizeSearch(a.type || '').includes(qNorm);
                                            const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
                                            const notInCurrent = !conferenceFormData.assets.some((id: any) => String(id) === String(a.id));
@@ -4109,7 +4112,7 @@ const App: React.FC = () => {
                                            return matchesSearch && notInReqs && notInCurrent && notDamaged;
                                          });
                                        if (filtered.length === 0) return <div className="col-span-2 text-center text-xs font-bold text-slate-400 py-6">No matching assets to add as requirement</div>;
-                                       return filtered.slice(0, 6).map(asset => (
+                                       return filtered.slice(0, 10).map(asset => (
                                          <div 
                                            key={asset.id} 
                                            onClick={() => {
@@ -4449,7 +4452,10 @@ const App: React.FC = () => {
                                  (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
                                  normalizeSearch(a.sku || '').includes(qNorm) || 
                                  normalizeSearch(a.aliasName || '').includes(qNorm) || 
+                                 normalizeSearch(a.name || '').includes(qNorm) || 
+                                 normalizeSearch(a.description || '').includes(qNorm) || 
                                  normalizeSearch(a.serialNumber || '').includes(qNorm) || 
+                                 normalizeSearch(a.barcode || '').includes(qNorm) || 
                                  normalizeSearch(a.type || '').includes(qNorm);
                              }).map(asset => (
                               <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
