@@ -3892,8 +3892,8 @@ const App: React.FC = () => {
                     {/* Scanning Control Bar */}
                     <div className="space-y-6">
                       <div className="flex gap-1 p-1.5 bg-sky-50/50 rounded-2xl border border-sky-100/50">
-                        {/* 1. SELECT TAB (Admin Only) */}
-                        {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                        {/* 1. SELECT TAB (Non-Admin Only) */}
+                        {(!user?.is_staff && (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
                           <button
                             onClick={() => setAssetTab('available')}
                             className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'available' ? 'bg-white text-sky-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
@@ -4099,7 +4099,7 @@ const App: React.FC = () => {
                                      {(() => {
                                        const q = quickAddInput.toLowerCase();
                                        const filtered = assets.filter(a => {
-                                         const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                                         const matchesSearch = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q)) || (a.serialNumber && a.serialNumber.toLowerCase().includes(q)) || (a.type && a.type.toLowerCase().includes(q));
                                          const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
                                          const notInCurrent = !conferenceFormData.assets.some((id: any) => String(id) === String(a.id));
                                          const notDamaged = a.status !== AssetStatus.DAMAGED;
@@ -4433,7 +4433,15 @@ const App: React.FC = () => {
                                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets dispatched to site yet</p>
                              </div>
                           ) : (
-                            assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))).map(asset => (
+                            assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)))
+                             .filter(a => {
+                               const q = quickRemoveInput.toLowerCase();
+                               return !q || 
+                                 (a.sku && a.sku.toLowerCase().includes(q)) || 
+                                 (a.aliasName && a.aliasName.toLowerCase().includes(q)) || 
+                                 (a.type && a.type.toLowerCase().includes(q)) || 
+                                 (a.serialNumber && a.serialNumber.toLowerCase().includes(q));
+                             }).map(asset => (
                               <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
                                 <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
                                   <i className="fa-solid fa-check-double"></i>
