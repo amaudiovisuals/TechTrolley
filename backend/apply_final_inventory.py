@@ -104,13 +104,13 @@ def apply_final_inventory(excel_path):
             info = assignments[sn]
             emp = get_employee(info['name'], info['dept'])
             asset.assigned_to = emp
-            asset.status = 'In Use'
+            # Status remains 'Available' as these are personal assets, not logistics in use
             assigned_count += 1
         elif sku in assignments: # Fallback to SKU if SN is missing
             info = assignments[sku]
             emp = get_employee(info['name'], info['dept'])
             asset.assigned_to = emp
-            asset.status = 'In Use'
+            # Status remains 'Available'
             assigned_count += 1
 
         asset.save()
