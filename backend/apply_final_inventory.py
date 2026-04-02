@@ -111,11 +111,15 @@ def apply_final_inventory(excel_path):
         if pd.notna(row['Purchased date']):
             try:
                 dt_val = row['Purchased date']
-                if isinstance(dt_val, str):
-                    asset.purchased_date = pd.to_datetime(dt_val).date()
+                parsed_dt = pd.to_datetime(dt_val, errors='coerce')
+                if pd.notna(parsed_dt):
+                    asset.purchased_date = parsed_dt.date()
                 else:
-                    asset.purchased_date = dt_val.date()
-            except: pass
+                    asset.purchased_date = None
+            except: 
+                asset.purchased_date = None
+        else:
+            asset.purchased_date = None
 
         # Apply Assignment logic
         if sn in assignments:
