@@ -86,6 +86,20 @@ def apply_final_inventory(excel_path):
             depr = Decimal(val) if val and val.lower() != 'nan' else Decimal('0.00')
         except: pass
 
+        # Handle Date Fields
+        def parse_d(val):
+            if pd.isna(val) or str(val).strip().lower() in ['', 'nan', '“”']:
+                return None
+            try:
+                dt = pd.to_datetime(val, errors='coerce')
+                return dt.date() if pd.notna(dt) else None
+            except:
+                return None
+
+        purchased_date = parse_d(row.get('Purchased date'))
+        avail_from = parse_d(row.get('Available from'))
+        avail_till = parse_d(row.get('Available till'))
+
         # Create Asset
         asset = Asset(
             sku=sku,
@@ -100,26 +114,13 @@ def apply_final_inventory(excel_path):
             barcode_type=barcode_type,
             barcode=barcode,
             qr_code=qr_code_val,
-            available_from=available_from,
-            available_till=available_till,
+            available_from=avail_from,
+            available_till=avail_till,
+            purchased_date=purchased_date,
             item_price=price,
             depreciation_percentage=depr,
             status='Available' # Default
         )
-
-        # Handle Purchased Date
-        if pd.notna(row['Purchased date']):
-            try:
-                dt_val = row['Purchased date']
-                parsed_dt = pd.to_datetime(dt_val, errors='coerce')
-                if pd.notna(parsed_dt):
-                    asset.purchased_date = parsed_dt.date()
-                else:
-                    asset.purchased_date = None
-            except: 
-                asset.purchased_date = None
-        else:
-            asset.purchased_date = None
 
         # Apply Assignment logic
         if sn in assignments:
