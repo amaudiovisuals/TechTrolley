@@ -976,12 +976,12 @@ const App: React.FC = () => {
 
     // A. FIRST: Check full string exact match (highest priority)
     const exactMatch = assets.find(a =>
-      a.sku === scanned ||
-      a.barcode === scanned ||
+      (a.sku && a.sku === scanned) ||
+      (a.barcode && a.barcode === scanned) ||
       (a.qrCode && a.qrCode === scanned) ||
-      (a.qrCode && scanned.includes(a.qrCode)) || // Match if scanned URL contains ID
-      (scanned.includes('/') && scanned.endsWith(a.qrCode)) || // Match if ID is end of scanned URL
-      a.serialNumber === scanned ||
+      (a.qrCode && scanned.includes(a.qrCode)) || 
+      (a.serialNumber && a.serialNumber === scanned) ||
+      (a.serialNumber && scanned.includes(a.serialNumber)) ||
       String(a.id) === scanned
     );
     if (exactMatch) return exactMatch;
@@ -4097,6 +4097,8 @@ const App: React.FC = () => {
                                        const qNorm = normalizeSearch(q);
                                        const filtered = assets.filter(a => {
                                          const matchesSearch = !q || 
+                                           (a.sku && a.sku.toLowerCase() === q) ||
+                                           (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
                                            normalizeSearch(a.sku || '').includes(qNorm) || 
                                            normalizeSearch(a.aliasName || '').includes(qNorm) || 
                                            normalizeSearch(a.serialNumber || '').includes(qNorm) || 
@@ -4216,7 +4218,11 @@ const App: React.FC = () => {
                                       {(() => {
                                          const q = quickAddInput.toLowerCase();
                                          const avail = assets.filter(a => {
-                                           const matches = !q || (a.sku && a.sku.toLowerCase().includes(q)) || (a.aliasName && a.aliasName.toLowerCase().includes(q));
+                                           const matches = !q || 
+                                             (a.sku && a.sku.toLowerCase() === q) ||
+                                             (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
+                                             (a.sku && a.sku.toLowerCase().includes(q)) || 
+                                             (a.aliasName && a.aliasName.toLowerCase().includes(q));
                                            const notUsed = !new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)) && !new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id));
                                            return matches && notUsed && a.status !== AssetStatus.DAMAGED;
                                          });
@@ -4439,6 +4445,8 @@ const App: React.FC = () => {
                                const q = quickRemoveInput.toLowerCase();
                                const qNorm = normalizeSearch(q);
                                return !q || 
+                                 (a.sku && a.sku.toLowerCase() === q) ||
+                                 (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
                                  normalizeSearch(a.sku || '').includes(qNorm) || 
                                  normalizeSearch(a.aliasName || '').includes(qNorm) || 
                                  normalizeSearch(a.serialNumber || '').includes(qNorm) || 

@@ -62,9 +62,17 @@ def apply_final_inventory(excel_path):
         imei1 = str(row['IMEI Number 1']).strip() if pd.notna(row['IMEI Number 1']) else ""
         imei2 = str(row['IMEI Number 2']).strip() if pd.notna(row['IMEI Number 2']) else ""
         
+        # New Columns from master
+        is_barcode = True if str(row.get('Is barcode added', '')).lower() in ['yes', '1', 'true'] else False
+        barcode_type = str(row.get('Barcode type', '')).strip() if pd.notna(row.get('Barcode type')) else ""
+        barcode = str(row.get('Barcode', '')).strip() if pd.notna(row.get('Barcode')) else ""
+        qr_code_val = str(row.get('QR Code', '')).strip() if pd.notna(row.get('QR Code')) else ""
+        available_from = str(row.get('Available from', '')).strip() if pd.notna(row.get('Available from')) else ""
+        available_till = str(row.get('Available till', '')).strip() if pd.notna(row.get('Available till')) else ""
+
         # Clean 'nan' strings
         def c(v): return "" if str(v).lower() == 'nan' else v
-        sku, alias, category, sn, desc, mac, imei1, imei2 = map(c, [sku, alias, category, sn, desc, mac, imei1, imei2])
+        sku, alias, category, sn, desc, mac, imei1, imei2, barcode_type, barcode, qr_code_val, available_from, available_till = map(c, [sku, alias, category, sn, desc, mac, imei1, imei2, barcode_type, barcode, qr_code_val, available_from, available_till])
 
         price = Decimal('0.00')
         try:
@@ -88,6 +96,12 @@ def apply_final_inventory(excel_path):
             mac_address=mac,
             imei_number_1=imei1,
             imei_number_2=imei2,
+            is_barcode_added=is_barcode,
+            barcode_type=barcode_type,
+            barcode=barcode,
+            qr_code=qr_code_val,
+            available_from=available_from,
+            available_till=available_till,
             item_price=price,
             depreciation_percentage=depr,
             status='Available' # Default
@@ -96,7 +110,11 @@ def apply_final_inventory(excel_path):
         # Handle Purchased Date
         if pd.notna(row['Purchased date']):
             try:
-                asset.purchased_date = pd.to_datetime(row['Purchased date']).date()
+                dt_val = row['Purchased date']
+                if isinstance(dt_val, str):
+                    asset.purchased_date = pd.to_datetime(dt_val).date()
+                else:
+                    asset.purchased_date = dt_val.date()
             except: pass
 
         # Apply Assignment logic
