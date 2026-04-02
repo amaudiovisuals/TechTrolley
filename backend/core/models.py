@@ -201,17 +201,13 @@ def update_asset_status_on_assets_change(sender, instance, action, pk_set, **kwa
     if action == 'post_add':
         Asset.objects.filter(pk__in=pk_set).update(status='In Use')
     elif action in ('post_remove', 'pre_clear'):
-        for asset in Asset.objects.filter(pk__in=pk_set):
-            is_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
-            is_active = Conference.objects.filter(assets=asset).exists()
-            if is_crosscheck:
-                asset.status = 'Crosscheck'
-            elif is_active:
-                asset.status = 'In Use'
-            else:
-                if asset.status != 'Damaged':
-                    asset.status = 'Available'
-            asset.save()
+        # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
+        others_using = set(Conference.objects.exclude(pk=instance.pk).filter(assets__in=pk_set).values_list('assets__id', flat=True))
+        crosscheck_using = set(Conference.objects.filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
+        
+        to_revert = [aid for aid in pk_set if aid not in others_using and aid not in crosscheck_using]
+        if to_revert:
+            Asset.objects.filter(pk__in=to_revert).exclude(status='Damaged').update(status='Available')
 
 @receiver(m2m_changed, sender=Conference.crosscheck_assets.through)
 def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, **kwargs):
@@ -220,14 +216,10 @@ def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, *
     if action == 'post_add':
         Asset.objects.filter(pk__in=pk_set).update(status='Crosscheck')
     elif action in ('post_remove', 'pre_clear'):
-        for asset in Asset.objects.filter(pk__in=pk_set):
-            is_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
-            is_active = Conference.objects.filter(assets=asset).exists()
-            if is_crosscheck:
-                asset.status = 'Crosscheck'
-            elif is_active:
-                asset.status = 'In Use'
-            else:
-                if asset.status != 'Damaged':
-                    asset.status = 'Available'
-            asset.save()
+        # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
+        actual_using = set(Conference.objects.filter(assets__in=pk_set).values_list('assets__id', flat=True))
+        others_cc_using = set(Conference.objects.exclude(pk=instance.pk).filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
+        
+        to_revert = [aid for aid in pk_set if aid not in actual_using and aid not in others_cc_using]
+        if to_revert:
+            Asset.objects.filter(pk__in=to_revert).exclude(status='Damaged').update(status='Available')

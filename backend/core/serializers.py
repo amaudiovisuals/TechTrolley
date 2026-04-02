@@ -61,88 +61,49 @@ class ConferenceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def create(self, validated_data):
+        # Defensive: Pop all M2M fields before create
         assets_data = validated_data.pop('assets', [])
         requirements_data = validated_data.pop('requirements', [])
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
         employees_data = validated_data.pop('assigned_employees', [])
+        
+        # Defensive: Remove pdf_document if it's a string (URL) rather than a file
+        pdf_doc = validated_data.get('pdf_document')
+        if isinstance(pdf_doc, str):
+            validated_data.pop('pdf_document')
+            
         conference = Conference.objects.create(**validated_data)
         
-        if assets_data:
-            conference.assets.set(assets_data)
-            # Use bulk update for efficiency
-            Asset.objects.filter(id__in=[a.id for a in assets_data]).update(status='In Use')
-
-        if crosscheck_data:
-            conference.crosscheck_assets.set(crosscheck_data)
-            Asset.objects.filter(id__in=[a.id for a in crosscheck_data]).update(status='Crosscheck')
-
-        if requirements_data:
-            conference.requirements.set(requirements_data)
-
-        if employees_data:
-            conference.assigned_employees.set(employees_data)
+        # Add M2M after creation
+        if assets_data: conference.assets.set(assets_data)
+        if crosscheck_data: conference.crosscheck_assets.set(crosscheck_data)
+        if requirements_data: conference.requirements.set(requirements_data)
+        if employees_data: conference.assigned_employees.set(employees_data)
             
         return conference
 
     def update(self, instance, validated_data):
+        # Defensive: Pop all M2M fields before update
         assets_data = validated_data.pop('assets', None)
         requirements_data = validated_data.pop('requirements', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
         
-        old_assets_ids = set(instance.assets.values_list('id', flat=True))
-        old_crosscheck_ids = set(instance.crosscheck_assets.values_list('id', flat=True))
+        # Defensive: Handle pdf_document if it's a string (URL)
+        pdf_doc = validated_data.get('pdf_document')
+        if isinstance(pdf_doc, str):
+            validated_data.pop('pdf_document')
         
-        instance = super().update(instance, validated_data)
+        # Update main fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
 
-        if assets_data is not None:
-            new_asset_ids = set(a.id for a in assets_data)
-            removed_ids = old_assets_ids - new_asset_ids
-            
-            instance.assets.set(assets_data)
-            
-            # Update status for NEWLY added assets
-            added_ids = new_asset_ids - old_assets_ids
-            if added_ids:
-                Asset.objects.filter(id__in=added_ids).update(status='In Use')
-
-            # Handle REMOVED assets: mark Available ONLY if not in any other active conference or crosscheck
-            for aid in removed_ids:
-                asset = Asset.objects.get(id=aid)
-                # Check if still assigned to OTHER conferences
-                in_other_conf = Conference.objects.exclude(pk=instance.pk).filter(assets=asset).exists()
-                in_any_crosscheck = Conference.objects.filter(crosscheck_assets=asset).exists()
-                
-                if not in_other_conf and not in_any_crosscheck:
-                    asset.status = 'Available'
-                    asset.save()
-
-        if crosscheck_data is not None:
-            new_cc_ids = set(a.id for a in crosscheck_data)
-            removed_cc_ids = old_crosscheck_ids - new_cc_ids
-            
-            instance.crosscheck_assets.set(crosscheck_data)
-            
-            # Update status for NEWLY added crosscheck
-            added_cc_ids = new_cc_ids - old_crosscheck_ids
-            if added_cc_ids:
-                Asset.objects.filter(id__in=added_cc_ids).update(status='Crosscheck')
-
-            # Handle REMOVED crosscheck assets (verified)
-            for aid in removed_cc_ids:
-                asset = Asset.objects.get(id=aid)
-                in_any_conf = Conference.objects.filter(assets=asset).exists()
-                in_other_cc = Conference.objects.exclude(pk=instance.pk).filter(crosscheck_assets=asset).exists()
-                
-                if not in_any_conf and not in_other_cc:
-                    asset.status = 'Available'
-                    asset.save()
-
-        if requirements_data is not None:
-            instance.requirements.set(requirements_data)
-
-        if employees_data is not None:
-            instance.assigned_employees.set(employees_data)
+        # Update M2M
+        if assets_data is not None: instance.assets.set(assets_data)
+        if crosscheck_data is not None: instance.crosscheck_assets.set(crosscheck_data)
+        if requirements_data is not None: instance.requirements.set(requirements_data)
+        if employees_data is not None: instance.assigned_employees.set(employees_data)
 
         return instance
 

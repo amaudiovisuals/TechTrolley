@@ -97,7 +97,7 @@ const GlobalQRPreview: React.FC = () => {
 const App: React.FC = () => {
   const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
     ? 'http://localhost:8000' 
-    : 'https://techtrolley.amaudiovisuals.com';
+    : window.location.origin;
 
   const showUnknownError = true;
   const isMobilePhone = useMemo(() => {
@@ -654,8 +654,10 @@ const App: React.FC = () => {
     const token = localStorage.getItem('token');
 
     // Coerce IDs to integers and handle empty strings for optional fields
+    const { staged_assets, ...cleanConferenceData } = conferenceFormData;
+    
     const payload = {
-      ...conferenceFormData,
+      ...cleanConferenceData,
       start_date: conferenceFormData.start_date || null,
       end_date: conferenceFormData.end_date || null,
       assets: (conferenceFormData.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
@@ -3615,7 +3617,7 @@ const App: React.FC = () => {
               {/* Administrative Top Section - Full Width / 2-Column for Identity & Billing */}
               {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
                 <div className="space-y-10">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
                     {/* Conference Identity & Schedule */}
                     <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 shadow-xl shadow-sky-500/5 space-y-6">
                       <div className="flex items-center gap-4">
@@ -3743,9 +3745,9 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
                 {/* Second Row Bottom: Logistics (Narrow) & Scanning (Wide) */}
-                <div className="lg:col-span-4 space-y-8">
+                <div className="xl:col-span-4 space-y-8">
                   <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 space-y-8 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-sky-50 rounded-full -mr-12 -mt-12 group-hover:bg-sky-100 transition-colors duration-500 opacity-50"></div>
 
@@ -3844,7 +3846,7 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Right Column: Asset Scanning Card */}
-                <div className="lg:col-span-8">
+                <div className="xl:col-span-8">
                   <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
