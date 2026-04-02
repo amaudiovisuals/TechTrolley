@@ -4092,22 +4092,20 @@ const App: React.FC = () => {
                                      <button onClick={() => setQuickAddInput('')} className="text-[10px] font-black text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest">Clear Search</button>
                                    </div>
                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                     {(() => {
-                                       const q = quickAddInput.toLowerCase();
-                                       const qNorm = normalizeSearch(q);
-                                       const filtered = assets.filter(a => {
-                                         const matchesSearch = !q || 
-                                           (a.sku && a.sku.toLowerCase() === q) ||
-                                           (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
-                                           normalizeSearch(a.sku || '').includes(qNorm) || 
-                                           normalizeSearch(a.aliasName || '').includes(qNorm) || 
-                                           normalizeSearch(a.serialNumber || '').includes(qNorm) || 
-                                           normalizeSearch(a.type || '').includes(qNorm);
-                                         const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
-                                         const notInCurrent = !conferenceFormData.assets.some((id: any) => String(id) === String(a.id));
-                                         const notDamaged = a.status !== AssetStatus.DAMAGED;
-                                         return matchesSearch && notInReqs && notInCurrent && notDamaged;
-                                       });
+                                       {(() => {
+                                         const q = quickAddInput.toLowerCase();
+                                         const filtered = assets.filter(a => {
+                                           const matchesSearch = !q || 
+                                             (a.sku && a.sku.toLowerCase() === q) ||
+                                             (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
+                                             (a.sku && a.sku.toLowerCase().includes(q)) || 
+                                             (a.aliasName && a.aliasName.toLowerCase().includes(q)) ||
+                                             (a.type && a.type.toLowerCase().includes(q));
+                                           const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
+                                           const notInCurrent = !conferenceFormData.assets.some((id: any) => String(id) === String(a.id));
+                                           const notDamaged = a.status !== AssetStatus.DAMAGED;
+                                           return matchesSearch && notInReqs && notInCurrent && notDamaged;
+                                         });
                                        if (filtered.length === 0) return <div className="col-span-2 text-center text-xs font-bold text-slate-400 py-6">No matching assets to add as requirement</div>;
                                        return filtered.slice(0, 6).map(asset => (
                                          <div 
@@ -4443,14 +4441,12 @@ const App: React.FC = () => {
                             assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)))
                              .filter(a => {
                                const q = quickRemoveInput.toLowerCase();
-                               const qNorm = normalizeSearch(q);
                                return !q || 
                                  (a.sku && a.sku.toLowerCase() === q) ||
                                  (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
-                                 normalizeSearch(a.sku || '').includes(qNorm) || 
-                                 normalizeSearch(a.aliasName || '').includes(qNorm) || 
-                                 normalizeSearch(a.serialNumber || '').includes(qNorm) || 
-                                 normalizeSearch(a.type || '').includes(qNorm);
+                                 (a.sku && a.sku.toLowerCase().includes(q)) || 
+                                 (a.aliasName && a.aliasName.toLowerCase().includes(q)) ||
+                                 (a.type && a.type.toLowerCase().includes(q));
                              }).map(asset => (
                               <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
                                 <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
