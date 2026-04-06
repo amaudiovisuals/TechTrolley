@@ -605,6 +605,12 @@ const App: React.FC = () => {
             pdf_document: c.pdf_document
           }));
           setBackendConferences(mapped);
+          
+          // CRITICAL FIX: Also refresh the active challan view if it matches an updated conference
+          if (selectedBookingForChallan) {
+            const updatedActive = mapped.find(b => b.id === selectedBookingForChallan.id);
+            if (updatedActive) setSelectedBookingForChallan(updatedActive);
+          }
 
           // If in print mode, set the selected booking immediately after fetching
           if (isPrintMode && printConfId) {
