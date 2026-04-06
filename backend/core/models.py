@@ -9,6 +9,9 @@ class Asset(models.Model):
         ('In Use', 'In Use'),
         ('Damaged', 'Damaged'),
         ('Crosscheck', 'Crosscheck'),
+        ('On Service', 'On Service'),
+        ('Expired', 'Expired'),
+        ('Missing', 'Missing'),
     ]
 
     FLAG_CHOICES = [
@@ -77,6 +80,24 @@ class Asset(models.Model):
     name = models.CharField(max_length=200, blank=True, default='')
     brand = models.CharField(max_length=100, blank=True, default='')
     model_number = models.CharField(max_length=100, blank=True, default='')
+
+    def save(self, *args, **kwargs):
+        # Automate Status Update based on Flag Selection
+        if self.flag == 'Expired':
+            self.status = 'Expired'
+        elif self.flag == 'Required Service':
+            self.status = 'Damaged'
+        elif self.flag == 'On Service':
+            self.status = 'On Service'
+        elif self.flag == 'Missing':
+            self.status = 'Missing'
+        elif not self.flag:
+            # When flag is cleared, reset special statuses to 'Available' 
+            # but preserve 'In Use' or 'Crosscheck' if they were manually set
+            if self.status in ['Expired', 'On Service', 'Missing', 'Damaged']:
+                self.status = 'Available'
+        
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.sku} - {self.alias_name or self.serial_number}"
