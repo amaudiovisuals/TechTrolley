@@ -3965,34 +3965,48 @@ const App: React.FC = () => {
 
                               {/* Requirements List (for Tech) or Progress List (for Godown) */}
                               {user?.role === 'technician' ? (
-                                conferenceFormData.requirements.length > 0 && (
-                                  <div className="space-y-4 pt-6 border-t border-slate-100">
-                                    <div className="flex items-center justify-between px-1">
-                                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Requirements List</h4>
-                                      <span className="text-[10px] font-black text-sky-500 bg-sky-50 px-2 py-0.5 rounded-full">{conferenceFormData.requirements.length} ITEMS</span>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      {assets.filter(a => new Set(conferenceFormData.requirements.map(String)).has(String(a.id))).map(asset => (
-                                        <div key={asset.id} className="p-4 rounded-2xl border border-sky-100 bg-sky-50/20 flex items-center gap-4 transition-all hover:bg-sky-50/30">
-                                          <div className="w-10 h-10 bg-white border border-sky-100 text-sky-500 rounded-xl flex items-center justify-center text-lg shadow-sm">
-                                            <i className="fa-solid fa-list-check"></i>
+                                (conferenceFormData.assets || []).length > 0 && (() => {
+                                  const q = quickAddInput.toLowerCase();
+                                  const qNorm = normalizeSearch(q);
+                                  const filteredAllocated = assets.filter(a => {
+                                    if (!new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))) return false;
+                                    if (!q) return true;
+                                    return (a.sku && a.sku.toLowerCase().includes(q)) || 
+                                           (a.aliasName && a.aliasName.toLowerCase().includes(q)) ||
+                                           (a.serialNumber && a.serialNumber.toLowerCase().includes(q)) ||
+                                           normalizeSearch(a.sku || '').includes(qNorm) ||
+                                           normalizeSearch(a.aliasName || '').includes(qNorm);
+                                  });
+                                  if (quickAddInput && filteredAllocated.length === 0) return null;
+                                  return (
+                                    <div className="space-y-4 pt-6 border-t border-slate-100">
+                                      <div className="flex items-center justify-between px-1">
+                                        <h4 className="text-[10px] font-black text-sky-500 uppercase tracking-widest">{quickAddInput ? 'Search in Allocated' : 'Allocated Assets'}</h4>
+                                        <span className="text-[10px] font-black text-sky-500 bg-sky-50 px-2 py-0.5 rounded-full">{filteredAllocated.length} ITEMS</span>
+                                      </div>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {filteredAllocated.map(asset => (
+                                          <div key={asset.id} className="p-4 rounded-2xl border border-sky-100 bg-sky-50/20 flex items-center gap-4 transition-all hover:bg-sky-50/30">
+                                            <div className="w-10 h-10 bg-white border border-sky-100 text-sky-500 rounded-xl flex items-center justify-center text-lg shadow-sm">
+                                              <i className="fa-solid fa-check-double"></i>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
+                                              <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5 truncate">{asset.type} • ALLOCATED</p>
+                                            </div>
+                                            <button
+                                              onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                              className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                              title="Unassign Asset"
+                                            >
+                                              <i className="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
                                           </div>
-                                          <div className="min-w-0 flex-1">
-                                            <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                            <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5 truncate">{asset.type}</p>
-                                          </div>
-                                          <button
-                                            onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                            className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                            title="Remove Requirement"
-                                          >
-                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                          </button>
-                                        </div>
-                                      ))}
+                                        ))}
+                                      </div>
                                     </div>
-                                  </div>
-                                )
+                                  );
+                                })()
                               ) : (
                                 conferenceFormData.assets.length > 0 && (
                                   <div className="space-y-4 pt-6 border-t border-slate-100">
@@ -4095,6 +4109,15 @@ const App: React.FC = () => {
                                        {(() => {
                                          const q = quickAddInput.toLowerCase();
                                          const qNorm = normalizeSearch(q);
+                                         const currentConferenceId = editingConference?.id;
+                                         const bookedInOtherConferences = new Set<string>(
+                                           backendConferences
+                                             .filter(c => String(c.id) !== String(currentConferenceId))
+                                             .flatMap(c => [
+                                               ...((c as any).assets || []).map(String),
+                                               ...((c.crosscheckAssets || []).map(String))
+                                             ])
+                                         );
                                          const filtered = assets.filter(a => {
                                            const matchesSearch = !q || 
                                              (a.sku && a.sku.toLowerCase() === q) ||
@@ -4104,12 +4127,14 @@ const App: React.FC = () => {
                                              normalizeSearch(a.name || '').includes(qNorm) || 
                                              normalizeSearch(a.description || '').includes(qNorm) || 
                                              normalizeSearch(a.serialNumber || '').includes(qNorm) || 
+                                             (a.qrCode && (normalizeSearch(a.qrCode).includes(qNorm) || qNorm.includes(normalizeSearch(a.qrCode)))) ||
                                              normalizeSearch(a.barcode || '').includes(qNorm) || 
                                              normalizeSearch(a.type || '').includes(qNorm);
                                            const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
                                            const notInCurrent = !conferenceFormData.assets.some((id: any) => String(id) === String(a.id));
+                                           const notInOtherConf = !bookedInOtherConferences.has(String(a.id));
                                            const notDamaged = a.status !== AssetStatus.DAMAGED;
-                                           return matchesSearch && notInReqs && notInCurrent && notDamaged;
+                                           return matchesSearch && notInReqs && notInCurrent && notInOtherConf && notDamaged;
                                          });
                                        if (filtered.length === 0) return <div className="col-span-2 text-center text-xs font-bold text-slate-400 py-6">No matching assets to add as requirement</div>;
                                        return filtered.slice(0, 10).map(asset => (
