@@ -237,6 +237,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     };
 
     const handleUpdateRole = async (email: string, role: string) => {
+        if (!window.confirm(`Are you sure you want to change the role for ${email} to ${role.toUpperCase()}?`)) {
+            // Re-fetch to reset dropdown if they cancel (optional but good)
+            fetchEmployees();
+            fetchUsers();
+            return;
+        }
         try {
             const res = await apiFetch(`${API_BASE}/api/users/role/`, {
                 method: 'PUT',
@@ -303,11 +309,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                     source: 'system'
                 });
             } else {
-                // If already present, ensure role is reflected if it's admin
+                // If already present as employee, ensure role is prioritized as admin if in sys list
                 const existing = merged.get(email);
                 if (existing.role !== 'admin') {
-                    // Update role if sys list says they are staff
-                    // But usually employees list is more current
+                    merged.set(email, {
+                        ...existing,
+                        role: 'admin',
+                        source: 'employee' // Keep employee as source for name/ID, but update role
+                    });
                 }
             }
         });

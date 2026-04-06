@@ -89,6 +89,17 @@ def update_user_role(request):
             user.is_staff = False
             
         user.save()
+
+        # Sync Employee model if it exists
+        from .models import Employee
+        try:
+            employee = Employee.objects.get(email=email)
+            employee.role = role
+            employee.save()
+            print(f"Synced Employee role for {email} to {role}")
+        except Employee.DoesNotExist:
+            print(f"No Employee record found for {email} to sync role.")
+
         return Response({'message': f'Role updated to {role}'})
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
