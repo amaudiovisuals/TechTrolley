@@ -3,7 +3,10 @@ export enum AssetStatus {
   AVAILABLE = 'Available',
   IN_USE = 'In Use',
   DAMAGED = 'Damaged',
-  CROSSCHECK = 'Crosscheck'
+  CROSSCHECK = 'Crosscheck',
+  ON_SERVICE = 'On Service',
+  EXPIRED = 'Expired',
+  MISSING = 'Missing'
 }
 
 export enum AssetFlag {

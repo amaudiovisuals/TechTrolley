@@ -179,7 +179,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
 
     // ─── Actions ─────────────────────────────────────────────
     
-    const handleAssignLaptop = async (assetId: number, employeeId: string | number) => {
+    const handleAssignLaptop = async (assetId: number, employeeId: string | number | null) => {
         try {
             const response = await apiFetch(`/api/assets/${assetId}/`, {
                 method: 'PATCH',
@@ -192,6 +192,20 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
             }
         } catch (err) {
             console.error("Assign Error:", err);
+        }
+    };
+
+    const handleUpdateAsset = async (assetId: number, fieldName: 'status' | 'flag', newValue: string) => {
+        try {
+            const response = await apiFetch(`/api/assets/${assetId}/`, {
+                method: 'PATCH',
+                body: JSON.stringify({ [fieldName]: newValue })
+            });
+            if (response.ok) {
+                loadData();
+            }
+        } catch (err) {
+            console.error(`Asset Update Error (${fieldName}):`, err);
         }
     };
 
@@ -478,15 +492,32 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                                             <p className="text-[9px] text-slate-500 font-mono mt-1">{asset.sku}</p>
                                         </td>
                                         <td className="p-6">
-                                            <span className="px-3 py-1 bg-red-500/10 text-[10px] font-black text-red-500 uppercase rounded-lg border border-red-500/20">
-                                                <i className="fa-solid fa-flag mr-2" />
-                                                {asset.flag}
-                                            </span>
+                                            {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) ? (
+                                                <div className="flex flex-col gap-1">
+                                                    <select
+                                                        value={asset.flag || ''}
+                                                        onChange={(e) => handleUpdateAsset(asset.id as any, 'flag', e.target.value)}
+                                                        className="bg-slate-900 border border-slate-800 rounded-lg text-[10px] font-black p-2 uppercase outline-none focus:border-red-500 transition cursor-pointer text-red-500"
+                                                    >
+                                                        <option value="">Clear Flag</option>
+                                                        {Object.values(AssetFlag).filter(f => f !== '').map(f => (
+                                                            <option key={f} value={f}>{f}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            ) : (
+                                                <span className="px-3 py-1 bg-red-500/10 text-[10px] font-black text-red-500 uppercase rounded-lg border border-red-500/20">
+                                                    <i className="fa-solid fa-flag mr-2" />
+                                                    {asset.flag || 'None'}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="p-6">
                                             <span className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg ${
                                                 asset.status === 'Available' ? 'bg-emerald-500/10 text-emerald-500' :
-                                                asset.status === 'In Use' ? 'bg-orange-500/10 text-orange-500' : 'bg-slate-800 text-slate-400'
+                                                asset.status === 'In Use' ? 'bg-orange-500/10 text-orange-500' : 
+                                                (asset.status === 'Damaged' || asset.status === 'Missing' || asset.status === 'Expired' || asset.status === 'On Service') ? 'bg-red-500/10 text-red-500' :
+                                                'bg-slate-800 text-slate-400'
                                             }`}>
                                                 {asset.status}
                                             </span>
