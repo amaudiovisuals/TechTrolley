@@ -35,7 +35,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
     try {
       // 1. Generate QR data URL
       const qrDataUrl = await QRCode.toDataURL(sku, {
-        width: 300, // Higher resolution for professional print
+        width: 250, // Higher resolution for professional print
         margin: 1,
         color: {
           dark: '#000000',
@@ -43,153 +43,118 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         },
       });
 
-      // 2. Create or reuse hidden iframe
-      let iframe = document.getElementById('sticker-print-iframe') as HTMLIFrameElement;
-      if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.id = 'sticker-print-iframe';
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        iframe.style.visibility = 'hidden';
-        document.body.appendChild(iframe);
-      }
+      // 2. Open print window (more reliable across browsers for this layout)
+      const printWindow = window.open('', '_blank', 'width=800,height=400');
+      if (!printWindow) return;
 
-      const doc = iframe.contentWindow?.document;
-      if (!doc) return;
-
-      doc.open();
-      doc.write(`
+      printWindow.document.write(`
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Print Label - ${sku}</title>
+            <title>&nbsp;</title>
             <style>
-              /* CRITICAL: Force exact dimensions and remove all browser defaults */
               @page {
-                size: ${labelWidth}mm ${labelHeight}mm;
+                size: 100mm 20mm landscape;
                 margin: 0;
               }
-              html, body {
-                margin: 0;
-                padding: 0;
-                width: ${labelWidth}mm;
-                height: ${labelHeight}mm;
-                background: white;
-                color: black;
-                font-family: 'Inter', -apple-system, sans-serif;
-                overflow: hidden;
+              * {
                 box-sizing: border-box;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
               }
-              * {
-                box-sizing: border-box;
+              body {
+                margin: 0;
+                padding: 0;
+                width: 100mm;
+                height: 20mm;
+                background: white;
+                color: black !important;
+                font-family: 'Inter', Arial, sans-serif;
+                overflow: hidden;
               }
-              .sticker {
-                width: ${labelWidth}mm;
-                height: ${labelHeight}mm;
-                display: flex;
-                align-items: center;
-                padding: 1.5mm 3mm;
-                border: 0.1mm solid transparent; /* Helps prevent bleed on some drivers */
-                position: relative;
+              .label-table {
+                width: 100mm;
+                height: 20mm;
+                border: 0;
+                border-collapse: collapse;
               }
-              .qr-box {
-                width: calc(${labelHeight}mm - 4mm); /* Height-based sizing for square QR */
-                max-width: 35%;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                flex-shrink: 0;
+              .qr-cell {
+                width: 25mm;
+                text-align: center;
+                vertical-align: middle;
+                padding: 0;
               }
               .qr-img {
-                width: 100%;
-                height: auto;
+                width: 18mm;
+                height: 18mm;
                 display: block;
+                margin: 0 auto;
               }
               .asset-name {
                 font-size: 5pt;
                 font-weight: 800;
-                text-align: center;
                 white-space: nowrap;
                 overflow: hidden;
-                width: 100%;
-                margin-top: 1px;
+                width: 24mm;
+                margin: 0 auto;
+                text-align: center;
+                margin-top: -1px;
                 text-transform: uppercase;
-                letter-spacing: -0.1px;
               }
-              .content-box {
-                flex: 1;
-                padding-left: 4mm;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                min-width: 0;
+              .text-cell {
+                padding-left: 2mm;
+                padding-top: 1mm;
+                vertical-align: top;
+                text-align: left;
               }
               .company {
                 font-size: 9pt;
                 font-weight: 900;
-                margin: 0;
-                line-height: 1.1;
+                margin-bottom: 0px;
                 text-transform: uppercase;
-                letter-spacing: 0.2px;
-                white-space: nowrap;
-                overflow: hidden;
+                line-height: 1;
               }
               .phone {
-                font-size: 7.5pt;
+                font-size: 8pt;
                 font-weight: 700;
-                margin: 0.5mm 0 1.5mm 0;
+                margin-bottom: 2mm;
                 line-height: 1;
-                opacity: 0.8;
               }
               .sku {
-                font-size: ${labelHeight > 25 ? '16pt' : '13pt'};
-                font-weight: 950;
-                margin: 0;
+                font-size: 14pt;
+                font-weight: 900;
+                letter-spacing: 0.5px;
                 line-height: 1;
-                color: black;
-                letter-spacing: -0.5px;
-                white-space: nowrap;
-                overflow: hidden;
-              }
-              
-              /* Force no hidden margins or headers/footers */
-              @media print {
-                body {
-                  -webkit-print-color-adjust: exact;
-                }
+                margin: 0;
               }
             </style>
           </head>
           <body>
-            <div class="sticker">
-              <div class="qr-box">
-                <img src="${qrDataUrl}" class="qr-img" />
-                <div class="asset-name">${assetName}</div>
-              </div>
-              <div class="content-box">
-                <p class="company">${companySettings.name || 'AM Audiovisuals'}</p>
-                <p class="phone">${companySettings.phone || '9845204137'}</p>
-                <p class="sku">${sku}</p>
-              </div>
-            </div>
+            <table class="label-table">
+              <tr>
+                <td class="qr-cell">
+                  <img src="${qrDataUrl}" class="qr-img" />
+                  <div class="asset-name">${assetName}</div>
+                </td>
+                <td class="text-cell">
+                  <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+                  <div class="phone">${companySettings?.phone || '9845204137'}</div>
+                  <div class="sku">${sku}</div>
+                </td>
+              </tr>
+            </table>
             <script>
-              window.onload = () => {
+              window.onload = () => { 
                 setTimeout(() => {
                   window.print();
-                }, 300);
+                  window.close();
+                }, 750);
               };
             </script>
           </body>
         </html>
       `);
-      doc.close();
+      printWindow.document.close();
       
       // 3. Mark as assigned in backend if onPrint provided
       if (assetId && onPrint) {
