@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { CompanySettings } from '../types';
 import QRCode from 'qrcode';
 
 interface QRLabelModalProps {
@@ -7,10 +8,15 @@ interface QRLabelModalProps {
   assetName: string;
   onClose: () => void;
   onPrint?: (assetId: string, sku: string) => void;
+  companySettings: CompanySettings;
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, onClose, onPrint }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, onClose, onPrint, companySettings }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Fallback defaults if settings are missing or zero
+  const labelWidth = companySettings?.print_label_width || 50;
+  const labelHeight = companySettings?.print_label_height || 25;
 
   useEffect(() => {
     if (canvasRef.current && sku) {
@@ -29,7 +35,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
     try {
       // 1. Generate QR data URL
       const qrDataUrl = await QRCode.toDataURL(sku, {
-        width: 250, // Higher resolution for professional print
+        width: 300, // Higher resolution for professional print
         margin: 1,
         color: {
           dark: '#000000',
@@ -37,7 +43,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         },
       });
 
-      // 2. Create or reuse hidden iframe (reliable alternative to window.open)
+      // 2. Create or reuse hidden iframe
       let iframe = document.getElementById('sticker-print-iframe') as HTMLIFrameElement;
       if (!iframe) {
         iframe = document.createElement('iframe');
@@ -60,44 +66,50 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Print Label</title>
+            <title>Print Label - ${sku}</title>
             <style>
+              /* CRITICAL: Force exact dimensions and remove all browser defaults */
               @page {
-                size: 100mm 20mm landscape;
+                size: ${labelWidth}mm ${labelHeight}mm;
                 margin: 0;
               }
-              * {
-                box-sizing: border-box;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-              }
-              body {
+              html, body {
                 margin: 0;
                 padding: 0;
-                width: 100mm;
-                height: 20mm;
+                width: ${labelWidth}mm;
+                height: ${labelHeight}mm;
                 background: white;
                 color: black;
                 font-family: 'Inter', -apple-system, sans-serif;
                 overflow: hidden;
+                box-sizing: border-box;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              * {
+                box-sizing: border-box;
               }
               .sticker {
-                width: 100mm;
-                height: 20mm;
+                width: ${labelWidth}mm;
+                height: ${labelHeight}mm;
                 display: flex;
                 align-items: center;
-                padding: 1mm 2mm;
+                padding: 1.5mm 3mm;
+                border: 0.1mm solid transparent; /* Helps prevent bleed on some drivers */
+                position: relative;
               }
               .qr-box {
-                width: 18mm;
+                width: calc(${labelHeight}mm - 4mm); /* Height-based sizing for square QR */
+                max-width: 35%;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
+                flex-shrink: 0;
               }
               .qr-img {
-                width: 16mm;
-                height: 16mm;
+                width: 100%;
+                height: auto;
                 display: block;
               }
               .asset-name {
@@ -107,8 +119,9 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                 white-space: nowrap;
                 overflow: hidden;
                 width: 100%;
-                margin-top: -1px;
+                margin-top: 1px;
                 text-transform: uppercase;
+                letter-spacing: -0.1px;
               }
               .content-box {
                 flex: 1;
@@ -116,28 +129,41 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
+                min-width: 0;
               }
               .company {
                 font-size: 9pt;
                 font-weight: 900;
                 margin: 0;
-                line-height: 1;
+                line-height: 1.1;
                 text-transform: uppercase;
                 letter-spacing: 0.2px;
+                white-space: nowrap;
+                overflow: hidden;
               }
               .phone {
                 font-size: 7.5pt;
                 font-weight: 700;
-                margin: 1mm 0 2mm 0;
+                margin: 0.5mm 0 1.5mm 0;
                 line-height: 1;
+                opacity: 0.8;
               }
               .sku {
-                font-size: 14pt;
-                font-weight: 900;
+                font-size: ${labelHeight > 25 ? '16pt' : '13pt'};
+                font-weight: 950;
                 margin: 0;
                 line-height: 1;
                 color: black;
-                letter-spacing: -0.3px;
+                letter-spacing: -0.5px;
+                white-space: nowrap;
+                overflow: hidden;
+              }
+              
+              /* Force no hidden margins or headers/footers */
+              @media print {
+                body {
+                  -webkit-print-color-adjust: exact;
+                }
               }
             </style>
           </head>
@@ -148,8 +174,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                 <div class="asset-name">${assetName}</div>
               </div>
               <div class="content-box">
-                <p class="company">AM Audiovisuals</p>
-                <p class="phone">9845204137</p>
+                <p class="company">${companySettings.name || 'AM Audiovisuals'}</p>
+                <p class="phone">${companySettings.phone || '9845204137'}</p>
                 <p class="sku">${sku}</p>
               </div>
             </div>
@@ -157,7 +183,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
               window.onload = () => {
                 setTimeout(() => {
                   window.print();
-                }, 500);
+                }, 300);
               };
             </script>
           </body>

@@ -4752,6 +4752,7 @@ const App: React.FC = () => {
           assetName={qrTarget.name}
           onPrint={handlePrintAsset}
           onClose={() => setQrTarget(null)}
+          companySettings={companySettings}
         />
       )}
 

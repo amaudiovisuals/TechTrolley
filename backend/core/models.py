@@ -141,6 +141,8 @@ class CompanySettings(models.Model):
     powered_by_name = models.CharField(max_length=200, default="am audiovisuals")
     dashboard_config = models.JSONField(default=dict, blank=True, help_text="Config for dashboard cards visibility")
     theme_template = models.CharField(max_length=20, default='blue', choices=[('blue', 'Blue'), ('green', 'Green')])
+    print_label_width = models.IntegerField(default=50, help_text="Label width in mm")
+    print_label_height = models.IntegerField(default=25, help_text="Label height in mm")
 
     def __str__(self):
         return self.name

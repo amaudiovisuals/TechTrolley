@@ -138,11 +138,7 @@ export interface CompanySettings {
   name: string;
   address: string;
   phone: string;
-  email: string;
-  gst_number: string;
-  website: string;
-  logo?: string | null;
-  powered_by_name?: string;
-  dashboard_config?: Record<string, boolean>;
   theme_template?: 'blue' | 'green';
+  print_label_width: number;
+  print_label_height: number;
 }

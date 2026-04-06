@@ -25,7 +25,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
         name: '', address: '', phone: '', email: '', gst_number: '', website: '',
         logo: null, powered_by_name: 'am audiovisuals',
-        dashboard_config: {}, theme_template: 'blue'
+        dashboard_config: {}, theme_template: 'blue',
+        print_label_width: 50, print_label_height: 25
     });
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -105,6 +106,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             if (companySettings.theme_template) {
                 formData.append('theme_template', companySettings.theme_template);
             }
+            formData.append('print_label_width', companySettings.print_label_width.toString());
+            formData.append('print_label_height', companySettings.print_label_height.toString());
 
             if (logoFile) {
                 formData.append('logo', logoFile);
@@ -441,7 +444,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                         </div>
                         <div className="pt-8 border-t border-slate-800/50 space-y-8">
                             <div>
-                                <h4 className="text-xl font-black text-white uppercase mb-4">Dashboard & Theme</h4>
+                                <h4 className="text-xl font-black text-white uppercase mb-4">Dashboard & Print Settings</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div>
                                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Theme Template</label>
@@ -450,43 +453,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                             <option value="green">Green (Personalized)</option>
                                         </select>
                                     </div>
-                                    <div className="space-y-4">
-                                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block">Stats & Tables Configuration</label>
-                                        <div className="space-y-3">
-                                            {[
-                                                { key: 'total_assets', label: 'Total Assets', default: 'Total Assets' },
-                                                { key: 'in_use', label: 'In Use', default: 'Currently In Use' },
-                                                { key: 'available', label: 'Available', default: 'Ready / Available' },
-                                                { key: 'active_conferences', label: 'Active Conferences', default: 'Active Conferences' },
-                                                { key: 'active_conferences_table', label: 'Conferences Table', default: 'Active Conferences' },
-                                                { key: 'active_allocations_table', label: 'Allocations Table', default: 'Active Allocations' },
-                                            ].map(item => (
-                                                <div key={item.key} className="flex gap-2 items-center">
-                                                    <button
-                                                        type="button"
-                                                        disabled={!isEditing}
-                                                        onClick={() => {
-                                                            const newConfig = { ...companySettings.dashboard_config, [item.key]: companySettings.dashboard_config?.[item.key] === false ? true : false };
-                                                            setCompanySettings({ ...companySettings, dashboard_config: newConfig });
-                                                        }}
-                                                        className={`w-10 h-10 flex-shrink-0 rounded-lg flex items-center justify-center transition-all border ${companySettings.dashboard_config?.[item.key] !== false ? 'bg-sky-500/10 border-sky-500 text-sky-500' : 'bg-slate-800/50 border-slate-700 text-slate-500'}`}
-                                                    >
-                                                        <i className={`fa-solid ${companySettings.dashboard_config?.[item.key] !== false ? 'fa-eye' : 'fa-eye-slash'}`}></i>
-                                                    </button>
-                                                    <input
-                                                        disabled={!isEditing}
-                                                        value={companySettings.dashboard_config?.[`${item.key}_label`] || item.default}
-                                                        onChange={(e) => {
-                                                            const newConfig = { ...companySettings.dashboard_config, [`${item.key}_label`]: e.target.value };
-                                                            setCompanySettings({ ...companySettings, dashboard_config: newConfig });
-                                                        }}
-                                                        placeholder={item.label}
-                                                        className={`flex-1 bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl px-4 py-2 text-xs font-bold transition-all uppercase`}
-                                                    />
-                                                </div>
-                                            ))}
+                                    <div>
+                                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">QR Label Dimensions (mm)</label>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="relative">
+                                                <input 
+                                                    type="number" 
+                                                    disabled={!isEditing} 
+                                                    value={companySettings.print_label_width} 
+                                                    onChange={e => setCompanySettings({ ...companySettings, print_label_width: parseInt(e.target.value) || 0 })} 
+                                                    className={`w-full bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl p-4 pl-4 pr-12 font-bold transition-all text-xs`} 
+                                                    placeholder="Width"
+                                                />
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600 uppercase">W</span>
+                                            </div>
+                                            <div className="relative">
+                                                <input 
+                                                    type="number" 
+                                                    disabled={!isEditing} 
+                                                    value={companySettings.print_label_height} 
+                                                    onChange={e => setCompanySettings({ ...companySettings, print_label_height: parseInt(e.target.value) || 0 })} 
+                                                    className={`w-full bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl p-4 pl-4 pr-12 font-bold transition-all text-xs`} 
+                                                    placeholder="Height"
+                                                />
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600 uppercase">H</span>
+                                            </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest block">Stats & Tables Configuration</label>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
+                                    {[
+                                        { key: 'total_assets', label: 'Total Assets', default: 'Total Assets' },
+                                        { key: 'in_use', label: 'In Use', default: 'Currently In Use' },
+                                        { key: 'available', label: 'Available', default: 'Ready / Available' },
+                                        { key: 'active_conferences', label: 'Active Conferences', default: 'Active Conferences' },
+                                        { key: 'active_conferences_table', label: 'Conferences Table', default: 'Active Conferences' },
+                                        { key: 'active_allocations_table', label: 'Allocations Table', default: 'Active Allocations' },
+                                    ].map(item => (
+                                        <div key={item.key} className="flex gap-2 items-center">
+                                            <button
+                                                type="button"
+                                                disabled={!isEditing}
+                                                onClick={() => {
+                                                    const newConfig = { ...companySettings.dashboard_config, [item.key]: companySettings.dashboard_config?.[item.key] === false ? true : false };
+                                                    setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+                                                }}
+                                                className={`w-10 h-10 flex-shrink-0 rounded-lg flex items-center justify-center transition-all border ${companySettings.dashboard_config?.[item.key] !== false ? 'bg-sky-500/10 border-sky-500 text-sky-500' : 'bg-slate-800/50 border-slate-700 text-slate-500'}`}
+                                            >
+                                                <i className={`fa-solid ${companySettings.dashboard_config?.[item.key] !== false ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                                            </button>
+                                            <input
+                                                disabled={!isEditing}
+                                                value={companySettings.dashboard_config?.[`${item.key}_label`] || item.default}
+                                                onChange={(e) => {
+                                                    const newConfig = { ...companySettings.dashboard_config, [`${item.key}_label`]: e.target.value };
+                                                    setCompanySettings({ ...companySettings, dashboard_config: newConfig });
+                                                }}
+                                                placeholder={item.label}
+                                                className={`flex-1 bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl px-4 py-2 text-xs font-bold transition-all uppercase`}
+                                            />
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
