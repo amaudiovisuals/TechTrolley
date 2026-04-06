@@ -3922,7 +3922,7 @@ const App: React.FC = () => {
 
                       {/* Scanner visibility logic per role */}
                       {((assetTab === 'available') || 
-                        ((user?.is_staff || user?.role === 'technician' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
+                        ((user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
                         (assetTab === 'packup') ||
                         ((user?.role === 'godown_incharge' || user?.is_staff) && assetTab === 'crosscheck')) && (
                           <div className="relative group">
