@@ -646,3 +646,72 @@ def export_inventory(request):
     )
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+from decimal import Decimal
+
+@api_view(['POST'])
+def system_recovery(request):
+    """
+    One-click database repair: restores the 4 missing employee laptops 
+    and re-links the 7 primary employee assignments.
+    """
+    if not request.user.is_staff:
+        return Response({"error": "Unauthorized"}, status=403)
+        
+    assignments = {
+        'NHQLTSI006338035C47600': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-1'},
+        'NHQLTSI005336025607600': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-2'},
+        'MNWJK9R63F': {'name': 'JITHIN RAMESH', 'dept': 'USER', 'sku': 'LAPTOP-JR-1'},
+        'D2507N0000517': {'name': 'JISHNU K P', 'dept': 'USER', 'sku': 'LAPTOP-JKP-1'},
+        '5CD52409KL': {'name': 'NIHAL', 'dept': 'MANAGEMENT', 'sku': 'LAPTOP-NIHAL-1'},
+        'D2507N0000644': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-3'},
+        'FVFY84UXHV22': {'name': 'RIYAN', 'dept': 'MANAGEMENT', 'sku': 'LAPTOP-RIYAN-1'}
+    }
+
+    recovered_count = 0
+    assigned_count = 0
+
+    for sn, info in assignments.items():
+        # Get or create employee
+        emp_id = info['name'].replace(" ", "_").upper()
+        emp, created = Employee.objects.get_or_create(
+            employee_id=emp_id,
+            defaults={
+                'name': info['name'], 
+                'department': info['dept'], 
+                'email': f"{emp_id.lower()}@techtrolley.amaudiovisuals.com",
+                'phone': '0000000000'
+            }
+        )
+
+        # Check if asset exists by SN or SKU
+        asset = Asset.objects.filter(serial_number=sn).first()
+        if not asset:
+            asset = Asset.objects.filter(sku=info['sku']).first()
+
+        if not asset:
+            # Re-create missing asset
+            Asset.objects.create(
+                sku=info['sku'],
+                serial_number=sn,
+                alias_name=f"Laptop - {info['name']}",
+                type='Laptops',
+                description=f"Recovered laptop for {info['name']}",
+                status='Available',
+                item_price=Decimal('0.00'),
+                assigned_to=emp
+            )
+            recovered_count += 1
+        else:
+            # Update assignment if missing
+            if asset.assigned_to != emp:
+                asset.assigned_to = emp
+                asset.save()
+                assigned_count += 1
+
+    return Response({
+        "message": "Recovery complete!",
+        "recovered": recovered_count,
+        "assigned": assigned_count,
+        "total_assets": Asset.objects.count()
+    })
