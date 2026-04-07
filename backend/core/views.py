@@ -602,14 +602,22 @@ def export_inventory(request):
             'Description': a.description or "",
             'Is Barcode added': 'Yes' if a.is_barcode_added else 'No',
             'Type': a.type or "",
+            'Quantity': a.quantity,
             'Purchased Date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
             'Item Price': float(a.item_price) if a.item_price else 0,
             'Depreciation Percentage': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
-            'Available from': a.available_from.strftime('%Y-%m-%d') if a.available_from else "",
-            'Available till': a.available_till.strftime('%Y-%m-%d') if a.available_till else "",
+            'Available From': a.available_from.strftime('%Y-%m-%d') if a.available_from else "",
+            'Available Till': a.available_till.strftime('%Y-%m-%d') if a.available_till else "",
             'Barcode Type': a.barcode_type or "",
             'Barcode': a.barcode or "",
             'QR Code': a.qr_code or "",
+            'Current Status': a.status,
+            'Condition': a.condition or "",
+            'Flag': a.flag or "",
+            'Last Maintained': a.last_maintained.strftime('%Y-%m-%d') if a.last_maintained else "",
+            'Current Venue': a.current_venue or "",
+            'Return Date': a.return_date.strftime('%Y-%m-%d') if a.return_date else "",
+            'Assigned To': a.assigned_to.name if a.assigned_to else "Unassigned"
         })
 
     df = pd.DataFrame(data)
