@@ -1459,29 +1459,25 @@ const App: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleExportInventory = () => {
+  const handleExportInventory = (mode: 'template' | 'master' = 'template') => {
     const token = localStorage.getItem('token');
-    apiFetch(`${API_BASE}/api/export-inventory/?token=${encodeURIComponent(token || '')}`)
+    const filename = mode === 'template' ? 'Asset_Inventory_Template.xlsx' : 'Master_Inventory_Log.xlsx';
+    apiFetch(`${API_BASE}/api/export-inventory/?type=${mode}&token=${encodeURIComponent(token || '')}`)
       .then(res => res.arrayBuffer())
       .then(buffer => {
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = () => {
-          const base64data = reader.result as string;
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = base64data;
-          a.download = 'Master_Inventory_Export.xlsx';
-
-          document.body.appendChild(a);
-          a.click();
-
-          setTimeout(() => {
-            document.body.removeChild(a);
-          }, 300);
-          showScanToast("📊 Master Inventory exported successfully", "success");
-        };
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }, 300);
+        showScanToast(`📊 ${mode === 'template' ? 'Template' : 'Master Log'} exported successfully`, "success");
       })
       .catch(err => {
         console.error('Failed to export inventory', err);
@@ -2670,10 +2666,16 @@ const App: React.FC = () => {
             <i className="fa-solid fa-file-csv" /> Import
           </button>
           <button
-            onClick={handleExportInventory}
+            onClick={() => handleExportInventory('template')}
+            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-slate-800 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-slate-700 transition flex items-center justify-center gap-2"
+          >
+            <i className="fa-solid fa-file-csv" /> Template
+          </button>
+          <button
+            onClick={() => handleExportInventory('master')}
             className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-500 transition flex items-center justify-center gap-2"
           >
-            <i className="fa-solid fa-file-export" /> Excel
+            <i className="fa-solid fa-file-excel" /> Master Log
           </button>
           <button
             onClick={handleDownloadInventoryPDF}

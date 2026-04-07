@@ -586,13 +586,15 @@ def download_asset_template(request):
 def export_inventory(request):
     """
     Generates a master Excel file from the current database state.
-    This allows the Godown In-Charge to 'sync' alias names and other edits
-    by simply downloading the latest version.
+    Support two modes via query parameter: type=template or type=master
     """
-    assets = Asset.objects.all().select_related('assigned_to')
+    export_type = request.query_params.get('type', 'template')
+    assets = Asset.objects.all().select_related('assigned_to', 'parent_asset')
     data = []
+    
     for a in assets:
-        data.append({
+        # 1. Base template columns (17 Columns)
+        row = {
             'SKU': a.sku or "",
             'Alias Name': a.alias_name or "",
             'MAC Address': a.mac_address or "",
@@ -605,21 +607,36 @@ def export_inventory(request):
             'Purchased date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
             'Item price': float(a.item_price) if a.item_price else 0,
             'Depreciation': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
-            'Available from': a.available_from or "",
-            'Available till': a.available_till or "",
+            'Available from': a.available_from.strftime('%Y-%m-%d') if a.available_from else "",
+            'Available till': a.available_till.strftime('%Y-%m-%d') if a.available_till else "",
             'Barcode type': a.barcode_type or "",
             'Barcode': a.barcode or "",
-            'QR Code': a.qr_code or "",
-            # Audit columns (not in original but useful)
-            'Current Status': a.status,
-            'Assigned To': a.assigned_to.name if a.assigned_to else "Unassigned"
-        })
+            'QR Code': a.qr_code or ""
+        }
+        
+        # 2. Add Audit columns only for 'master' export
+        if export_type == 'master':
+            row.update({
+                'Current Status': a.status,
+                'Condition': a.condition,
+                'Flag': a.flag,
+                'Assigned To': a.assigned_to.name if a.assigned_to else "Unassigned",
+                'Department': a.assigned_to.department if a.assigned_to else "N/A",
+                'Last Maintained': a.last_maintained.strftime('%Y-%m-%d') if a.last_maintained else "",
+                'Parent Asset SKU': a.parent_asset.sku if a.parent_asset else "None",
+                'Created At': a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else ""
+            })
+            
+        data.append(row)
 
     df = pd.DataFrame(data)
     
     output = io.BytesIO()
+    filename = "Asset_Inventory_Template.xlsx" if export_type == 'template' else "Master_Inventory_Log.xlsx"
+    sheet_nm = "Inventory Template" if export_type == 'template' else "Master Log"
+
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Master Inventory')
+        df.to_excel(writer, index=False, sheet_name=sheet_nm)
     
     output.seek(0)
     
@@ -627,5 +644,5 @@ def export_inventory(request):
         output.read(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
-    response['Content-Disposition'] = 'attachment; filename=Master_Inventory_Export.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
