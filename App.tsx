@@ -2457,7 +2457,7 @@ const App: React.FC = () => {
             Dashboard
           </h2>
           {user?.is_staff && (
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-8 bg-sky-500/10 border border-sky-500/20 p-6 rounded-[1.5rem] backdrop-blur-md">
+            <div className="flex flex-wrap items-center gap-4 mb-8 bg-sky-500/10 border border-sky-500/20 p-6 rounded-[1.5rem] backdrop-blur-md">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400">
                   <i className="fa-solid fa-database" />
@@ -2469,12 +2469,6 @@ const App: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <button 
-                onClick={handleSystemRecovery}
-                className="px-6 py-3 bg-sky-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-sky-400 transition shadow-lg shadow-sky-500/20 flex items-center gap-2"
-              >
-                <i className="fa-solid fa-wrench" /> Repair & Recover Assets
-              </button>
             </div>
           )}
           <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-4 mt-2">
@@ -5198,17 +5192,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {user?.is_staff && assets.length < 1998 && (
-        <div className="fixed bottom-10 right-10 z-[99999] animate-pulse">
-          <button
-            onClick={handleSystemRecovery}
-            className="px-8 py-5 bg-red-600 border-4 border-red-400 text-white rounded-full font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-red-500 transition-all transform hover:scale-105 flex items-center gap-3"
-          >
-            <i className="fa-solid fa-triangle-exclamation text-xl" />
-            Repair Asset DB (Restore Linkages)
-          </button>
-        </div>
-      )}
       <style>{`
         .form-input-night { width: 100%; background: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.25rem; color: #fff; font-weight: 900; text-transform: uppercase; outline: none; transition: border-color 0.2s; }
         .form-input-night:focus { border-color: #0ea5e9; }
