@@ -210,6 +210,27 @@ const App: React.FC = () => {
     }
   }, [companySettings?.theme_template]);
 
+  // EMERGENCY SYSTEM RECOVERY: Force-show vital dashboard sections if they were accidentally hidden
+  useEffect(() => {
+    if (companySettings && companySettings.dashboard_config) {
+      const config = companySettings.dashboard_config;
+      let needsReset = false;
+      const criticalKeys = ['active_allocations_table', 'active_conferences_table', 'total_assets', 'in_use', 'available', 'active_conferences'];
+      
+      criticalKeys.forEach(key => {
+        if (config[key] === false) {
+          config[key] = true;
+          needsReset = true;
+        }
+      });
+
+      if (needsReset) {
+        console.warn("🔧 System Recovery: Dashboard visibility was restored for critical sections.");
+        setCompanySettings({ ...companySettings, dashboard_config: config });
+      }
+    }
+  }, [companySettings]);
+
   const toggleCardVisibility = (cardKey: string) => {
     const currentConfig = companySettings?.dashboard_config || {};
     const newConfig = {
@@ -2410,9 +2431,24 @@ const App: React.FC = () => {
               <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Employee Portal • Assigned Views</p>
             </div>
           )}
-          <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter">
+          <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter shrink-0 mb-6">
             Dashboard
           </h2>
+          {user?.is_staff && (
+            <div className="flex flex-wrap gap-4 mb-8 bg-sky-500/10 border border-sky-500/20 p-6 rounded-[1.5rem] backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400">
+                  <i className="fa-solid fa-database" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">System Audit Log</p>
+                  <p className="text-xs font-bold text-sky-400 uppercase">
+                    {backendConferences.length} Total Conferences • {assets.length} Assets in DB • {stats.total} Total Quantity
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] flex items-center gap-4 mt-2">
             <span className="flex h-3 w-3 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
