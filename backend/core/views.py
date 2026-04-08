@@ -364,7 +364,30 @@ def bulk_upload_assets(request):
         barcode_col    = col(['barcode'], 'Barcode')
         qr_code_col    = col(['qr code'], 'QR Code')
 
-        type_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
+        # ── Category Mapping Logic ──────────────────────────────────────────
+        # Standardize incoming values to the new 6-7 categories
+        base_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
+        
+        # Legacy/Fuzzy overrides
+        fuzzy_overrides = {
+            'speakers & audio': 'Sound System', 'audio mixers': 'Sound System', 'microphones': 'Sound System',
+            'laptops': 'IT & Networking', 'smartphones': 'IT & Networking', 'computers & servers': 'IT & Networking',
+            'peripherals': 'IT & Networking', 'ups & power': 'IT & Networking', 'printers': 'IT & Networking',
+            'monitors': 'Display System', 'tvs': 'Display System', 'projectors': 'Display System',
+            'video switchers': 'AV Equipment', 'capture cards': 'AV Equipment', 'cameras': 'AV Equipment',
+            'splitters & converters': 'Cable and consumables', 'consumables': 'Cable and consumables',
+            'lighting & led': 'Lighting & Effects'
+        }
+
+        def normalize_type(raw):
+            low = str(raw).lower().strip()
+            if low in base_map: return base_map[low]
+            if low in fuzzy_overrides: return fuzzy_overrides[low]
+            # Partial matches
+            for key, val in fuzzy_overrides.items():
+                if key in low or low in key: return val
+            return 'Other'
+
 
         # ── Process rows ─────────────────────────────────────────────────────
         created_count = 0
@@ -391,7 +414,7 @@ def bulk_upload_assets(request):
 
                 # Normalize type
                 raw_type = safe_str(row.get(type_col, 'Other'))
-                normalized_type = type_map.get(raw_type.lower(), 'Other')
+                normalized_type = normalize_type(raw_type)
 
                 barcode_type_val = safe_str(row.get(bc_type_col, ''))
                 barcode_val      = safe_str(row.get(barcode_col, ''))

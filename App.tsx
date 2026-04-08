@@ -1096,7 +1096,7 @@ const App: React.FC = () => {
       }
 
       // Check for Consumables to show Quantity Modal
-      if (asset.type === AssetCategory.CONSUMABLES && asset.status === AssetStatus.AVAILABLE) {
+      if (asset.type === AssetCategory.CABLES && asset.status === AssetStatus.AVAILABLE) {
         setQuantityAsset(asset);
         setSelectedQuantity(asset.quantity);
         setShowQuantityModal(true);
@@ -1610,7 +1610,7 @@ const App: React.FC = () => {
     setFormErrors({});
 
     const isNew = !editingAsset;
-    const isConsumable = assetFormData.type === AssetCategory.CONSUMABLES;
+    const isConsumable = assetFormData.type === AssetCategory.CABLES;
 
     // Auto-generate SKU/Serial for consumables if blank
     const finalSku = (isConsumable && !assetFormData.sku)
@@ -1778,7 +1778,7 @@ const App: React.FC = () => {
       availableTill: '',
       status: AssetStatus.AVAILABLE,
       condition: 'Good',
-      type: AssetCategory.CONSUMABLES,
+      type: AssetCategory.CABLES,
       isBarcodeAdded: false,
       quantity: 1,
       flag: AssetFlag.NONE
@@ -3434,7 +3434,7 @@ const App: React.FC = () => {
           {currentPage === 'Assets' && assetView === 'Form' && (
             <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <h2 className="text-5xl font-black text-white uppercase">
-                {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CONSUMABLES ? 'Register Consumable' : 'Register Asset')}
+                {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CABLES ? 'Register Consumable' : 'Register Asset')}
               </h2>
               <form onSubmit={handleSaveAsset} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8">
                 {formErrors.non_field_errors && (
@@ -3443,7 +3443,7 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {assetFormData.type === AssetCategory.CONSUMABLES ? (
+                {assetFormData.type === AssetCategory.CABLES ? (
                   /* Simplified Consumables Form */
                   <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
@@ -5066,7 +5066,7 @@ const App: React.FC = () => {
 
               <div className="max-h-[40vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                 {assets
-                  .filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0)
+                  .filter(a => a.type === AssetCategory.CABLES && a.status === 'Available' && (a.quantity || 0) > 0)
                   .filter(a => {
                     const q = normalizeSearch(consumablesPickerSearchQuery);
                     return normalizeSearch(a.aliasName || a.sku || '').includes(q);
@@ -5090,7 +5090,7 @@ const App: React.FC = () => {
                     </button>
                   ))}
 
-                {assets.filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0).length === 0 && (
+                {assets.filter(a => a.type === AssetCategory.CABLES && a.status === 'Available' && (a.quantity || 0) > 0).length === 0 && (
                   <div className="py-12 text-center space-y-4">
                     <i className="fa-solid fa-box-open text-4xl text-slate-800"></i>
                     <p className="text-xs font-black text-slate-600 uppercase tracking-widest">No available consumables found.</p>

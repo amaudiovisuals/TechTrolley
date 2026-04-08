@@ -23,25 +23,12 @@ class Asset(models.Model):
     ]
     
     CATEGORY_CHOICES = [
-        ('Speakers & Audio', 'Speakers & Audio'),
-        ('Audio Mixers', 'Audio Mixers'),
-        ('Microphones', 'Microphones'),
-        ('Laptops', 'Laptops'),
-        ('Smartphones', 'Smartphones'),
-        ('Computers & Servers', 'Computers & Servers'),
         ('IT & Networking', 'IT & Networking'),
-        ('Peripherals', 'Peripherals'),
-        ('Monitors', 'Monitors'),
-        ('TVs', 'TVs'),
-        ('Projectors', 'Projectors'),
-        ('Lighting & LED', 'Lighting & LED'),
-        ('Video Switchers', 'Video Switchers'),
-        ('Capture Cards', 'Capture Cards'),
-        ('Splitters & Converters', 'Splitters & Converters'),
-        ('Cameras', 'Cameras'),
-        ('UPS & Power', 'UPS & Power'),
-        ('Printers', 'Printers'),
-        ('Consumables', 'Consumables'),
+        ('AV Equipment', 'AV Equipment'),
+        ('Sound System', 'Sound System'),
+        ('Display System', 'Display System'),
+        ('Cable and consumables', 'Cable and consumables'),
+        ('Lighting & Effects', 'Lighting & Effects'),
         ('Other', 'Other'),
     ]
 

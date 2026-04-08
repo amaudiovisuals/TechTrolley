@@ -1,0 +1,39 @@
+commit a412964759e787f9785ae81f793820df55a54189
+Author: nihalglitch <contactnihalhere@gmail.com>
+Date:   Wed Apr 8 12:53:37 2026 +0530
+
+    Standardize export formatting and enforce permanent QR encoding
+
+ App.tsx                                            |  11 +-
+ backend/check_users.py                             | Bin 0 -> 340 bytes
+ backend/clean_inspect.json                         |   1 +
+ .../config/__pycache__/settings.cpython-312.pyc    | Bin 3987 -> 3987 bytes
+ .../__pycache__/conference_views.cpython-312.pyc   | Bin 3654 -> 3887 bytes
+ backend/core/__pycache__/models.cpython-312.pyc    | Bin 15147 -> 16129 bytes
+ .../core/__pycache__/serializers.cpython-312.pyc   | Bin 7354 -> 8196 bytes
+ backend/core/__pycache__/urls.cpython-312.pyc      | Bin 2500 -> 2702 bytes
+ .../core/__pycache__/user_views.cpython-312.pyc    | Bin 5658 -> 6165 bytes
+ backend/core/__pycache__/views.cpython-312.pyc     | Bin 29186 -> 34609 bytes
+ backend/core/migrations/0027_auditlog.py           |  34 ++
+ .../core/migrations/0028_merge_20260406_1439.py    |  14 +
+ .../__pycache__/0027_auditlog.cpython-312.pyc      | Bin 0 -> 1988 bytes
+ ...ngs_print_label_height_and_more.cpython-312.pyc | Bin 0 -> 1021 bytes
+ .../0028_alter_asset_status.cpython-312.pyc        | Bin 0 -> 992 bytes
+ .../0028_merge_20260406_1439.cpython-312.pyc       | Bin 0 -> 601 bytes
+ backend/core/models.py                             |   4 +
+ backend/core/views.py                              |  31 +-
+ backend/db.sqlite3                                 | Bin 2064384 -> 2064384 bytes
+ backend/dell_inspect.txt                           | Bin 0 -> 1820 bytes
+ backend/dell_inspect_clean.txt                     |  33 ++
+ backend/inspect_qr.json                            | Bin 0 -> 10 bytes
+ backend/inspect_qr2.json                           | Bin 0 -> 2784 bytes
+ backend/master_qr_codes.csv                        |  21 +
+ dev-dist/sw.js                                     |   2 +-
+ diff.txt                                           | Bin 0 -> 14966 bytes
+ diff_stash.txt                                     |  73 +++
+ diff_stash0.txt                                    |  73 +++
+ diff_stash1.txt                                    | 179 ++++++
+ log.txt                                            | Bin 0 -> 43996 bytes
+ log_utf8.txt                                       | 627 +++++++++++++++++++++
+ tmp_git_status.txt                                 | Bin 0 -> 1832 bytes
+ 32 files changed, 1071 insertions(+), 32 deletions(-)
