@@ -2692,17 +2692,12 @@ const App: React.FC = () => {
             <i className="fa-solid fa-file-csv" /> Import
           </button>
           <button
-            onClick={() => handleExportInventory('template')}
-            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-slate-800 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-slate-700 transition flex items-center justify-center gap-2"
-          >
-            <i className="fa-solid fa-file-csv" /> Template
-          </button>
-          <button
             onClick={() => handleExportInventory('master')}
-            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-emerald-600 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-500 transition flex items-center justify-center gap-2"
+            className="flex-1 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-400 font-bold py-3 px-4 rounded-xl border border-emerald-500/20 hover:border-emerald-500/50 transition-all text-xs shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 group whitespace-nowrap"
           >
-            <i className="fa-solid fa-file-excel" /> Master Log
+            <i className="fa-solid fa-file-excel" /> Export Stocks
           </button>
+
           <button
             onClick={handleDownloadInventoryPDF}
             className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-orange-600 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-orange-500 transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"

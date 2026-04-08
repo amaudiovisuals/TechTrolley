@@ -1,0 +1,73 @@
+diff --git a/backend/config/__pycache__/settings.cpython-312.pyc b/backend/config/__pycache__/settings.cpython-312.pyc
+index c6e9ed8..a132e57 100644
+Binary files a/backend/config/__pycache__/settings.cpython-312.pyc and b/backend/config/__pycache__/settings.cpython-312.pyc differ
+diff --git a/backend/core/__pycache__/models.cpython-312.pyc b/backend/core/__pycache__/models.cpython-312.pyc
+index 6a9bc44..e86519d 100644
+Binary files a/backend/core/__pycache__/models.cpython-312.pyc and b/backend/core/__pycache__/models.cpython-312.pyc differ
+diff --git a/backend/core/__pycache__/serializers.cpython-312.pyc b/backend/core/__pycache__/serializers.cpython-312.pyc
+index a43d950..a9753e9 100644
+Binary files a/backend/core/__pycache__/serializers.cpython-312.pyc and b/backend/core/__pycache__/serializers.cpython-312.pyc differ
+diff --git a/backend/core/__pycache__/urls.cpython-312.pyc b/backend/core/__pycache__/urls.cpython-312.pyc
+index 061e76f..b1c9feb 100644
+Binary files a/backend/core/__pycache__/urls.cpython-312.pyc and b/backend/core/__pycache__/urls.cpython-312.pyc differ
+diff --git a/backend/core/__pycache__/user_views.cpython-312.pyc b/backend/core/__pycache__/user_views.cpython-312.pyc
+index 315f89a..f3baed3 100644
+Binary files a/backend/core/__pycache__/user_views.cpython-312.pyc and b/backend/core/__pycache__/user_views.cpython-312.pyc differ
+diff --git a/backend/core/__pycache__/views.cpython-312.pyc b/backend/core/__pycache__/views.cpython-312.pyc
+index f3f2ce9..fdd6c09 100644
+Binary files a/backend/core/__pycache__/views.cpython-312.pyc and b/backend/core/__pycache__/views.cpython-312.pyc differ
+diff --git a/backend/db.sqlite3 b/backend/db.sqlite3
+index 1050540..eaf971f 100644
+Binary files a/backend/db.sqlite3 and b/backend/db.sqlite3 differ
+diff --git a/backend/sync_roles.py b/backend/sync_roles.py
+index 67affb7..7673cb5 100644
+--- a/backend/sync_roles.py
++++ b/backend/sync_roles.py
+@@ -1,23 +1,32 @@
+ import os
+ import django
+ 
+-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
++os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+ django.setup()
+ 
+-from core.models import Employee, UserProfile
+ from django.contrib.auth.models import User
++from core.models import Employee, UserProfile
++
++for emp in Employee.objects.all():
++    user = User.objects.filter(username=emp.email).first()
++    if user:
++        role = emp.role
++        # Update UserProfile
++        if hasattr(user, 'profile'):
++            user.profile.role = role
++            user.profile.save()
++        else:
++            UserProfile.objects.create(user=user, role=role)
+ 
+-def sync():
+-    employees = Employee.objects.all()
+-    count = 0
+-    for emp in employees:
+-        user = User.objects.filter(email__iexact=emp.email).first()
+-        if user and hasattr(user, 'profile'):
+-            emp.role = user.profile.role
+-            emp.save()
+-            count += 1
+-            print(f"Synced {emp.name} to {emp.role}")
+-    print(f"Finished syncing {count} employees.")
++        # Update staff status based on correct logic
++        if role == 'admin':
++            user.is_staff = True
++            user.is_superuser = True
++        else:
++            user.is_staff = False
++            user.is_superuser = False
++        user.save()
++        print(f"Synced {emp.email}: role={role}, is_staff={user.is_staff}")
++    else:
++        print(f"No auth User found for employee {emp.email}")
+ 
+-if __name__ == '__main__':
+-    sync()

@@ -302,12 +302,10 @@ def bulk_upload_assets(request):
     file = request.FILES['file']
 
     try:
-        if file.name.endswith('.csv'):
-            df = pd.read_csv(file)
-        elif file.name.endswith(('.xls', '.xlsx')):
+        if file.name.endswith(('.xls', '.xlsx')):
             df = pd.read_excel(file)
         else:
-            return Response({'error': 'Unsupported file format. Please upload CSV or Excel.'}, status=400)
+            return Response({'error': 'Unsupported file format. Please upload ONLY Excel Workbook (.xlsx) files.'}, status=400)
 
         import math, traceback
 
@@ -602,30 +600,17 @@ def export_inventory(request):
             'IMEI Number 2': a.imei_number_2 or "",
             'Serial Number': a.serial_number or "",
             'Description': a.description or "",
-            'Is barcode added': 'Yes' if a.is_barcode_added else 'No',
+            'Is Barcode added': 'Yes' if a.is_barcode_added else 'No',
             'Type': a.type or "",
-            'Purchased date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
-            'Item price': float(a.item_price) if a.item_price else 0,
-            'Depreciation': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
+            'Purchased Date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
+            'Item Price': float(a.item_price) if a.item_price else 0,
+            'Depreciation Percentage': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
             'Available from': a.available_from.strftime('%Y-%m-%d') if a.available_from else "",
             'Available till': a.available_till.strftime('%Y-%m-%d') if a.available_till else "",
-            'Barcode type': a.barcode_type or "",
+            'Barcode Type': a.barcode_type or "",
             'Barcode': a.barcode or "",
-            'QR Code': a.qr_code or ""
+            'QR Code': a.qr_code or a.sku or ""
         }
-        
-        # 2. Add Audit columns only for 'master' export
-        if export_type == 'master':
-            row.update({
-                'Current Status': a.status,
-                'Condition': a.condition,
-                'Flag': a.flag,
-                'Assigned To': a.assigned_to.name if a.assigned_to else "Unassigned",
-                'Department': a.assigned_to.department if a.assigned_to else "N/A",
-                'Last Maintained': a.last_maintained.strftime('%Y-%m-%d') if a.last_maintained else "",
-                'Parent Asset SKU': a.parent_asset.sku if a.parent_asset else "None",
-                'Created At': a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else ""
-            })
             
         data.append(row)
 

@@ -82,6 +82,10 @@ class Asset(models.Model):
     model_number = models.CharField(max_length=100, blank=True, default='')
 
     def save(self, *args, **kwargs):
+        # Ensure QR Code is permanently embedded on creation/save if blank
+        if not self.qr_code and self.sku:
+            self.qr_code = self.sku
+            
         # Automate Status Update based on Flag Selection
         if self.flag == 'Expired':
             self.status = 'Expired'
