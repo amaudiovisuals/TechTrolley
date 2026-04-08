@@ -6,6 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
+        ('core', '0027_auditlog'),
         ('core', '0027_companysettings_print_label_height_and_more'),
     ]
 
