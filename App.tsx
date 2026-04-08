@@ -485,7 +485,7 @@ const App: React.FC = () => {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
   const [inventoryPage, setInventoryPage] = useState(1);
-  const itemsPerPage = 300; 
+  const itemsPerPage = 20; 
 
   // Mapping Helper
   const getUICategory = (type: string): UICategory => {
