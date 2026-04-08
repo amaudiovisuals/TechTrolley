@@ -51,6 +51,7 @@ export enum UICategory {
 }
 
 export const CATEGORY_MAP: Record<string, UICategory> = {
+  // Original DB types -> UI Categories
   'Speakers & Audio': UICategory.SOUND,
   'Audio Mixers': UICategory.SOUND,
   'Microphones': UICategory.SOUND,
@@ -70,6 +71,13 @@ export const CATEGORY_MAP: Record<string, UICategory> = {
   'Splitters & Converters': UICategory.CABLES,
   'Consumables': UICategory.CABLES,
   'Lighting & LED': UICategory.LIGHTING,
+  
+  // Also map UI Categories to themselves (if not already listed above)
+  'Sound System': UICategory.SOUND,
+  'Display System': UICategory.DISPLAY,
+  'AV Equipment': UICategory.AV,
+  'Cable and consumables': UICategory.CABLES,
+  'Lighting & Effects': UICategory.LIGHTING,
   'Other': UICategory.OTHER
 };
 
