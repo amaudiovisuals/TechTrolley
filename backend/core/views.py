@@ -368,15 +368,15 @@ def bulk_upload_assets(request):
         # Standardize incoming values to the new 6-7 categories
         base_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
         
-        # Legacy/Fuzzy overrides
+        # Legacy/Fuzzy overrides (Mapping to valid DB types)
         fuzzy_overrides = {
-            'speakers & audio': 'Sound System', 'audio mixers': 'Sound System', 'microphones': 'Sound System',
-            'laptops': 'IT & Networking', 'smartphones': 'IT & Networking', 'computers & servers': 'IT & Networking',
-            'peripherals': 'IT & Networking', 'ups & power': 'IT & Networking', 'printers': 'IT & Networking',
-            'monitors': 'Display System', 'tvs': 'Display System', 'projectors': 'Display System',
-            'video switchers': 'AV Equipment', 'capture cards': 'AV Equipment', 'cameras': 'AV Equipment',
-            'splitters & converters': 'Cable and consumables', 'consumables': 'Cable and consumables',
-            'lighting & led': 'Lighting & Effects'
+            'speakers & audio': 'Speakers & Audio', 'audio mixers': 'Audio Mixers', 'microphones': 'Microphones',
+            'laptops': 'Laptops', 'smartphones': 'Smartphones', 'computers & servers': 'Computers & Servers',
+            'peripherals': 'IT & Networking', 'ups & power': 'UPS & Power', 'printers': 'Printers',
+            'monitors': 'Monitors', 'tvs': 'TVs', 'projectors': 'Projectors',
+            'video switchers': 'Video Switchers', 'capture cards': 'Capture Cards', 'cameras': 'Cameras',
+            'splitters & converters': 'Splitters & Converters', 'consumables': 'Consumables',
+            'lighting & led': 'Lighting & LED', 'lighting & effects': 'Lighting & LED'
         }
 
         def normalize_type(raw):

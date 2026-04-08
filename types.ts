@@ -18,6 +18,29 @@ export enum AssetFlag {
 }
 
 export enum AssetCategory {
+  SPEAKERS = 'Speakers & Audio',
+  MIXERS = 'Audio Mixers',
+  MICS = 'Microphones',
+  LAPTOPS = 'Laptops',
+  SMARTPHONES = 'Smartphones',
+  COMPUTERS = 'Computers & Servers',
+  IT = 'IT & Networking',
+  PERIPHERALS = 'Peripherals',
+  MONITORS = 'Monitors',
+  TVS = 'TVs',
+  PROJECTORS = 'Projectors',
+  LIGHTING = 'Lighting & LED',
+  SWITCHERS = 'Video Switchers',
+  CAPTURE = 'Capture Cards',
+  CONVERTERS = 'Splitters & Converters',
+  CAMERAS = 'Cameras',
+  POWER = 'UPS & Power',
+  PRINTERS = 'Printers',
+  CONSUMABLES = 'Consumables',
+  OTHER = 'Other'
+}
+
+export enum UICategory {
   IT = 'IT & Networking',
   AV = 'AV Equipment',
   SOUND = 'Sound System',
@@ -26,6 +49,30 @@ export enum AssetCategory {
   LIGHTING = 'Lighting & Effects',
   OTHER = 'Other'
 }
+
+export const CATEGORY_MAP: Record<string, UICategory> = {
+  'Speakers & Audio': UICategory.SOUND,
+  'Audio Mixers': UICategory.SOUND,
+  'Microphones': UICategory.SOUND,
+  'Laptops': UICategory.IT,
+  'Smartphones': UICategory.IT,
+  'Computers & Servers': UICategory.IT,
+  'IT & Networking': UICategory.IT,
+  'Peripherals': UICategory.IT,
+  'UPS & Power': UICategory.IT,
+  'Printers': UICategory.IT,
+  'Monitors': UICategory.DISPLAY,
+  'TVs': UICategory.DISPLAY,
+  'Projectors': UICategory.DISPLAY,
+  'Video Switchers': UICategory.AV,
+  'Capture Cards': UICategory.AV,
+  'Cameras': UICategory.AV,
+  'Splitters & Converters': UICategory.CABLES,
+  'Consumables': UICategory.CABLES,
+  'Lighting & LED': UICategory.LIGHTING,
+  'Other': UICategory.OTHER
+};
+
 
 export interface Asset {
   id: string;

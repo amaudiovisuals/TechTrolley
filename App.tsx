@@ -5,6 +5,8 @@ import {
   Booking,
   Client,
   AssetCategory,
+  UICategory,
+  CATEGORY_MAP,
   ConferenceType,
   DeliveryChallanRecord,
   Employee,
@@ -481,9 +483,26 @@ const App: React.FC = () => {
 
   // Performance optimizations: Debounced Search & Pagination
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
   const [inventoryPage, setInventoryPage] = useState(1);
-  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('All');
-  const itemsPerPage = 20;
+  const itemsPerPage = 300; 
+
+  // Mapping Helper
+  const getUICategory = (type: string): UICategory => {
+    return CATEGORY_MAP[type] || UICategory.OTHER;
+  };
+
+  const mapUIToDBType = (uiCat: string): string => {
+    switch (uiCat) {
+      case UICategory.IT: return AssetCategory.IT;
+      case UICategory.AV: return AssetCategory.SWITCHERS;
+      case UICategory.SOUND: return AssetCategory.SPEAKERS;
+      case UICategory.DISPLAY: return AssetCategory.MONITORS;
+      case UICategory.CABLES: return AssetCategory.CONSUMABLES;
+      case UICategory.LIGHTING: return AssetCategory.LIGHTING;
+      default: return AssetCategory.OTHER;
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -494,21 +513,27 @@ const App: React.FC = () => {
   }, [searchQuery]);
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
-    const q = normalizeSearch(debouncedSearchQuery);
-    return assets.filter(a => {
-      // Category Filter
-      if (inventoryCategoryFilter !== 'All' && a.type !== inventoryCategoryFilter) return false;
+    const filtered = assets.filter(asset => {
+      // Grouping Logic: Filter by UI Category
+      if (inventoryCategoryFilter !== 'All') {
+        const assetUICat = getUICategory(asset.type);
+        if (assetUICat !== inventoryCategoryFilter) return false;
+      }
+      
+      const q = normalizeSearch(searchQuery);
+      if (!q) return true;
 
       // Search Filter
       return !q ||
-        normalizeSearch(a.aliasName || '').includes(q) ||
-        normalizeSearch(a.name || '').includes(q) ||
-        normalizeSearch(a.description || '').includes(q) ||
-        normalizeSearch(a.serialNumber || '').includes(q) ||
-        normalizeSearch(a.sku || '').includes(q) ||
-        normalizeSearch(a.barcode || '').includes(q);
+        normalizeSearch(asset.aliasName || '').includes(q) ||
+        normalizeSearch(asset.name || '').includes(q) ||
+        normalizeSearch(asset.description || '').includes(q) ||
+        normalizeSearch(asset.serialNumber || '').includes(q) ||
+        normalizeSearch(asset.sku || '').includes(q) ||
+        normalizeSearch(asset.barcode || '').includes(q);
     });
-  }, [assets, debouncedSearchQuery, inventoryCategoryFilter]);
+    return filtered;
+  }, [assets, searchQuery, inventoryCategoryFilter]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     const history: { name: string, date: string }[] = [];
@@ -842,7 +867,7 @@ const App: React.FC = () => {
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '',
       contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference',
-      assets: [], requirements: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
+      assets: [], requirements: [], staged_assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
     });
     setConferenceView('Form');
   };
@@ -1096,7 +1121,7 @@ const App: React.FC = () => {
       }
 
       // Check for Consumables to show Quantity Modal
-      if (asset.type === AssetCategory.CABLES && asset.status === AssetStatus.AVAILABLE) {
+      if (asset.type === AssetCategory.CONSUMABLES && asset.status === AssetStatus.AVAILABLE) {
         setQuantityAsset(asset);
         setSelectedQuantity(asset.quantity);
         setShowQuantityModal(true);
@@ -1610,7 +1635,7 @@ const App: React.FC = () => {
     setFormErrors({});
 
     const isNew = !editingAsset;
-    const isConsumable = assetFormData.type === AssetCategory.CABLES;
+    const isConsumable = assetFormData.type === AssetCategory.CONSUMABLES;
 
     // Auto-generate SKU/Serial for consumables if blank
     const finalSku = (isConsumable && !assetFormData.sku)
@@ -1778,7 +1803,7 @@ const App: React.FC = () => {
       availableTill: '',
       status: AssetStatus.AVAILABLE,
       condition: 'Good',
-      type: AssetCategory.CABLES,
+      type: AssetCategory.CONSUMABLES,
       isBarcodeAdded: false,
       quantity: 1,
       flag: AssetFlag.NONE
@@ -2813,7 +2838,7 @@ const App: React.FC = () => {
               style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
             >
               <option value="All">All Categories</option>
-              {Object.values(AssetCategory).map(cat => (
+              {Object.values(UICategory).map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
@@ -3434,7 +3459,7 @@ const App: React.FC = () => {
           {currentPage === 'Assets' && assetView === 'Form' && (
             <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <h2 className="text-5xl font-black text-white uppercase">
-                {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CABLES ? 'Register Consumable' : 'Register Asset')}
+                {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CONSUMABLES ? 'Register Consumable' : 'Register Asset')}
               </h2>
               <form onSubmit={handleSaveAsset} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8">
                 {formErrors.non_field_errors && (
@@ -3443,7 +3468,7 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {assetFormData.type === AssetCategory.CABLES ? (
+                {assetFormData.type === AssetCategory.CONSUMABLES ? (
                   /* Simplified Consumables Form */
                   <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
@@ -3531,8 +3556,12 @@ const App: React.FC = () => {
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Type / Category</label>
-                        <select value={assetFormData.type} onChange={e => setAssetFormData({ ...assetFormData, type: e.target.value })} className="form-input-night" required>
-                          {Object.values(AssetCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                        <select
+                          value={getUICategory(assetFormData.type)}
+                          onChange={(e) => setAssetFormData({ ...assetFormData, type: mapUIToDBType(e.target.value) })}
+                          className="w-full bg-slate-900 border border-slate-800 p-5 rounded-2xl text-white font-bold outline-none focus:border-sky-500"
+                        >
+                          {Object.values(UICategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                         </select>
                         {formErrors.type && <p className="text-red-500 text-xs mt-1">{formErrors.type}</p>}
                       </div>
@@ -5066,7 +5095,7 @@ const App: React.FC = () => {
 
               <div className="max-h-[40vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                 {assets
-                  .filter(a => a.type === AssetCategory.CABLES && a.status === 'Available' && (a.quantity || 0) > 0)
+                  .filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0)
                   .filter(a => {
                     const q = normalizeSearch(consumablesPickerSearchQuery);
                     return normalizeSearch(a.aliasName || a.sku || '').includes(q);
@@ -5090,7 +5119,7 @@ const App: React.FC = () => {
                     </button>
                   ))}
 
-                {assets.filter(a => a.type === AssetCategory.CABLES && a.status === 'Available' && (a.quantity || 0) > 0).length === 0 && (
+                {assets.filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0).length === 0 && (
                   <div className="py-12 text-center space-y-4">
                     <i className="fa-solid fa-box-open text-4xl text-slate-800"></i>
                     <p className="text-xs font-black text-slate-600 uppercase tracking-widest">No available consumables found.</p>
