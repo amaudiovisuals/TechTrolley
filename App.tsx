@@ -4014,7 +4014,7 @@ const App: React.FC = () => {
                         >
                           <i className="fa-solid fa-print"></i> <span>Print Delivery Challan</span>
                         </button>
-                        {(user?.is_staff || user?.role === 'technician') && (
+                        {(user?.is_staff || user?.role === 'technician' || user?.role === 'godown_incharge') && (
                           <button 
                             type="button"
                             onClick={() => handleUpdateLogistics()}
