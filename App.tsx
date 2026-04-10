@@ -1559,32 +1559,6 @@ const App: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSystemRecovery = async () => {
-    if (!window.confirm("⚠️ SYSTEM RECOVERY: This will re-create 4 missing employee laptops and restore lost assignments. Proceed?")) return;
-    
-    setIsLoading(true);
-    try {
-      const response = await apiFetch(`${API_BASE}/api/system-recovery/`, {
-        method: 'POST'
-      });
-      const data = await response.json();
-      if (response.ok) {
-        showScanToast(`✅ ${data.message} (${data.recovered} recovered, ${data.assigned} re-linked)`, "success");
-        // Force full refresh to clear any cached counts
-        setTimeout(() => {
-          window.location.reload();
-        }, 1500);
-      } else {
-        alert("Recovery failed: " + (data.error || "Unknown error"));
-      }
-    } catch (err) {
-      console.error("Recovery Error:", err);
-      alert("Network error during recovery.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleExportInventory = (mode: 'template' | 'master' = 'template') => {
     const token = localStorage.getItem('token');
     const filename = mode === 'template' ? 'Asset_Inventory_Template.xlsx' : 'Master_Inventory_Log.xlsx';

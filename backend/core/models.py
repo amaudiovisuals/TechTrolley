@@ -188,8 +188,11 @@ class CompanySettings(models.Model):
             existing.powered_by_name = self.powered_by_name
             existing.dashboard_config = self.dashboard_config
             existing.theme_template = self.theme_template
-            return existing.save()
-        return super(CompanySettings, self).save(*args, **kwargs)
+            existing.print_label_width = self.print_label_width
+            existing.print_label_height = self.print_label_height
+            existing.save()
+            return
+        super(CompanySettings, self).save(*args, **kwargs)
 
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save

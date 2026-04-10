@@ -238,34 +238,37 @@ def employee_detail(request, pk):
 @permission_classes([AllowAny])
 def company_settings(request):
     from .serializers import CompanySettingsSerializer
-    # Ensure there's at least one settings object
-    settings, created = CompanySettings.objects.get_or_create(pk=1)
+    try:
+        # Ensure there's at least one settings object
+        settings_obj, created = CompanySettings.objects.get_or_create(pk=1)
 
-    if request.method == 'GET':
-        serializer = CompanySettingsSerializer(settings, context={'request': request})
-        return Response(serializer.data)
-    
-    elif request.method == 'POST':
-        # ONLY Authenticated users can change settings
-        if not request.user or not request.user.is_authenticated:
-             return Response({"detail": "Authentication credentials were not provided."}, status=401)
+        if request.method == 'GET':
+            serializer = CompanySettingsSerializer(settings_obj, context={'request': request})
+            return Response(serializer.data)
         
-        try:
+        elif request.method == 'POST':
+            # ONLY Authenticated users can change settings
+            if not request.user or not request.user.is_authenticated:
+                 return Response({"detail": "Authentication credentials were not provided."}, status=401)
+            
             # Convert QueryDict to a regular dict to allow injecting parsed objects
             if hasattr(request.data, 'dict'):
                 data = request.data.dict()
             else:
                 data = request.data.copy()
             
-            # If 'logo' is in data but it's not a file (e.g. it's a string URL or empty string from frontend)
-            # we should avoid trying to 'save' it as an image if it hasn't changed.
-            if 'logo' in data and not isinstance(data.get('logo'), UploadedFile):
-                # If it's a string (URL) or empty, we remove it from the update unless we want to clear it
-                if not data['logo']:
-                     if settings.logo:
-                         settings.logo.delete(save=False)
-                     settings.logo = None
-                del data['logo']
+            # Logo management
+            if 'logo' in data:
+                logo_val = data.get('logo')
+                if not isinstance(logo_val, UploadedFile):
+                    # If it's a string (URL) or empty, we handle it
+                    if not logo_val:
+                         # Explicitly clearing the logo
+                         if settings_obj.logo:
+                             settings_obj.logo.delete(save=False)
+                         settings_obj.logo = None
+                    # Remove from data so serializer doesn't try to save a string to ImageField
+                    del data['logo']
 
             # Fix for dashboard_config being sent as string in FormData (QueryDict)
             import json
@@ -275,16 +278,17 @@ def company_settings(request):
                 except (ValueError, TypeError):
                     pass
 
-            serializer = CompanySettingsSerializer(settings, data=data, partial=True, context={'request': request})
+            serializer = CompanySettingsSerializer(settings_obj, data=data, partial=True, context={'request': request})
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data)
             return Response(serializer.errors, status=400)
-        except Exception as e:
-            import traceback
-            print("ERROR IN COMPANY_SETTINGS POST:")
-            traceback.print_exc()
-            return Response({"error": str(e)}, status=500)
+
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"ERROR IN COMPANY_SETTINGS: {tb}")
+        return Response({"error": str(e), "detail": tb if settings.DEBUG else "Check server logs"}, status=500)
 
 
 import pandas as pd
