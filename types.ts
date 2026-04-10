@@ -166,6 +166,7 @@ export interface Booking {
   driverPhone?: string;
   assigned_employees?: number[];
   pdf_document?: string | null;
+  approximate_value?: number;
 }
 
 export interface DeliveryChallanRecord {

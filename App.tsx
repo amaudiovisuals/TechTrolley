@@ -697,6 +697,81 @@ const App: React.FC = () => {
     }
   };
 
+  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset>) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        showScanToast(`✅ Asset Synchronized`, 'success');
+        fetchAssets();
+      }
+    } catch (err) {
+      console.error("Challan asset update failed", err);
+    }
+  };
+
+  const handleAddAdhocChallanItem = async (item: Partial<Asset>) => {
+    if (!selectedBookingForChallan) return;
+    try {
+      // 1. Create the asset
+      const res = await apiFetch(`${API_BASE}/api/assets/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...item,
+          status: 'In Use',
+          condition: 'Good',
+          purchased_date: new Date().toISOString().split('T')[0]
+        })
+      });
+      
+      if (res.ok) {
+        const newAsset = await res.json();
+        showScanToast(`✅ New Ad-hoc Asset Created: ${newAsset.sku}`, 'success');
+        
+        // 2. Assign to conference
+        const currentAssets = (selectedBookingForChallan.assets || []).map(String);
+        const updatedAssets = Array.from(new Set([...currentAssets, String(newAsset.id)]));
+        
+        const confRes = await apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            assets: updatedAssets.map(id => parseInt(id, 10))
+          })
+        });
+
+        if (confRes.ok) {
+          showScanToast(`✅ Asset Assigned to Conference`, 'success');
+          // Update local state to reflect change in ChallanView
+          setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets } : null);
+          fetchAssets();
+          fetchConferences();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to add ad-hoc item", err);
+      showScanToast(`⚠️ Failed to create ad-hoc item`, 'error');
+    }
+  };
+  
+  const handleUpdateConferenceValue = async (conferenceId: string, value: number) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ approximate_value: value })
+      });
+      if (res.ok) {
+        showScanToast(`✅ Goods Value Updated: ₹${value.toLocaleString()}`, 'success');
+        fetchConferences();
+        // Update local state for immediate feedback
+        setSelectedBookingForChallan(prev => prev ? { ...prev, approximate_value: value } : null);
+      }
+    } catch (err) {
+      console.error("Failed to update conference value", err);
+    }
+  };
+
   const handlePrintAsset = async (assetId: string, sku: string) => {
     if (sku === GLOBAL_CONSUMABLES_SKU) return; // Skip for global QR
     
@@ -4809,6 +4884,10 @@ const App: React.FC = () => {
                     client={MOCK_CLIENTS[0]}
                     assets={assets.filter(a => (selectedBookingForChallan.assets || []).map(String).includes(a.id.toString()))}
                     companySettings={companySettings}
+                    onUpdateAsset={handleChallanAssetUpdate}
+                    onAddAdhocItem={handleAddAdhocChallanItem}
+                    showScanToast={showScanToast}
+                    onUpdateConferenceValue={handleUpdateConferenceValue}
                   />
                 </div>
               </div>

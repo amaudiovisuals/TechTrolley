@@ -7,7 +7,35 @@ interface ChallanViewProps {
   client: Client;
   assets: Asset[];
   companySettings?: CompanySettings;
+  onUpdateAsset?: (assetId: string, updates: Partial<Asset>) => Promise<void>;
+  onAddAdhocItem?: (item: Partial<Asset>) => Promise<void>;
+  onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
+  showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
 }
+
+type ColumnKey = 'Seq' | 'SKU' | 'Asset' | 'Type' | 'Identifiers' | 'MAC' | 'IMEI' | 'Rate' | 'Qty' | 'Total' | 'Actions';
+
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  width?: string;
+  className?: string;
+  printHidden?: boolean;
+}
+
+const ALL_COLUMNS: ColumnDef[] = [
+  { key: 'Seq', label: 'Seq', width: 'w-6', className: 'w-6' },
+  { key: 'SKU', label: 'SKU', width: 'w-24', className: 'w-24' },
+  { key: 'Asset', label: 'Asset Specification' },
+  { key: 'Type', label: 'Type' },
+  { key: 'Identifiers', label: 'Identifiers' },
+  { key: 'MAC', label: 'MAC Address' },
+  { key: 'IMEI', label: 'IMEI (1/2)' },
+  { key: 'Rate', label: 'Unit Rate', width: 'w-16', className: 'w-16', printHidden: true },
+  { key: 'Qty', label: 'Qty', width: 'w-10', className: 'w-10 text-right' },
+  { key: 'Total', label: 'Total', width: 'w-20', className: 'w-20 text-right', printHidden: true },
+  { key: 'Actions', label: 'Actions', className: 'w-10 print:hidden' },
+];
 
 // Converts a number to Indian-style words (e.g. 45000 → "Rupees Forty Five Thousand Only")
 const numberToWords = (num: number): string => {
@@ -30,22 +58,188 @@ const numberToWords = (num: number): string => {
 // Formats a date string (YYYY-MM-DD or DD/MM/YYYY) to DD/MM/YYYY
 const fmtDate = (d?: string): string => {
   if (!d) return '';
-  // already DD/MM/YYYY
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return d;
-  // YYYY-MM-DD
   const parts = d.split('-');
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
   return d;
 };
-export const ChallanView: React.FC<ChallanViewProps> = ({ booking, client, assets, companySettings }) => {
+
+export const ChallanView: React.FC<ChallanViewProps> = ({ 
+  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue 
+}) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
     { label: 'Duplicate for Transporter', key: 'DUP' },
     { label: 'Triplicate for Supplier', key: 'TRI' },
   ];
 
+  const [visibleColumns, setVisibleColumns] = React.useState<ColumnKey[]>(['Seq', 'Asset', 'Identifiers', 'Qty', 'Total']);
+  const [isEditMode, setIsEditMode] = React.useState(false);
+  const [localAssets, setLocalAssets] = React.useState<Asset[]>(assets);
+  const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(booking.approximate_value || null);
+
+  React.useEffect(() => {
+    // Only update localAssets if we are NOT in edit mode
+    // This prevents losing ad-hoc items or pending edits when props update
+    if (!isEditMode) {
+      setLocalAssets(assets);
+    }
+  }, [assets, isEditMode]);
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisibleColumns(prev => 
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  const handleLocalUpdate = (id: string, field: keyof Asset, value: any) => {
+    setLocalAssets(prev => prev.map(a => a.id === id ? { ...a, [field]: value } : a));
+  };
+
+  const removeRow = (id: string) => {
+    setLocalAssets(prev => prev.filter(a => a.id !== id));
+  };
+
+  const saveAllChanges = async () => {
+    try {
+      for (const asset of localAssets) {
+        const isNew = String(asset.id).startsWith('new-');
+        
+        if (isNew) {
+          if (onAddAdhocItem) {
+            console.log("Saving new ad-hoc item:", asset.sku);
+            // The handler in App.tsx handles the transformation/defaults
+            await onAddAdhocItem(asset);
+          }
+        } else {
+          if (onUpdateAsset) {
+            const original = assets.find(a => String(a.id) === String(asset.id));
+            if (original && (
+              original.aliasName !== asset.aliasName || 
+              original.sku !== asset.sku ||
+              original.quantity !== asset.quantity || 
+              original.itemPrice !== asset.itemPrice ||
+              original.serialNumber !== asset.serialNumber
+            )) {
+              console.log("Updating existing asset:", asset.id);
+              // Backend expects snake_case
+              const updates: any = {};
+              if (original.aliasName !== asset.aliasName) updates.alias_name = asset.aliasName;
+              if (original.sku !== asset.sku) updates.sku = asset.sku;
+              if (original.quantity !== asset.quantity) updates.quantity = asset.quantity;
+              if (original.itemPrice !== asset.itemPrice) updates.item_price = asset.itemPrice;
+              if (original.serialNumber !== asset.serialNumber) updates.serial_number = asset.serialNumber;
+              await onUpdateAsset(String(asset.id), updates);
+            }
+          }
+        }
+      }
+
+      // 2. Save approximate goods value override if changed
+      if (totalValueOverride !== null && totalValueOverride !== booking.approximate_value) {
+        if (onUpdateConferenceValue) {
+          console.log("Saving conference value override:", totalValueOverride);
+          await onUpdateConferenceValue(booking.id, totalValueOverride);
+        }
+      }
+
+      showScanToast && showScanToast("✅ All changes saved successfully", "success");
+    } catch (err) {
+      console.error("Critical error during saveAllChanges:", err);
+      alert("Failed to save some changes. Check console for details.");
+    }
+    setIsEditMode(false);
+  };
+
+  const addRow = () => {
+    const newItem: Asset = {
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      sku: `ADHOC-${localAssets.length + 1}`,
+      aliasName: '', 
+      serialNumber: '',
+      type: 'Other',
+      quantity: 1,
+      itemPrice: 0,
+      status: 'In Use' as any,
+      barcode: '',
+      condition: 'Good',
+      description: 'Manually added to challan',
+      isBarcodeAdded: false,
+      macAddress: '',
+      imeiNumber1: '',
+      imeiNumber2: '',
+      purchasedDate: new Date().toISOString().split('T')[0],
+      depreciationPercentage: 0,
+      availableFrom: '',
+      availableTill: '',
+      createdAt: new Date().toISOString(),
+      lastMaintained: ''
+    };
+    setLocalAssets(prev => [...prev, newItem]);
+  };
+
   return (
-    <>
+    <div className="flex flex-col gap-4">
+      {/* ── Customization Toolbar (Hidden in Print) ── */}
+      <div className="print:hidden bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-sky-50 rounded-lg flex items-center justify-center text-sky-600">
+              <i className="fa-solid fa-sliders"></i>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Challan Customization</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Toggle columns & edit details</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsEditMode(!isEditMode)}
+              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                isEditMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <i className={`fa-solid ${isEditMode ? 'fa-check' : 'fa-pen-to-square'} mr-2`}></i>
+              {isEditMode ? 'Close Edit Mode' : 'Edit Mode'}
+            </button>
+            {isEditMode && (
+              <>
+                <button
+                  onClick={addRow}
+                  className="px-4 py-2 bg-sky-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-sky-200 hover:bg-sky-600"
+                >
+                  <i className="fa-solid fa-plus mr-2"></i>
+                  Add Item
+                </button>
+                <button
+                  onClick={saveAllChanges}
+                  className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-600"
+                >
+                  <i className="fa-solid fa-floppy-disk mr-2"></i>
+                  Save Changes
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+          {ALL_COLUMNS.map(col => (
+            <button
+              key={col.key}
+              onClick={() => toggleColumn(col.key)}
+              className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
+                visibleColumns.includes(col.key)
+                  ? 'bg-sky-50 border-sky-200 text-sky-600'
+                  : 'bg-white border-slate-200 text-slate-400 opacity-60'
+              }`}
+            >
+              {col.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {copies.map((copy, index) => (
         <div
           key={copy.key}
@@ -55,26 +249,42 @@ export const ChallanView: React.FC<ChallanViewProps> = ({ booking, client, asset
           <ChallanTemplate
             booking={booking}
             client={client}
-            assets={assets}
+            assets={localAssets}
             companySettings={companySettings}
             copyLabel={copy.label}
             bw={false}
+            visibleColumns={isEditMode ? [...visibleColumns, 'Actions' as ColumnKey] : visibleColumns}
+            isEditMode={isEditMode && index === 0} // ONLY the first copy is editable, others are live previews
+            onLocalUpdate={handleLocalUpdate}
+            onRemoveRow={removeRow}
+            totalOverride={totalValueOverride}
+            setTotalOverride={setTotalValueOverride}
           />
         </div>
       ))}
-    </>
+    </div>
   );
 };
 
-interface ChallanTemplateProps extends ChallanViewProps {
+interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
+  assets: Asset[];
   copyLabel: string;
   bw: boolean;
+  visibleColumns: ColumnKey[];
+  isEditMode: boolean;
+  onLocalUpdate: (id: string, field: keyof Asset, value: any) => void;
+  onRemoveRow: (id: string) => void;
+  totalOverride: number | null;
+  setTotalOverride: (val: number | null) => void;
 }
 
-const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, assets, companySettings, copyLabel, bw }) => {
-  // Colour tokens — swap to B&W-safe equivalents when bw=true
-  const accent = bw ? '#111111' : '#00AEEF';   // blue  → near-black
-  const orange = bw ? '#111111' : '#F15A24';   // orange → near-black
+const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ 
+  booking, client, assets, companySettings, copyLabel, bw, 
+  visibleColumns, isEditMode, onLocalUpdate, onRemoveRow,
+  totalOverride, setTotalOverride
+}) => {
+  const accent = bw ? '#111111' : '#00AEEF';
+  const orange = bw ? '#111111' : '#F15A24';
   const venueBg = bw ? '#f5f5f5' : '#f0f9ff';
   const venueBrd = bw ? '#999999' : '#bae6fd';
   const venueHd = bw ? '#111111' : '#0369a1';
@@ -87,14 +297,126 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
     return price * (1 - dep / 100);
   };
 
-  const totalValue = assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0);
+  const totalValue = totalOverride !== null 
+    ? totalOverride 
+    : assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0);
+
+  const renderCell = (asset: Asset, col: ColumnKey, index: number) => {
+    if (isEditMode) {
+      switch (col) {
+        case 'Asset':
+          return (
+            <div className="flex flex-col">
+              <input 
+                className="w-full bg-slate-50 border-none p-0 text-[8px] font-black uppercase print:hidden" 
+                value={asset.aliasName || asset.sku} 
+                onChange={e => onLocalUpdate(asset.id, 'aliasName', e.target.value)}
+              />
+              <span className="hidden print:block font-black uppercase text-[8px] tracking-tighter">{asset.aliasName || asset.sku}</span>
+            </div>
+          );
+        case 'SKU':
+          return (
+            <div className="flex flex-col">
+              <input 
+                className="w-full bg-slate-50 border-none p-0 text-[8px] font-mono print:hidden" 
+                value={asset.sku} 
+                onChange={e => onLocalUpdate(asset.id, 'sku', e.target.value)}
+              />
+              <span className="hidden print:block font-mono">{asset.sku}</span>
+            </div>
+          );
+        case 'Rate':
+          return (
+            <div className="flex items-center justify-end">
+              <input 
+                type="number"
+                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right print:hidden" 
+                value={asset.itemPrice} 
+                onChange={e => onLocalUpdate(asset.id, 'itemPrice', parseFloat(e.target.value))}
+              />
+              <span className="hidden print:block">{Math.round(getDepreciatedPrice(asset)).toLocaleString()}</span>
+            </div>
+          );
+        case 'Qty':
+          return (
+            <div className="flex items-center justify-end">
+              <input 
+                type="number"
+                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right font-black print:hidden" 
+                value={asset.quantity} 
+                onChange={e => onLocalUpdate(asset.id, 'quantity', parseInt(e.target.value))}
+              />
+              <span className="hidden print:block font-black">{asset.quantity}</span>
+            </div>
+          );
+        case 'Identifiers':
+          return (
+            <div className="flex flex-col">
+              <input 
+                className="w-full bg-slate-50 border-none p-0 text-[8px] font-mono print:hidden" 
+                value={asset.serialNumber} 
+                onChange={e => onLocalUpdate(asset.id, 'serialNumber', e.target.value)}
+              />
+              <span className="hidden print:block">{asset.serialNumber}</span>
+            </div>
+          );
+        case 'Total':
+          return (
+            <div className="flex items-center justify-end">
+              <input 
+                type="number"
+                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right font-black print:hidden" 
+                value={Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1))}
+                onChange={e => {
+                  const val = parseFloat(e.target.value) || 0;
+                  const newRate = val / (asset.quantity || 1);
+                  onLocalUpdate(asset.id, 'itemPrice', newRate);
+                }}
+              />
+              <span className="hidden print:block font-black">{Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1)).toLocaleString()}</span>
+            </div>
+          );
+        case 'Actions':
+          return (
+            <button 
+              onClick={() => onRemoveRow(asset.id)}
+              className="text-red-500 hover:text-red-700 transition-colors p-1"
+              title="Delete Row"
+            >
+              <i className="fa-solid fa-trash-can"></i>
+            </button>
+          );
+      }
+    }
+
+    // Default Read-only render
+    switch (col) {
+      case 'Seq': return index + 1;
+      case 'SKU': return asset.sku;
+      case 'Asset': return (
+        <>
+          <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName || asset.sku}</span>
+          {!visibleColumns.includes('Type') && (
+            <span className="text-[7px] font-bold uppercase tracking-widest print:hidden" style={{ color: accent }}>{asset.type}</span>
+          )}
+        </>
+      );
+      case 'Type': return asset.type;
+      case 'Identifiers': return `${asset.serialNumber} / ${asset.sku}`;
+      case 'MAC': return asset.macAddress || '—';
+      case 'IMEI': return `${asset.imeiNumber1 || '—'} / ${asset.imeiNumber2 || '—'}`;
+      case 'Rate': return `₹${Math.round(getDepreciatedPrice(asset)).toLocaleString()}`;
+      case 'Qty': return asset.quantity || 1;
+      case 'Total': return `₹${Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1)).toLocaleString()}`;
+      default: return null;
+    }
+  };
 
   return (
     <div className="p-6 bg-white max-w-[210mm] mx-auto shadow-sm border border-gray-200 rounded-md my-4 font-sans print:shadow-none print:m-0 print:p-[10mm] print:w-[210mm] print:min-h-[297mm] print:box-border print:border-none print:rounded-none relative flex flex-col justify-between">
-
-      {/* ── Header ── */}
+      {/* Header, Consignee sections remain unchanged (already premium) */}
       <div className="flex justify-between items-start pb-2 mb-2" style={{ borderBottom: `2px solid ${accent}` }}>
-        {/* Left: Company info */}
         <div>
           <Logo size="sm" companySettings={companySettings} variant="challan" />
           <div className="mt-1 text-[9px] text-gray-900 font-medium leading-snug">
@@ -104,8 +426,6 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
             <p>Tel: {companySettings?.phone || '+91 9999 888 777'} | Email: {companySettings?.email || 'support@amaudiovisuals.in'}</p>
           </div>
         </div>
-
-        {/* Right: Challan meta + vehicle */}
         <div className="text-right pt-20">
           <div className="mb-0.5">
             <span className="text-[8px] font-black uppercase tracking-widest border border-gray-900 px-2 py-0.5 rounded text-gray-900">{copyLabel}</span>
@@ -136,7 +456,6 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         </div>
       </div>
 
-      {/* ── Consignee + Event ── */}
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div>
           <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Consignee Information</h4>
@@ -171,62 +490,77 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         </div>
       </div>
 
-      {/* ── Asset Table ── */}
+      {/* Dynamic Asset Table */}
       <table className="w-full mb-2 border-collapse">
         <thead>
           <tr style={{ backgroundColor: hdrBg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
-            <th className="py-1 px-2 text-left text-[7px] font-black text-white uppercase tracking-[0.2em] w-6" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Seq</th>
-            <th className="py-1 px-2 text-left text-[7px] font-black text-white uppercase tracking-[0.2em]" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Asset Specification</th>
-            <th className="hidden print:table-cell py-1 px-2 text-left text-[7px] font-black text-white uppercase tracking-[0.2em]" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Type</th>
-            <th className="py-1 px-2 text-left text-[7px] font-black text-white uppercase tracking-[0.2em]" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Identifiers</th>
-            <th className="py-1 px-2 text-right text-[7px] font-black text-white uppercase tracking-[0.2em] w-16 print:hidden" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Unit Rate</th>
-            <th className="py-1 px-2 text-right text-[7px] font-black text-white uppercase tracking-[0.2em] w-10" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Qty</th>
-            <th className="py-1 px-2 text-right text-[7px] font-black text-white uppercase tracking-[0.2em] w-20 print:hidden" style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>Total</th>
+            {visibleColumns.map(colKey => {
+              const col = ALL_COLUMNS.find(c => c.key === colKey);
+              if (!col) return null;
+              return (
+                <th 
+                  key={colKey} 
+                  className={`py-1 px-2 text-left text-[7px] font-black text-white uppercase tracking-[0.2em] ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
+                  style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}
+                >
+                  {col.label}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody className="text-[8px]">
           {assets.map((asset, index) => (
             <tr key={asset.id} className="border-b border-gray-300 page-break-inside-avoid">
-              <td className="py-0.5 px-2 text-gray-900 font-bold">{index + 1}</td>
-              <td className="py-0.5 px-2">
-                <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName || asset.sku}</span>
-                <span className="text-[7px] font-bold uppercase tracking-widest print:hidden" style={{ color: accent }}>{asset.type}</span>
-              </td>
-              <td className="hidden print:table-cell py-0.5 px-2 text-[8px] font-bold text-gray-900 uppercase tracking-wide">{asset.type}</td>
-              <td className="py-0.5 px-2 text-gray-900 font-mono font-bold tracking-widest uppercase text-[8px]">
-                {asset.serialNumber} <span>/</span> {asset.sku}
-              </td>
-              <td className="py-0.5 px-2 text-right text-gray-900 font-mono print:hidden">₹{Math.round(getDepreciatedPrice(asset)).toLocaleString() || '0'}</td>
-              <td className="py-0.5 px-2 text-right text-gray-900 font-black">{(asset.quantity || 1)}</td>
-              <td className="py-0.5 px-2 text-right text-gray-900 font-bold print:hidden">₹{Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1)).toLocaleString() || '0'}</td>
+              {visibleColumns.map(colKey => {
+                const col = ALL_COLUMNS.find(c => c.key === colKey);
+                if (!col) return null;
+                return (
+                  <td 
+                    key={`${asset.id}-${colKey}`} 
+                    className={`py-0.5 px-2 text-gray-900 font-bold ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
+                  >
+                    {renderCell(asset, colKey, index)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
           {assets.length === 0 && (
             <tr>
-              <td colSpan={7} className="py-8 text-center text-[10px] font-black text-gray-900 uppercase tracking-widest">No assets selected.</td>
+              <td colSpan={visibleColumns.length} className="py-8 text-center text-[10px] font-black text-gray-900 uppercase tracking-widest">No assets selected.</td>
             </tr>
           )}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={7} className="pt-1 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest" style={{ borderTop: '2px solid #999' }}>
+            <td colSpan={visibleColumns.length} className="pt-1 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest" style={{ borderTop: '2px solid #999' }}>
               Total Quantity: <span style={{ color: accent }}>{assets.reduce((sum, a) => sum + (a.quantity || 1), 0)}</span>
             </td>
           </tr>
           <tr className="bg-gray-50">
-            <td colSpan={7} className="py-0.5 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest">
-              Approximate Value of Goods: <span className="text-[10px]" style={{ color: orange }}>₹{totalValue.toLocaleString()}</span>
+            <td colSpan={visibleColumns.length} className="py-0.5 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest">
+              Approximate Value of Goods: 
+              {isEditMode ? (
+                <input 
+                  type="number"
+                  className="w-24 ml-2 bg-white border border-slate-200 rounded px-1 text-[10px] text-right text-orange-500 font-black focus:outline-none focus:border-orange-500"
+                  value={totalValue}
+                  onChange={e => setTotalOverride(parseFloat(e.target.value) || 0)}
+                />
+              ) : (
+                <span className="text-[10px] ml-2" style={{ color: orange }}>₹{Math.round(totalValue).toLocaleString()}</span>
+              )}
             </td>
           </tr>
           <tr>
-            <td colSpan={7} className="pb-1 px-2 text-right text-[7px] text-gray-900 italic font-medium">
+            <td colSpan={visibleColumns.length} className="pb-1 px-2 text-right text-[7px] text-gray-900 italic font-medium">
               ({numberToWords(totalValue)})
             </td>
           </tr>
         </tfoot>
       </table>
 
-      {/* ── Declaration + Signatures ── */}
       <div className="mt-2 page-break-inside-avoid">
         <div className="px-3 py-2 mb-3 rounded-md bg-gray-50" style={{ border: '1px dashed #999' }}>
           <p className="text-[8px] text-gray-900 font-medium leading-relaxed">
@@ -249,7 +583,6 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         </div>
       </div>
 
-      {/* ── Footer ── */}
       <div className="mt-4 pt-2 text-[6px] text-gray-900 text-center leading-relaxed font-black uppercase tracking-[0.3em]" style={{ borderTop: '1px solid #999' }}>
         Technical Desk: {companySettings?.phone || '+91 9999 888 777'} | {companySettings?.email || 'support@amaudiovisuals.in'}
         <br />
@@ -257,7 +590,6 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ booking, client, asse
         <span style={{ color: bw ? '#111' : '#00AEEF' }}>{companySettings?.name || 'TECH TROLLEY'}</span>
         <br />
         <span className="text-[9px] font-black text-gray-900 uppercase tracking-widest mt-0.5 inline-block border border-gray-400 px-1 rounded-sm">{copyLabel}</span>
-        {bw && <span className="ml-2 text-[7px] font-black uppercase tracking-widest text-gray-500">[B&amp;W]</span>}
       </div>
     </div>
   );
