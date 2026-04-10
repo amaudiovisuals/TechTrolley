@@ -493,7 +493,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       {/* Dynamic Asset Table */}
       <table className="w-full mb-2 border-collapse">
         <thead>
-          <tr style={{ backgroundColor: hdrBg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
+          <tr className="challan-header-target" style={{ backgroundColor: hdrBg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
             {visibleColumns.map(colKey => {
               const col = ALL_COLUMNS.find(c => c.key === colKey);
               if (!col) return null;

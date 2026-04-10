@@ -5340,6 +5340,11 @@ const App: React.FC = () => {
             text-shadow: none !important;
             box-shadow: none !important;
           }
+
+          /* Force headers to be white */
+          .challan-header-target th, .challan-header-target th * {
+            color: white !important;
+          }
         }
       `}</style>
     </div >
