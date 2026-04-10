@@ -53,7 +53,7 @@ class AssetSerializer(serializers.ModelSerializer):
 class ConferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conference
-        fields = '__all__'
+        exclude = ['approximate_value'] # Safety Shield: Exclude until production DB is migrated
 
     def to_representation(self, instance):
         # Professional Database Shield: If the 'requirements' table is missing from Postgres,
