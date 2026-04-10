@@ -664,11 +664,18 @@ from decimal import Decimal
 @api_view(['POST'])
 def system_recovery(request):
     """
-    One-click database repair: restores the 4 missing employee laptops 
-    and re-links the 7 primary employee assignments.
+    One-click database repair: runs migrations and restores key assignments.
     """
     if not request.user.is_staff:
         return Response({"error": "Unauthorized"}, status=403)
+    
+    # Run migrations to fix missing columns/tables on live site
+    from django.core.management import call_command
+    try:
+        call_command('migrate', interactive=False)
+        migration_error = None
+    except Exception as e:
+        migration_error = str(e)
         
     assignments = {
         'NHQLTSI006338035C47600': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-1'},
@@ -722,7 +729,8 @@ def system_recovery(request):
                 assigned_count += 1
 
     return Response({
-        "message": "Recovery complete!",
+        "message": "Recovery complete!" if not migration_error else f"Recovery partial: {migration_error}",
+        "migrations_applied": not bool(migration_error),
         "recovered": recovered_count,
         "assigned": assigned_count,
         "total_assets": Asset.objects.count()

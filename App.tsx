@@ -580,6 +580,22 @@ const App: React.FC = () => {
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
   const addLog = (msg: string) => setSystemLogs(prev => [new Date().toLocaleTimeString() + ': ' + msg, ...prev].slice(0, 10));
 
+  const handleSystemRecovery = async () => {
+    if (!window.confirm("ARE YOU SURE? THIS WILL RUN DATABASE MIGRATIONS AND REPAIR CORE ASSET ASSIGNMENTS.")) return;
+    try {
+      const res = await apiFetch(`${API_BASE}/api/system-recovery/`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || "System repair complete!");
+        window.location.reload();
+      } else {
+        alert("Repair failed: " + (data.error || "Unknown error"));
+      }
+    } catch (e) {
+      alert("Connection error during system repair.");
+    }
+  };
+
   const activeConferencesCount = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -2542,6 +2558,14 @@ const App: React.FC = () => {
                     {backendConferences.length} Total Conferences • {assets.length} Assets in DB • {stats.total} Total Quantity
                   </p>
                 </div>
+              </div>
+              <div className="ml-auto">
+                <button
+                  onClick={handleSystemRecovery}
+                  className="px-6 py-3 bg-orange-500 text-white rounded-xl font-black uppercase text-[10px] hover:bg-orange-400 transition shadow-lg shadow-orange-500/20 flex items-center gap-2"
+                >
+                  <i className="fa-solid fa-wrench" /> Repair & Recover Assets
+                </button>
               </div>
             </div>
           )}
