@@ -713,7 +713,17 @@ const App: React.FC = () => {
     }
   };
 
-  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset>) => {
+  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset> & { alias_name?: string; item_price?: number; serial_number?: string }) => {
+    // Optimistic Update so Challan View updates instantly without flashing old state
+    setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { 
+      ...a, 
+      aliasName: updates.alias_name !== undefined ? updates.alias_name : a.aliasName,
+      sku: updates.sku !== undefined ? updates.sku : a.sku,
+      quantity: updates.quantity !== undefined ? updates.quantity : a.quantity,
+      itemPrice: updates.item_price !== undefined ? updates.item_price : a.itemPrice,
+      serialNumber: updates.serial_number !== undefined ? updates.serial_number : a.serialNumber
+    } : a));
+
     try {
       const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
         method: 'PATCH',
@@ -722,9 +732,17 @@ const App: React.FC = () => {
       if (res.ok) {
         showScanToast(`✅ Asset Synchronized`, 'success');
         fetchAssets();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Challan asset update failed with status:", res.status, err);
+        showScanToast(`❌ Asset update failed. See console.`, 'error');
+        // Revert optimistic update
+        fetchAssets();
       }
     } catch (err) {
-      console.error("Challan asset update failed", err);
+      console.error("Challan asset update network error", err);
+      showScanToast(`❌ Network error saving asset`, 'error');
+      fetchAssets(); // Revert
     }
   };
 
