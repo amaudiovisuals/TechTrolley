@@ -4317,7 +4317,7 @@ const App: React.FC = () => {
                                                normalizeSearch(a.name || '').includes(qNorm) || 
                                                normalizeSearch(a.description || '').includes(qNorm) || 
                                                normalizeSearch(a.serialNumber || '').includes(qNorm) || 
-                                               (a.qrCode && (normalizeSearch(a.qrCode).includes(qNorm) || qNorm.includes(normalizeSearch(a.qrCode)))) ||
+                                               (a.qrCode && normalizeSearch(a.qrCode) !== '' && (normalizeSearch(a.qrCode).includes(qNorm) || qNorm.includes(normalizeSearch(a.qrCode)))) ||
                                                normalizeSearch(a.barcode || '').includes(qNorm) || 
                                                normalizeSearch(a.type || '').includes(qNorm);
                                              const notInReqs = !(conferenceFormData.requirements || []).some((id: any) => String(id) === String(a.id));
