@@ -10,6 +10,7 @@ interface ChallanViewProps {
   onUpdateAsset?: (assetId: string, updates: Partial<Asset>) => Promise<void>;
   onAddAdhocItem?: (item: Partial<Asset>) => Promise<void>;
   onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
+  onRemoveAssets?: (assetIds: string[]) => Promise<void>;
   showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
 }
 
@@ -65,7 +66,7 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({ 
-  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue 
+  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
@@ -82,7 +83,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     // Only update localAssets if we are NOT in edit mode
     // This prevents losing ad-hoc items or pending edits when props update
     if (!isEditMode) {
-      setLocalAssets(assets);
+      setLocalAssets(assets.map(a => ({
+          ...a,
+          aliasName: (a.aliasName !== null && a.aliasName !== undefined && a.aliasName !== '') ? a.aliasName : a.sku
+      })));
     }
   }, [assets, isEditMode]);
 
@@ -102,14 +106,32 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
   const saveAllChanges = async () => {
     try {
+      // 1. Process removals in batch
+      const originalIds = assets.map(a => String(a.id));
+      const currentIds = localAssets.map(a => String(a.id));
+      const removedIds = originalIds.filter(id => !currentIds.includes(id));
+      
+      if (removedIds.length > 0 && onRemoveAssets) {
+        console.log("Removing assets from conference:", removedIds);
+        await onRemoveAssets(removedIds);
+      }
+
       for (const asset of localAssets) {
         const isNew = String(asset.id).startsWith('new-');
         
         if (isNew) {
           if (onAddAdhocItem) {
             console.log("Saving new ad-hoc item:", asset.sku);
-            // The handler in App.tsx handles the transformation/defaults
-            await onAddAdhocItem(asset);
+            // Must map camelCase to snake_case for API
+            await onAddAdhocItem({
+              sku: asset.sku,
+              alias_name: asset.aliasName,
+              quantity: asset.quantity,
+              item_price: asset.itemPrice,
+              depreciation_percentage: asset.depreciationPercentage,
+              serial_number: asset.serialNumber,
+              type: asset.type,
+            } as any);
           }
         } else {
           if (onUpdateAsset) {
@@ -152,10 +174,11 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const addRow = () => {
+    const defaultSku = `ADHOC-${localAssets.length + 1}`;
     const newItem: Asset = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      sku: `ADHOC-${localAssets.length + 1}`,
-      aliasName: '', 
+      sku: defaultSku,
+      aliasName: defaultSku, 
       serialNumber: '',
       type: 'Other',
       quantity: 1,
@@ -309,10 +332,10 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <div className="flex flex-col">
               <input 
                 className="w-full bg-slate-50 border-none p-0 text-[8px] font-black uppercase print:hidden" 
-                value={asset.aliasName || asset.sku} 
+                value={asset.aliasName ?? ''} 
                 onChange={e => onLocalUpdate(asset.id, 'aliasName', e.target.value)}
               />
-              <span className="hidden print:block font-black uppercase text-[8px] tracking-tighter">{asset.aliasName || asset.sku}</span>
+              <span className="hidden print:block font-black uppercase text-[8px] tracking-tighter">{asset.aliasName || ' '}</span>
             </div>
           );
         case 'SKU':
@@ -332,8 +355,12 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
               <input 
                 type="number"
                 className="w-full bg-slate-50 border-none p-0 text-[8px] text-right print:hidden" 
-                value={asset.itemPrice} 
-                onChange={e => onLocalUpdate(asset.id, 'itemPrice', parseFloat(e.target.value))}
+                value={Math.round(getDepreciatedPrice(asset))} 
+                onChange={e => {
+                  const val = parseFloat(e.target.value) || 0;
+                  onLocalUpdate(asset.id, 'itemPrice', val);
+                  onLocalUpdate(asset.id, 'depreciationPercentage', 0);
+                }}
               />
               <span className="hidden print:block">{Math.round(getDepreciatedPrice(asset)).toLocaleString()}</span>
             </div>
@@ -372,6 +399,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                   const val = parseFloat(e.target.value) || 0;
                   const newRate = val / (asset.quantity || 1);
                   onLocalUpdate(asset.id, 'itemPrice', newRate);
+                  onLocalUpdate(asset.id, 'depreciationPercentage', 0);
                 }}
               />
               <span className="hidden print:block font-black">{Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1)).toLocaleString()}</span>
@@ -396,7 +424,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       case 'SKU': return asset.sku;
       case 'Asset': return (
         <>
-          <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName || asset.sku}</span>
+          <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName !== '' ? asset.aliasName : ' '}</span>
           {!visibleColumns.includes('Type') && (
             <span className="text-[7px] font-bold uppercase tracking-widest print:hidden" style={{ color: accent }}>{asset.type}</span>
           )}

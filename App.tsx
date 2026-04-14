@@ -400,7 +400,7 @@ const App: React.FC = () => {
 
 
   const fetchAssets = () => {
-    apiFetch(`${API_BASE}/api/assets/`)
+    return apiFetch(`${API_BASE}/api/assets/`)
       .then(async res => {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -636,7 +636,7 @@ const App: React.FC = () => {
   });
 
   const fetchConferences = () => {
-    apiFetch(`${API_BASE}/api/conferences/`)
+    return apiFetch(`${API_BASE}/api/conferences/`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -731,18 +731,18 @@ const App: React.FC = () => {
       });
       if (res.ok) {
         showScanToast(`✅ Asset Synchronized`, 'success');
-        fetchAssets();
+        await fetchAssets();
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Challan asset update failed with status:", res.status, err);
         showScanToast(`❌ Asset update failed. See console.`, 'error');
         // Revert optimistic update
-        fetchAssets();
+        await fetchAssets();
       }
     } catch (err) {
       console.error("Challan asset update network error", err);
       showScanToast(`❌ Network error saving asset`, 'error');
-      fetchAssets(); // Revert
+      await fetchAssets(); // Revert
     }
   };
 
@@ -779,8 +779,8 @@ const App: React.FC = () => {
           showScanToast(`✅ Asset Assigned to Conference`, 'success');
           // Update local state to reflect change in ChallanView
           setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets } : null);
-          fetchAssets();
-          fetchConferences();
+          await fetchAssets();
+          await fetchConferences();
         }
       }
     } catch (err) {
@@ -4904,6 +4904,22 @@ const App: React.FC = () => {
                     onAddAdhocItem={handleAddAdhocChallanItem}
                     showScanToast={showScanToast}
                     onUpdateConferenceValue={handleUpdateConferenceValue}
+                    onRemoveAssets={async (assetIds) => {
+                      if (!selectedBookingForChallan) return;
+                      const currentAssets = (selectedBookingForChallan.assets || []).map(String);
+                      const updatedAssets = currentAssets.filter(id => !assetIds.includes(String(id)));
+                      
+                      const confRes = await apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                          assets: updatedAssets.map(id => parseInt(id, 10))
+                        })
+                      });
+                      if (confRes.ok) {
+                        setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets } : null);
+                        await fetchConferences();
+                      }
+                    }}
                   />
                 </div>
               </div>
