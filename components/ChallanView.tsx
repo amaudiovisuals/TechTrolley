@@ -358,7 +358,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                 value={Math.round(getDepreciatedPrice(asset))} 
                 onChange={e => {
                   const val = parseFloat(e.target.value) || 0;
-                  onLocalUpdate(asset.id, 'itemPrice', val);
+                  const newRate = parseFloat(val.toFixed(2));
+                  onLocalUpdate(asset.id, 'itemPrice', newRate);
                   onLocalUpdate(asset.id, 'depreciationPercentage', 0);
                 }}
               />
@@ -397,7 +398,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                 value={Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1))}
                 onChange={e => {
                   const val = parseFloat(e.target.value) || 0;
-                  const newRate = val / (asset.quantity || 1);
+                  const newRate = parseFloat((val / (asset.quantity || 1)).toFixed(2));
                   onLocalUpdate(asset.id, 'itemPrice', newRate);
                   onLocalUpdate(asset.id, 'depreciationPercentage', 0);
                 }}
