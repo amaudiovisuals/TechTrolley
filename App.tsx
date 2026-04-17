@@ -928,7 +928,7 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLogistics = async () => {
-    const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees } = conferenceFormData;
+    const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees, staged_assets, pdf_document, ...restConferenceData } = conferenceFormData;
     
     if (!id) {
       handleSaveConference();
@@ -942,19 +942,30 @@ const App: React.FC = () => {
         body.append('vehicle_number', vehicle_number || '');
         body.append('driver_phone', driver_phone || '');
         body.append('pdf_document', pdfFile);
+        
+        // Append remaining core text fields so edits don't get lost
+        Object.entries(restConferenceData).forEach(([k, v]) => {
+          if (v !== undefined && v !== null) {
+            body.append(k, typeof v === 'string' ? v : v.toString());
+          }
+        });
+
         // Append collections properly for FormData compatibility
-        (assetIds || []).forEach((id: any) => body.append('assets', id));
-        (requirements || []).forEach((id: any) => body.append('requirements', id));
-        (crosscheck_assets || []).forEach((id: any) => body.append('crosscheck_assets', id));
-        (assigned_employees || []).forEach((id: any) => body.append('assigned_employees', id));
+        (assetIds || []).forEach((assetId: any) => body.append('assets', assetId));
+        (requirements || []).forEach((reqId: any) => body.append('requirements', reqId));
+        (crosscheck_assets || []).forEach((cId: any) => body.append('crosscheck_assets', cId));
+        (assigned_employees || []).forEach((empId: any) => body.append('assigned_employees', empId));
       } else {
         body = JSON.stringify({
+          ...restConferenceData,
+          start_date: restConferenceData.start_date || null,
+          end_date: restConferenceData.end_date || null,
           vehicle_number,
           driver_phone,
-          assets: assetIds,
-          requirements,
-          crosscheck_assets,
-          assigned_employees
+          assets: (assetIds || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
+          requirements: (requirements || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
+          crosscheck_assets: (crosscheck_assets || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
+          assigned_employees: (assigned_employees || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid))
         });
       }
 
