@@ -806,6 +806,22 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateChallanNumber = async (conferenceId: string, challanNumber: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ challan_number: challanNumber })
+      });
+      if (res.ok) {
+        showScanToast(`✅ Challan No Updated: ${challanNumber}`, 'success');
+        fetchConferences();
+        setSelectedBookingForChallan(prev => prev ? { ...prev, challanNumber: challanNumber } : null);
+      }
+    } catch (err) {
+      console.error("Failed to update challan number", err);
+    }
+  };
+
   const handlePrintAsset = async (assetId: string, sku: string) => {
     if (sku === GLOBAL_CONSUMABLES_SKU) return; // Skip for global QR
     
@@ -3144,6 +3160,11 @@ const App: React.FC = () => {
   );
 
   const handlePrintChallan = (conf: Booking) => {
+    // Store locally to persist exact current state across the new tab boundary
+    localStorage.setItem('print_conf_data', JSON.stringify(conf));
+    const relevantAssets = assets.filter(a => (conf.assets || []).map(String).includes(String(a.id)));
+    localStorage.setItem('print_assets_data', JSON.stringify(relevantAssets));
+
     // Open in new tab
     const url = `${window.location.protocol}//${window.location.host}${window.location.pathname}?print=true&confId=${conf.id}`;
     window.open(url, '_blank');
@@ -3404,7 +3425,29 @@ const App: React.FC = () => {
 
   // STANDALONE PRINT VIEW
   if (isPrintMode) {
-    if (!selectedBookingForChallan) {
+    let printConf = selectedBookingForChallan;
+    let printAssets = assets.filter(a => (printConf?.assets || []).map(String).includes(a.id.toString()));
+
+    try {
+      const storedConf = localStorage.getItem('print_conf_data');
+      if (storedConf) {
+        const parsedConf = JSON.parse(storedConf);
+        if (parsedConf && String(parsedConf.id) === printConfId) {
+          printConf = parsedConf;
+        }
+      }
+      
+      const storedAssets = localStorage.getItem('print_assets_data');
+      if (storedAssets && printConf) {
+        if (String(printConf.id) === printConfId) {
+           printAssets = JSON.parse(storedAssets);
+        }
+      }
+    } catch(err) {
+      console.error("Local storage error for print data", err);
+    }
+
+    if (!printConf) {
       return <div className="min-h-screen bg-white flex items-center justify-center text-black font-bold uppercase">Generating Challan Preview...</div>;
     }
     return (
@@ -3418,9 +3461,9 @@ const App: React.FC = () => {
         </button>
 
         <ChallanView
-          booking={selectedBookingForChallan}
+          booking={printConf}
           client={MOCK_CLIENTS[0]}
-          assets={assets.filter(a => (selectedBookingForChallan.assets || []).map(String).includes(a.id.toString()))}
+          assets={printAssets}
           companySettings={companySettings}
         />
         <style>{`
@@ -4904,6 +4947,7 @@ const App: React.FC = () => {
                     onAddAdhocItem={handleAddAdhocChallanItem}
                     showScanToast={showScanToast}
                     onUpdateConferenceValue={handleUpdateConferenceValue}
+                    onUpdateChallanNumber={handleUpdateChallanNumber}
                     onRemoveAssets={async (assetIds) => {
                       if (!selectedBookingForChallan) return;
                       const currentAssets = (selectedBookingForChallan.assets || []).map(String);

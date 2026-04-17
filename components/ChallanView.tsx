@@ -11,7 +11,9 @@ interface ChallanViewProps {
   onAddAdhocItem?: (item: Partial<Asset>) => Promise<void>;
   onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
   onRemoveAssets?: (assetIds: string[]) => Promise<void>;
+  onRemoveAssets?: (assetIds: string[]) => Promise<void>;
   showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
+  onUpdateChallanNumber?: (conferenceId: string, challanNumber: string) => Promise<void>;
 }
 
 type ColumnKey = 'Seq' | 'SKU' | 'Asset' | 'Type' | 'Identifiers' | 'MAC' | 'IMEI' | 'Rate' | 'Qty' | 'Total' | 'Actions';
@@ -66,18 +68,42 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({ 
-  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets
+  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
-    { label: 'Duplicate for Transporter', key: 'DUP' },
-    { label: 'Triplicate for Supplier', key: 'TRI' },
+    { label: 'Duplicate for Transporter', key: 'TRANS' },
+    { label: 'Triplicate for Supplier', key: 'SUPP' }
   ];
 
-  const [visibleColumns, setVisibleColumns] = React.useState<ColumnKey[]>(['Seq', 'Asset', 'Identifiers', 'Qty', 'Total']);
+  const [visibleColumns, setVisibleColumns] = React.useState<ColumnKey[]>(() => {
+    try {
+      const stored = localStorage.getItem('challan_visible_columns');
+      if (stored) return JSON.parse(stored);
+    } catch(e) {}
+    return ['Seq', 'Asset', 'Identifiers', 'Qty', 'Total'];
+  });
+  
   const [isEditMode, setIsEditMode] = React.useState(false);
   const [localAssets, setLocalAssets] = React.useState<Asset[]>(assets);
-  const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(booking.approximate_value || null);
+  const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(() => {
+    try {
+      const stored = localStorage.getItem(`cache_total_val_${booking.id}`);
+      if (stored) return parseFloat(stored);
+    } catch(e) {}
+    return booking.approximate_value || null;
+  });
+  const [challanNoOverride, setChallanNoOverride] = React.useState<string | null>(() => {
+    try {
+      const stored = localStorage.getItem(`cache_challan_no_${booking.id}`);
+      if (stored) return stored;
+    } catch(e) {}
+    return booking.challanNumber || null;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('challan_visible_columns', JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
 
   React.useEffect(() => {
     // Only update localAssets if we are NOT in edit mode
@@ -85,7 +111,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     if (!isEditMode) {
       setLocalAssets(assets.map(a => ({
           ...a,
-          aliasName: (a.aliasName !== null && a.aliasName !== undefined && a.aliasName !== '') ? a.aliasName : a.sku
+          aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
       })));
     }
   }, [assets, isEditMode]);
@@ -159,9 +185,19 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       // 2. Save approximate goods value override if changed
       if (totalValueOverride !== null && totalValueOverride !== booking.approximate_value) {
+        localStorage.setItem(`cache_total_val_${booking.id}`, totalValueOverride.toString());
         if (onUpdateConferenceValue) {
           console.log("Saving conference value override:", totalValueOverride);
           await onUpdateConferenceValue(booking.id, totalValueOverride);
+        }
+      }
+
+      // 3. Save challan number if changed
+      if (challanNoOverride !== null && challanNoOverride !== booking.challanNumber) {
+        localStorage.setItem(`cache_challan_no_${booking.id}`, challanNoOverride);
+        if (onUpdateChallanNumber) {
+          console.log("Saving challan number override:", challanNoOverride);
+          await onUpdateChallanNumber(booking.id, challanNoOverride);
         }
       }
 
@@ -282,6 +318,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             onRemoveRow={removeRow}
             totalOverride={totalValueOverride}
             setTotalOverride={setTotalValueOverride}
+            challanNoOverride={challanNoOverride}
+            setChallanNoOverride={setChallanNoOverride}
           />
         </div>
       ))}
@@ -299,12 +337,14 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   onRemoveRow: (id: string) => void;
   totalOverride: number | null;
   setTotalOverride: (val: number | null) => void;
+  challanNoOverride: string | null;
+  setChallanNoOverride: (val: string | null) => void;
 }
 
 const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ 
   booking, client, assets, companySettings, copyLabel, bw, 
   visibleColumns, isEditMode, onLocalUpdate, onRemoveRow,
-  totalOverride, setTotalOverride
+  totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride
 }) => {
   const accent = bw ? '#111111' : '#00AEEF';
   const orange = bw ? '#111111' : '#F15A24';
@@ -312,7 +352,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   const venueBrd = bw ? '#999999' : '#bae6fd';
   const venueHd = bw ? '#111111' : '#0369a1';
   const venueTxt = bw ? '#111111' : '#0c4a6e';
-  const hdrBg = bw ? '#222222' : '#00AEEF';
+  const hdrBg = '#ffffff'; // explicitly white for headings
 
   const getDepreciatedPrice = (a: Asset) => {
     const price = a.itemPrice || 0;
@@ -461,7 +501,18 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-black text-gray-900 tracking-tighter uppercase leading-none">Delivery Challan</h2>
-            <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: orange }}>Challan No: {booking.challanNumber}</p>
+            <div className="text-[9px] font-black uppercase tracking-widest flex items-center justify-end gap-1 mt-1" style={{ color: orange }}>
+              <span>Challan No:</span>
+              {isEditMode ? (
+                <input 
+                  type="text" 
+                  className="bg-white border text-gray-900 border-slate-200 rounded px-1 w-24 text-right print:hidden"
+                  value={challanNoOverride || ''}
+                  onChange={e => setChallanNoOverride(e.target.value)}
+                />
+              ) : ''}
+              <span className={isEditMode ? 'hidden print:inline-block' : ''}>{challanNoOverride || booking.challanNumber}</span>
+            </div>
             <div className="mt-0.5 text-right">
               <p className="text-[9px] font-black text-gray-900 uppercase tracking-widest">
                 <span className="text-gray-900 mr-1">Date:</span>
@@ -522,15 +573,15 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       {/* Dynamic Asset Table */}
       <table className="w-full mb-2 border-collapse">
         <thead>
-          <tr className="challan-header-target" style={{ backgroundColor: hdrBg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
+          <tr className="challan-header-target border-y border-gray-900" style={{ backgroundColor: hdrBg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
             {visibleColumns.map(colKey => {
               const col = ALL_COLUMNS.find(c => c.key === colKey);
               if (!col) return null;
               return (
                 <th 
                   key={colKey} 
-                  className={`py-1 px-2 text-left text-[7px] font-black text-white uppercase tracking-[0.2em] ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
-                  style={{ color: 'white', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}
+                  className={`py-1 px-2 text-left text-[7px] font-black text-gray-900 uppercase tracking-[0.2em] ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
+                  style={{ color: '#111111', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}
                 >
                   {col.label}
                 </th>
