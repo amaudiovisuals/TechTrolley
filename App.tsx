@@ -3862,9 +3862,29 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="px-5 py-2 bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-200">
-                    Ongoing
-                  </div>
+                  {(() => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const start = new Date(conferenceFormData.start_date);
+                    const end = new Date(conferenceFormData.end_date);
+                    
+                    let statusLabel = 'Ongoing';
+                    let statusClass = 'bg-emerald-100 text-emerald-600 border-emerald-200';
+                    
+                    if (today < start) {
+                      statusLabel = 'Upcoming';
+                      statusClass = 'bg-blue-100 text-blue-600 border-blue-200';
+                    } else if (today > end) {
+                      statusLabel = 'Ended';
+                      statusClass = 'bg-slate-200 text-slate-500 border-slate-300';
+                    }
+                    
+                    return (
+                      <div className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest border ${statusClass}`}>
+                        {statusLabel}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
