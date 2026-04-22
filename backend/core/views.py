@@ -367,6 +367,7 @@ def bulk_upload_assets(request):
         bc_type_col    = col(['barcode type'], 'Barcode Type')
         barcode_col    = col(['barcode'], 'Barcode')
         qr_code_col    = col(['qr code'], 'QR Code')
+        qty_col        = col(['quantity', 'qty'], 'Quantity')
 
         # ── Category Mapping Logic ──────────────────────────────────────────
         # Standardize incoming values to the new 6-7 categories
@@ -456,6 +457,7 @@ def bulk_upload_assets(request):
                     'available_till':         parse_date(row.get(avail_till_col)),
                     'status':                 'Available',
                     'condition':              'Good',
+                    'quantity':               int(row.get(qty_col, 1)) if not math.isnan(float(row.get(qty_col, 1))) else 1,
                 }
 
                 # Smart Matching: Try Serial Number, then QR Code, then Barcode
@@ -581,7 +583,7 @@ def download_asset_template(request):
     # Simply ignore tokens/auth for a generic template download
     headers = [
         'SKU', 'Alias Name', 'MAC Address', 'IMEI Number 1', 'IMEI Number 2', 
-        'Serial Number', 'Description', 'Is Barcode added', 'Type', 'Purchased Date', 
+        'Serial Number', 'Description', 'Is Barcode added', 'Type', 'Quantity', 'Purchased Date', 
         'Item Price', 'Depreciation Percentage', 'Available from', 'Available till', 
         'Barcode Type', 'Barcode', 'QR Code'
     ]
@@ -589,7 +591,7 @@ def download_asset_template(request):
     data = [
         [
             'SKU-EXAMPLE', 'Demo Asset', '00:1A:2B:3C:4D:5E', '123456789012345', '987654321098765', 
-            'SN-EXAMPLE-1', 'Example description for upload', 'Yes', 'IT & Networking', '2024-01-15', 
+            'SN-EXAMPLE-1', 'Example description for upload', 'Yes', 'IT & Networking', 10, '2024-01-15', 
             75000, '10%', '2024-01-15', '2026-01-15', 'Code128', '1234567890', 'http://example.com/asset/1'
         ]
     ]
@@ -618,7 +620,6 @@ def export_inventory(request):
     data = []
     
     for a in assets:
-        # 1. Base template columns (17 Columns)
         row = {
             'SKU': a.sku or "",
             'Alias Name': a.alias_name or "",
@@ -629,6 +630,8 @@ def export_inventory(request):
             'Description': a.description or "",
             'Is Barcode added': 'Yes' if a.is_barcode_added else 'No',
             'Type': a.type or "",
+            'Status': a.status or "Available",
+            'Quantity': 1, # When exploding, each row represents 1 physical unit
             'Purchased Date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
             'Item Price': float(a.item_price) if a.item_price else 0,
             'Depreciation Percentage': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
@@ -638,8 +641,11 @@ def export_inventory(request):
             'Barcode': a.barcode or "",
             'QR Code': a.qr_code or a.sku or ""
         }
-            
-        data.append(row)
+        
+        # Explode row based on quantity so that each physical unit has its own row in the Excel
+        qty = int(a.quantity or 1)
+        for _ in range(qty):
+            data.append(row)
 
     df = pd.DataFrame(data)
     

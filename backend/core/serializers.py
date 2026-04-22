@@ -1,5 +1,12 @@
+"""
+Serializers for the TechTrolley core application.
+Handles data transformation for Assets, Employees, Conferences, Users, and Company Settings.
+"""
+from django.contrib.auth.models import User
+from django.db import OperationalError
 from rest_framework import serializers
-from .models import Asset, Employee, Conference
+
+from .models import Asset, Employee, Conference, CompanySettings
 
 class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -58,7 +65,6 @@ class ConferenceSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         # Professional Database Shield: If the 'requirements' table is missing from Postgres,
         # we dynamically remove the field to prevent the JOIN crash.
-        from django.db import OperationalError
         try:
             return super().to_representation(instance)
         except OperationalError as e:
@@ -79,6 +85,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         assets_data = validated_data.pop('assets', [])
         requirements_data = validated_data.pop('requirements', [])
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
+        challan_data = validated_data.pop('challan_assets', [])
         employees_data = validated_data.pop('assigned_employees', [])
         
         pdf_doc = validated_data.get('pdf_document')
@@ -88,10 +95,11 @@ class ConferenceSerializer(serializers.ModelSerializer):
         
         if assets_data: conference.assets.set(assets_data)
         if crosscheck_data: conference.crosscheck_assets.set(crosscheck_data)
+        if challan_data: conference.challan_assets.set(challan_data)
         if requirements_data:
             try:
                 conference.requirements.set(requirements_data)
-            except:
+            except Exception:
                 pass 
         if employees_data: conference.assigned_employees.set(employees_data)
             
@@ -101,6 +109,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         assets_data = validated_data.pop('assets', None)
         requirements_data = validated_data.pop('requirements', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
+        challan_data = validated_data.pop('challan_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
         
         pdf_doc = validated_data.get('pdf_document')
@@ -112,16 +121,16 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
         if assets_data is not None: instance.assets.set(assets_data)
         if crosscheck_data is not None: instance.crosscheck_assets.set(crosscheck_data)
+        if challan_data is not None: instance.challan_assets.set(challan_data)
         if requirements_data is not None:
             try:
                 instance.requirements.set(requirements_data)
-            except:
+            except Exception:
                 pass 
         if employees_data is not None: instance.assigned_employees.set(employees_data)
 
         return instance
 
-from django.contrib.auth.models import User
 
 class UserSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='profile.role', read_only=True)
@@ -129,7 +138,6 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'date_joined', 'is_staff', 'role']
 
-from .models import CompanySettings
 
 class CompanySettingsSerializer(serializers.ModelSerializer):
     class Meta:

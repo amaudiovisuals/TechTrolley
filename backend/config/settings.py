@@ -140,7 +140,7 @@ STATIC_ROOT = BASE_DIR / 'static'
 # CORS and CSRF Settings
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ORIGIN_ALLOW_ALL = True
-CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'https://techtrolley.amaudiovisuals.com']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000', 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://192.168.29.102:3000', 'https://techtrolley.amaudiovisuals.com']
 CORS_ALLOW_ALL_ORIGINS = True
 
 # Security Relaxations for Local Dev
@@ -162,7 +162,7 @@ REST_FRAMEWORK = {
 # Media files (Uploads)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-ALLOWED_HOSTS = ['.elasticbeanstalk.com', 'localhost', '127.0.0.1', '40.192.34.67', 'techtrolley.amaudiovisuals.com']
+ALLOWED_HOSTS = ['*']
 DEBUG = os.getenv('DJANGO_ENV') != 'production'
 # --- SECURITY HARDENING ---
 

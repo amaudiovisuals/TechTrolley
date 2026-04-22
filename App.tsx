@@ -663,6 +663,7 @@ const App: React.FC = () => {
             assets: (c.assets || []).map((id: any) => id.toString()),
             requirements: (c.requirements || []).map((id: any) => id.toString()),
             crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
+            challanAssets: (c.challan_assets || []).map((id: any) => id.toString()),
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
             pdf_document: c.pdf_document
           }));
@@ -768,17 +769,21 @@ const App: React.FC = () => {
         const currentAssets = (selectedBookingForChallan.assets || []).map(String);
         const updatedAssets = Array.from(new Set([...currentAssets, String(newAsset.id)]));
         
+        const currentChallanAssets = (selectedBookingForChallan.challanAssets || []).map(String);
+        const updatedChallanAssets = Array.from(new Set([...currentChallanAssets, String(newAsset.id)]));
+        
         const confRes = await apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/`, {
           method: 'PATCH',
           body: JSON.stringify({
-            assets: updatedAssets.map(id => parseInt(id, 10))
+            assets: updatedAssets.map(id => parseInt(id, 10)),
+            challan_assets: updatedChallanAssets.map(id => parseInt(id, 10))
           })
         });
 
         if (confRes.ok) {
           showScanToast(`✅ Asset Assigned to Conference`, 'success');
           // Update local state to reflect change in ChallanView
-          setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets } : null);
+          setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets, challanAssets: updatedChallanAssets } : null);
           await fetchAssets();
           await fetchConferences();
         }
@@ -1446,15 +1451,15 @@ const App: React.FC = () => {
   };
 
   const handleScan = (decodedText: string, isAddingVal: boolean | null = null) => {
-    setShowScanner(false);
+    // setShowScanner(false); // REMOVED: Allow continuous scanning
     const scanned = (decodedText || '').trim();
     if (!scanned) return;
 
-    // 0. DEDUPLICATION (Safety for hardware scanners that send Enter immediately after typing)
+    // 0. DEDUPLICATION (Safety for hardware scanners and continuous camera scanning)
     const now = Date.now();
     const upperScanned = scanned.toUpperCase();
-    if (upperScanned === lastScannedCode.current.toUpperCase() && (now - lastScannedTime.current) < 800) {
-      console.log('Skipping duplicate hardware scan:', scanned);
+    if (upperScanned === lastScannedCode.current.toUpperCase() && (now - lastScannedTime.current) < 2000) {
+      console.log('Skipping duplicate scan within 2s window:', scanned);
       return;
     }
     lastScannedCode.current = upperScanned;
@@ -1558,7 +1563,10 @@ const App: React.FC = () => {
         return;
       }
 
-      if (assetTab === 'assigned') {
+      if (assetTab === 'packup') {
+        // In Packup mode, the scanner should default to returning items
+        triggerAssetConferenceAction(asset, 'remove');
+      } else if (assetTab === 'assigned') {
         const scanAction = (isAddingVal === true || user?.role === 'technician' || user?.role === 'godown_incharge') ? 'add' : 'remove';
         triggerAssetConferenceAction(asset, scanAction);
       } else if (assetTab === 'crosscheck') {
@@ -3173,7 +3181,12 @@ const App: React.FC = () => {
   const handlePrintChallan = (conf: Booking) => {
     // Store locally to persist exact current state across the new tab boundary
     localStorage.setItem('print_conf_data', JSON.stringify(conf));
-    const relevantAssets = assets.filter(a => (conf.assets || []).map(String).includes(String(a.id)));
+    const relevantAssets = assets.filter(a => {
+      const historicalList = conf.challanAssets && conf.challanAssets.length > 0 
+                             ? conf.challanAssets 
+                             : (conf.assets || []);
+      return historicalList.map(String).includes(String(a.id));
+    });
     localStorage.setItem('print_assets_data', JSON.stringify(relevantAssets));
 
     // Open in new tab
@@ -3220,7 +3233,11 @@ const App: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-800/20">
                 {sortedChallans.map((conf) => {
-                  const hasAssets = conf.assets && conf.assets.length > 0;
+                  const historicalCount = (conf.challanAssets && conf.challanAssets.length > 0) 
+                    ? conf.challanAssets.length 
+                    : (conf.assets ? conf.assets.length : 0);
+                  const hasAssets = historicalCount > 0;
+                  
                   return (
                     <tr key={conf.id} className="hover:bg-slate-800/10 transition">
                       <td className="px-10 py-6">
@@ -3235,7 +3252,7 @@ const App: React.FC = () => {
                       </td>
                       <td className="px-10 py-6">
                         <p className={`text-[10px] font-black uppercase ${hasAssets ? 'text-emerald-400' : 'text-slate-600'}`}>
-                          {conf.assets ? conf.assets.length : 0} Items
+                          {historicalCount} Items
                         </p>
                       </td>
                       <td className="px-10 py-6 text-center">
@@ -3478,20 +3495,30 @@ const App: React.FC = () => {
           companySettings={companySettings}
         />
         <style>{`
-          @media print {
-            @page { size: A4 portrait; margin: 0; }
-            html, body { 
-              margin: 0; 
-              padding: 0; 
-              width: 210mm; 
-              height: 297mm;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
+            @media print {
+              @page { size: A4 portrait; margin: 0; }
+              html, body { 
+                margin: 0; 
+                padding: 0; 
+                width: 210mm; 
+                height: 297mm;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body { 
+                background: white !important; 
+              }
+              table { 
+                page-break-inside: auto;
+              }
+              thead { 
+                display: table-header-group !important; 
+              }
+              tr { 
+                page-break-inside: avoid; 
+                page-break-after: auto; 
+              }
             }
-            body { 
-              background: white !important; 
-            }
-          }
         `}</style>
       </div>
     );
@@ -4660,10 +4687,16 @@ const App: React.FC = () => {
                                             const newAssets = [...(conferenceFormData.assets || []), ...(conferenceFormData.staged_assets || [])];
                                             const newStaged = [];
                                             
+                                            const newChallanAssets = Array.from(new Set([
+                                              ...(conferenceFormData.challanAssets || []), 
+                                              ...newAssets
+                                            ]));
+                                            
                                             // Update local state
                                             setConferenceFormData((prev: any) => ({
                                               ...prev,
                                               assets: newAssets,
+                                              challanAssets: newChallanAssets,
                                               staged_assets: newStaged
                                             }));
 
@@ -4673,6 +4706,7 @@ const App: React.FC = () => {
                                                 method: 'POST',
                                                 body: JSON.stringify({
                                                   assets: newAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),
+                                                  challan_assets: newChallanAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),
                                                   requirements: (conferenceFormData.requirements || []).map(id => parseInt(String(id), 10)).filter(id => !isNaN(id))
                                                 })
                                               });
@@ -4972,7 +5006,12 @@ const App: React.FC = () => {
                   <ChallanView
                     booking={selectedBookingForChallan}
                     client={MOCK_CLIENTS[0]}
-                    assets={assets.filter(a => (selectedBookingForChallan.assets || []).map(String).includes(a.id.toString()))}
+                    assets={assets.filter(a => {
+                      const historicalList = selectedBookingForChallan.challanAssets && selectedBookingForChallan.challanAssets.length > 0 
+                                             ? selectedBookingForChallan.challanAssets 
+                                             : (selectedBookingForChallan.assets || []);
+                      return historicalList.map(String).includes(a.id.toString());
+                    })}
                     companySettings={companySettings}
                     onUpdateAsset={handleChallanAssetUpdate}
                     onAddAdhocItem={handleAddAdhocChallanItem}
@@ -4982,16 +5021,19 @@ const App: React.FC = () => {
                     onRemoveAssets={async (assetIds) => {
                       if (!selectedBookingForChallan) return;
                       const currentAssets = (selectedBookingForChallan.assets || []).map(String);
+                      const currentChallanAssets = (selectedBookingForChallan.challanAssets || []).map(String);
                       const updatedAssets = currentAssets.filter(id => !assetIds.includes(String(id)));
+                      const updatedChallanAssets = currentChallanAssets.filter(id => !assetIds.includes(String(id)));
                       
                       const confRes = await apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/`, {
                         method: 'PATCH',
                         body: JSON.stringify({
-                          assets: updatedAssets.map(id => parseInt(id, 10))
+                          assets: updatedAssets.map(id => parseInt(id, 10)),
+                          challan_assets: updatedChallanAssets.map(id => parseInt(id, 10))
                         })
                       });
                       if (confRes.ok) {
-                        setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets } : null);
+                        setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets, challanAssets: updatedChallanAssets } : null);
                         await fetchConferences();
                       }
                     }}

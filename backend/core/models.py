@@ -140,6 +140,7 @@ class Conference(models.Model):
     assets = models.ManyToManyField(Asset, blank=True, related_name='assigned_conferences')
     requirements = models.ManyToManyField(Asset, blank=True, related_name='requirement_conferences')
     crosscheck_assets = models.ManyToManyField(Asset, blank=True, related_name='crosscheck_conferences')
+    challan_assets = models.ManyToManyField(Asset, blank=True, related_name='challan_conferences')
     assigned_employees = models.ManyToManyField(Employee, blank=True, related_name='assigned_conferences')
     pdf_document = models.FileField(upload_to='conference_pdfs/', null=True, blank=True)
     approximate_value = models.DecimalField(max_digits=20, decimal_places=2, default=0, null=True, blank=True)

@@ -483,7 +483,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   };
 
   return (
-    <div className="p-6 bg-white max-w-[210mm] mx-auto shadow-sm border border-gray-200 rounded-md my-4 font-sans print:shadow-none print:m-0 print:p-[10mm] print:w-[210mm] print:min-h-[297mm] print:box-border print:border-none print:rounded-none relative flex flex-col justify-between">
+    <div className="p-6 bg-white max-w-[210mm] mx-auto shadow-sm border border-gray-200 rounded-md my-4 font-sans print:shadow-none print:m-0 print:p-[10mm] print:w-[210mm] print:min-h-[297mm] print:box-border print:border-none print:rounded-none relative flex flex-col justify-between print:block">
       {/* Header, Consignee sections remain unchanged (already premium) */}
       <div className="flex justify-between items-start pb-2 mb-2" style={{ borderBottom: `2px solid ${accent}` }}>
         <div>
@@ -538,8 +538,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
 
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div>
-          <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Consignee Information</h4>
-          <p className="font-black text-gray-900 text-[10px] leading-tight uppercase tracking-tighter">{booking.associationName}</p>
+          <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Service Receiver</h4>
           <div className="mt-0.5 space-y-0.5">
             <p className="text-[9px] text-gray-900 font-bold flex items-center gap-2">
               <i className="fa-solid fa-user-doctor text-[8px]" style={{ color: orange }}></i>
@@ -555,10 +554,10 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </div>
         <div className="text-right flex flex-col justify-between">
           <div>
-            <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Event Context</h4>
+            <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Event Venue</h4>
             <p className="font-black text-gray-900 leading-tight text-[10px] tracking-tighter uppercase">{booking.conferenceName}</p>
             <div className="mt-1 p-1.5 rounded-lg text-right" style={{ backgroundColor: venueBg, border: `1px dashed ${venueBrd}` }}>
-              <h5 className="text-[7px] font-black uppercase mb-0.5 tracking-[0.2em]" style={{ color: venueHd }}>Deployment Venue</h5>
+              <h5 className="text-[7px] font-black uppercase mb-0.5 tracking-[0.2em]" style={{ color: venueHd }}>Place of Supply</h5>
               <p className="text-[9px] font-black leading-tight uppercase tracking-tighter" style={{ color: venueTxt }}>
                 {booking.transportAddress || booking.venue}
               </p>

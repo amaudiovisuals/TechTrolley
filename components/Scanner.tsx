@@ -10,6 +10,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [isSuccessFlash, setIsSuccessFlash] = useState(false);
+  const lastScanned = useRef<string>("");
+  const lastScannedTime = useRef<number>(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -19,28 +22,56 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
       try {
         const hasCamera = await Html5Qrcode.getCameras();
         if (!hasCamera || hasCamera.length === 0) {
-          throw new Error("No camera found");
+          throw new Error("No camera camera found");
         }
 
         if (!isMounted) return;
+
+        // Ensure cleanup of any old instance before starting
+        if (scannerRef.current) {
+          try {
+            await scannerRef.current.stop();
+            scannerRef.current.clear();
+          } catch (e) {
+            console.warn("Cleanup error during restart:", e);
+          }
+        }
 
         scannerRef.current = new Html5Qrcode(scannerId);
 
         await scannerRef.current.start(
           { facingMode: "environment" },
           {
-            fps: 20,
+            fps: 25,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
               const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-              const qrboxSize = Math.floor(minEdgeSize * 0.7);
+              const qrboxSize = Math.floor(minEdgeSize * 0.75);
               return { width: qrboxSize, height: qrboxSize };
             }
           },
           (decodedText) => {
-            if (isMounted) onScan(decodedText.trim());
+            const code = decodedText.trim();
+            const now = Date.now();
+
+            // Local debouncing to avoid flooding the parent during continuous mode
+            if (code === lastScanned.current && (now - lastScannedTime.current) < 2000) {
+              return;
+            }
+
+            lastScanned.current = code;
+            lastScannedTime.current = now;
+
+            if (isMounted) {
+              // Trigger Visual Feedback
+              setIsSuccessFlash(true);
+              setTimeout(() => setIsSuccessFlash(false), 400);
+              
+              // Pass to parent
+              onScan(code);
+            }
           },
           () => {
-            // Ignore scan errors (usually just means no code found yet)
+            // Ignore scan errors
           }
         );
 
@@ -49,7 +80,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
       } catch (err: any) {
         console.error("Camera error:", err);
         if (isMounted) {
-          setCameraError(err?.message || "Camera access denied. Please enable camera permissions in your settings.");
+          setCameraError(err?.message || "Camera access denied. Please enable camera permissions.");
         }
       }
     };
@@ -59,9 +90,20 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
     return () => {
       isMounted = false;
       if (scannerRef.current) {
-        scannerRef.current.stop().then(() => {
-          scannerRef.current?.clear();
-        }).catch(console.error);
+        // Robust cleanup to prevent "hanging"
+        const currentRef = scannerRef.current;
+        currentRef.stop().then(() => {
+          try {
+            currentRef.clear();
+          } catch (e) {
+            console.error("Clear error on unmount:", e);
+          }
+        }).catch(err => {
+          console.warn("Stop error on unmount:", err);
+          // If stopping fails, we try to clear anyway
+          try { currentRef.clear(); } catch(e) {}
+        });
+        scannerRef.current = null;
       }
     };
   }, [onScan]);
@@ -73,15 +115,15 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-6 left-6 z-50 w-12 h-12 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all border border-white/10 shadow-xl"
+          className="absolute top-6 left-6 z-[110] w-12 h-12 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all border border-white/10 shadow-xl"
         >
           <i className="fa-solid fa-xmark text-xl" />
         </button>
 
         {/* Minimalist UI Header */}
-        <div className="absolute top-6 right-6 z-50 text-right pointer-events-none">
+        <div className="absolute top-6 right-6 z-[110] text-right pointer-events-none">
           <p className="text-[10px] font-black text-white/60 uppercase tracking-[0.3em]">Scanner Active</p>
-          <p className="text-[8px] font-bold text-sky-400 uppercase tracking-widest mt-0.5 animate-pulse">Focus QR or Barcode</p>
+          <p className="text-[8px] font-bold text-sky-400 uppercase tracking-widest mt-0.5 animate-pulse">Continuous Workflow</p>
         </div>
 
         {cameraError ? (
@@ -97,19 +139,25 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
 
             {/* Visual Scan Area (Stylistic overlay) */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-40">
-              <div className="w-[200px] h-[200px] sm:w-[250px] sm:h-[250px] border-2 border-white/20 rounded-[2.5rem] relative">
-                <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-sky-500 rounded-tl-[2rem]" />
-                <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-sky-500 rounded-tr-[2rem]" />
-                <div className="absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 border-sky-500 rounded-bl-[2rem]" />
-                <div className="absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 border-sky-500 rounded-br-[2rem]" />
-                <div className="absolute inset-0 bg-sky-500/10 animate-pulse rounded-[2rem]" />
+              <div className={`w-[220px] h-[220px] sm:w-[260px] sm:h-[260px] border-2 rounded-[2.5rem] relative transition-all duration-300 ${isSuccessFlash ? 'border-emerald-500 scale-110' : 'border-white/20'}`}>
+                <div className={`absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 rounded-tl-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
+                <div className={`absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 rounded-tr-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
+                <div className={`absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 rounded-bl-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
+                <div className={`absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 rounded-br-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
+                <div className={`absolute inset-0 rounded-[2rem] transition-all duration-300 ${isSuccessFlash ? 'bg-emerald-500/30' : 'bg-sky-500/10'}`} />
+                
+                {isSuccessFlash && (
+                  <div className="absolute inset-0 flex items-center justify-center animate-out zoom-out fade-out duration-500">
+                    <i className="fa-solid fa-circle-check text-4xl text-emerald-500 shadow-xl" />
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
 
         {/* Footer info - Minimalist */}
-        <div className="absolute bottom-8 sm:bottom-10 left-0 right-0 text-center pointer-events-none z-50">
+        <div className="absolute bottom-8 sm:bottom-10 left-0 right-0 text-center pointer-events-none z-[110]">
           <div className="inline-flex items-center gap-2 bg-black/50 backdrop-blur px-4 py-2 rounded-full border border-white/10">
             <div className={`w-2 h-2 rounded-full ${isReady ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
             <p className="text-[9px] font-black text-white/60 uppercase tracking-[0.4em]">

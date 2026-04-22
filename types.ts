@@ -156,6 +156,7 @@ export interface Booking {
   endDate: string;
   assets: string[];
   crosscheckAssets?: string[];
+  challanAssets?: string[];
   status: 'Pending' | 'Active' | 'Completed' | 'Cancelled';
   operatorId: string;
   challanNumber: string;
