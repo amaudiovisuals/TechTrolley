@@ -380,7 +380,7 @@ def bulk_upload_assets(request):
             'peripherals': 'IT & Networking', 'ups & power': 'UPS & Power', 'printers': 'Printers',
             'monitors': 'Monitors', 'tvs': 'TVs', 'projectors': 'Projectors',
             'video switchers': 'Video Switchers', 'capture cards': 'Capture Cards', 'cameras': 'Cameras',
-            'splitters & converters': 'Splitters & Converters', 'consumables': 'Consumables',
+            'splitters & converters': 'Splitters & Converters', 'consumables': 'Consumables', 'cable': 'Cable',
             'lighting & led': 'Lighting & LED', 'lighting & effects': 'Lighting & LED'
         }
 

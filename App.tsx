@@ -498,7 +498,8 @@ const App: React.FC = () => {
       case UICategory.AV: return AssetCategory.SWITCHERS;
       case UICategory.SOUND: return AssetCategory.SPEAKERS;
       case UICategory.DISPLAY: return AssetCategory.MONITORS;
-      case UICategory.CABLES: return AssetCategory.CONSUMABLES;
+      case UICategory.CABLE: return AssetCategory.CABLE;
+      case UICategory.CONSUMABLES: return AssetCategory.CONSUMABLES;
       case UICategory.LIGHTING: return AssetCategory.LIGHTING;
       default: return AssetCategory.OTHER;
     }

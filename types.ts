@@ -37,6 +37,7 @@ export enum AssetCategory {
   POWER = 'UPS & Power',
   PRINTERS = 'Printers',
   CONSUMABLES = 'Consumables',
+  CABLE = 'Cable',
   OTHER = 'Other'
 }
 
@@ -45,7 +46,8 @@ export enum UICategory {
   AV = 'AV Equipment',
   SOUND = 'Sound System',
   DISPLAY = 'Display System',
-  CABLES = 'Cable and consumables',
+  CABLE = 'Cable',
+  CONSUMABLES = 'Consumables',
   LIGHTING = 'Lighting & Effects',
   OTHER = 'Other'
 }
@@ -68,15 +70,17 @@ export const CATEGORY_MAP: Record<string, UICategory> = {
   'Video Switchers': UICategory.AV,
   'Capture Cards': UICategory.AV,
   'Cameras': UICategory.AV,
-  'Splitters & Converters': UICategory.CABLES,
-  'Consumables': UICategory.CABLES,
+  'Splitters & Converters': UICategory.CABLE,
+  'Consumables': UICategory.CONSUMABLES,
+  'Cable': UICategory.CABLE,
   'Lighting & LED': UICategory.LIGHTING,
   
   // Also map UI Categories to themselves (if not already listed above)
   'Sound System': UICategory.SOUND,
   'Display System': UICategory.DISPLAY,
   'AV Equipment': UICategory.AV,
-  'Cable and consumables': UICategory.CABLES,
+  'Cable': UICategory.CABLE,
+  'Consumables': UICategory.CONSUMABLES,
   'Lighting & Effects': UICategory.LIGHTING,
   'Other': UICategory.OTHER
 };

@@ -42,6 +42,7 @@ class Asset(models.Model):
         ('UPS & Power', 'UPS & Power'),
         ('Printers', 'Printers'),
         ('Consumables', 'Consumables'),
+        ('Cable', 'Cable'),
         ('Other', 'Other'),
     ]
 
