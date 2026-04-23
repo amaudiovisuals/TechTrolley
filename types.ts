@@ -79,8 +79,6 @@ export const CATEGORY_MAP: Record<string, UICategory> = {
   'Sound System': UICategory.SOUND,
   'Display System': UICategory.DISPLAY,
   'AV Equipment': UICategory.AV,
-  'Cable': UICategory.CABLE,
-  'Consumables': UICategory.CONSUMABLES,
   'Lighting & Effects': UICategory.LIGHTING,
   'Other': UICategory.OTHER
 };

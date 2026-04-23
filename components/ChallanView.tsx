@@ -11,7 +11,6 @@ interface ChallanViewProps {
   onAddAdhocItem?: (item: Partial<Asset>) => Promise<void>;
   onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
   onRemoveAssets?: (assetIds: string[]) => Promise<void>;
-  onRemoveAssets?: (assetIds: string[]) => Promise<void>;
   showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
   onUpdateChallanNumber?: (conferenceId: string, challanNumber: string) => Promise<void>;
 }
