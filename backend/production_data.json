@@ -4,7 +4,7 @@
   "pk": 1,
   "fields": {
     "password": "pbkdf2_sha256$1200000$bOBmljQrcuIoRVl2VLBgzn$GN0sh3RmEyOS7x5mhN9xZXdZqInnhER4GCoX0yb+Kh8=",
-    "last_login": "2026-04-08T06:20:19.831Z",
+    "last_login": "2026-04-21T05:23:32.210Z",
     "is_superuser": true,
     "username": "nihal@amaudiovisuals.com",
     "first_name": "Nihal",
@@ -129,7 +129,7 @@
   "model": "auth.user",
   "pk": 19,
   "fields": {
-    "password": "pbkdf2_sha256$600000$RfcJtJy5ZridSlbQpOHue9$pZGNfHHs7jW7eVcFrfTQ7s5aUBj0rdmX1xkaFTcXthU=",
+    "password": "pbkdf2_sha256$1200000$ItGXXKrtoOjibwqt4exVKE$eZHpTCAJvpjq+52Gl63eyW09m9Z+E2bycU5YYvg5Gus=",
     "last_login": null,
     "is_superuser": false,
     "username": "steffin@amaudiovisuals.com",
@@ -2552,7 +2552,7 @@
     "barcode_type": "",
     "barcode": "",
     "qr_code": "BOSE_S1_PRO-14",
-    "status": "Available",
+    "status": "In Use",
     "condition": "Good",
     "flag": "",
     "last_maintained": null,
@@ -19976,7 +19976,7 @@
     "barcode_type": "",
     "barcode": "",
     "qr_code": "25mjW1lGjp",
-    "status": "Available",
+    "status": "In Use",
     "condition": "Good",
     "flag": "",
     "last_maintained": null,
@@ -64778,7 +64778,7 @@
   "pk": 7959,
   "fields": {
     "sku": "HDMI_SHORT_CABLE_3MTR-1",
-    "alias_name": "",
+    "alias_name": "HDMI_SHORT_CABLE_3MTR-1",
     "mac_address": "",
     "imei_number_1": "",
     "imei_number_2": "",
@@ -64814,7 +64814,7 @@
   "pk": 7960,
   "fields": {
     "sku": "HDMI_SHORT_CABLE_2MTR-1",
-    "alias_name": "",
+    "alias_name": "HDMI_SHORT_CABLE_2MTR-1",
     "mac_address": "",
     "imei_number_1": "",
     "imei_number_2": "",
@@ -66283,19 +66283,6 @@
 },
 {
   "model": "core.employee",
-  "pk": 16,
-  "fields": {
-    "name": "JISHNU K P",
-    "employee_id": "JISHNU_K_P",
-    "department": "USER",
-    "email": "jishnu_k_p@techtrolley.test",
-    "phone": "0000000000",
-    "role": "technician",
-    "joined_at": "2026-04-02"
-  }
-},
-{
-  "model": "core.employee",
   "pk": 17,
   "fields": {
     "name": "NIHAL",
@@ -66324,10 +66311,15 @@
     "conference_type": "Medical Conference",
     "start_date": "2026-03-01",
     "end_date": "2026-04-06",
-    "pdf_document": "conference_pdfs/Tech_Trolley_Project.pdf.pdf",
-    "assets": [],
+    "pdf_document": "conference_pdfs/Master_Challan_32_ATIPklK.pdf",
+    "approximate_value": "80000.00",
+    "assets": [
+      6230,
+      6714
+    ],
     "requirements": [],
     "crosscheck_assets": [],
+    "challan_assets": [],
     "assigned_employees": [
       7,
       8
@@ -66351,11 +66343,16 @@
     "conference_type": "Medical Conference",
     "start_date": null,
     "end_date": null,
-    "pdf_document": "",
+    "pdf_document": "conference_pdfs/Master_Challan_38_7sVBihf.pdf",
+    "approximate_value": "200.00",
     "assets": [],
     "requirements": [],
     "crosscheck_assets": [],
-    "assigned_employees": []
+    "challan_assets": [],
+    "assigned_employees": [
+      8,
+      17
+    ]
   }
 },
 {
