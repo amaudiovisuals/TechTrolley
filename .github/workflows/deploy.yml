@@ -71,6 +71,7 @@ jobs:
             pip install -r requirements.txt -q
 
             # 4. Apply schema migrations (Synchronous and Forceful)
+            export DJANGO_ENV=production
             python manage.py migrate core --noinput
             python manage.py migrate --noinput
 
