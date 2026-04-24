@@ -67,7 +67,7 @@ const fmtDate = (d?: string): string => {
   return d;
 };
 
-export const ChallanView: React.FC<ChallanViewProps> = ({ 
+export const ChallanView: React.FC<ChallanViewProps> = ({
   booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, subrentalTickets
 }) => {
   const copies = [
@@ -80,24 +80,24 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     try {
       const stored = localStorage.getItem('challan_visible_columns');
       if (stored) return JSON.parse(stored);
-    } catch(e) {}
+    } catch (e) { }
     return ['Seq', 'Asset', 'Identifiers', 'Qty', 'Total'];
   });
-  
+
   const [isEditMode, setIsEditMode] = React.useState(false);
   const [localAssets, setLocalAssets] = React.useState<Asset[]>(assets);
   const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(() => {
     try {
       const stored = localStorage.getItem(`cache_total_val_${booking.id}`);
       if (stored) return parseFloat(stored);
-    } catch(e) {}
+    } catch (e) { }
     return booking.approximate_value || null;
   });
   const [challanNoOverride, setChallanNoOverride] = React.useState<string | null>(() => {
     try {
       const stored = localStorage.getItem(`cache_challan_no_${booking.id}`);
       if (stored) return stored;
-    } catch(e) {}
+    } catch (e) { }
     return booking.challanNumber || null;
   });
 
@@ -110,14 +110,14 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     // This prevents losing ad-hoc items or pending edits when props update
     if (!isEditMode) {
       setLocalAssets(assets.map(a => ({
-          ...a,
-          aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
+        ...a,
+        aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
       })));
     }
   }, [assets, isEditMode]);
 
   const toggleColumn = (key: ColumnKey) => {
-    setVisibleColumns(prev => 
+    setVisibleColumns(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
@@ -136,7 +136,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       const originalIds = assets.map(a => String(a.id));
       const currentIds = localAssets.map(a => String(a.id));
       const removedIds = originalIds.filter(id => !currentIds.includes(id));
-      
+
       if (removedIds.length > 0 && onRemoveAssets) {
         console.log("Removing assets from conference:", removedIds);
         await onRemoveAssets(removedIds);
@@ -144,7 +144,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       for (const asset of localAssets) {
         const isNew = String(asset.id).startsWith('new-');
-        
+
         if (isNew) {
           if (onAddAdhocItem) {
             console.log("Saving new ad-hoc item:", asset.sku);
@@ -163,9 +163,9 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
           if (onUpdateAsset) {
             const original = assets.find(a => String(a.id) === String(asset.id));
             if (original && (
-              original.aliasName !== asset.aliasName || 
+              original.aliasName !== asset.aliasName ||
               original.sku !== asset.sku ||
-              original.quantity !== asset.quantity || 
+              original.quantity !== asset.quantity ||
               original.itemPrice !== asset.itemPrice ||
               original.serialNumber !== asset.serialNumber
             )) {
@@ -214,7 +214,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     const newItem: Asset = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sku: defaultSku,
-      aliasName: defaultSku, 
+      aliasName: defaultSku,
       serialNumber: '',
       type: 'Other',
       quantity: 1,
@@ -254,9 +254,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
           <div className="flex gap-2">
             <button
               onClick={() => setIsEditMode(!isEditMode)}
-              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
-                isEditMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isEditMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
             >
               <i className={`fa-solid ${isEditMode ? 'fa-check' : 'fa-pen-to-square'} mr-2`}></i>
               {isEditMode ? 'Close Edit Mode' : 'Edit Mode'}
@@ -287,11 +286,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             <button
               key={col.key}
               onClick={() => toggleColumn(col.key)}
-              className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
-                visibleColumns.includes(col.key)
-                  ? 'bg-sky-50 border-sky-200 text-sky-600'
-                  : 'bg-white border-slate-200 text-slate-400 opacity-60'
-              }`}
+              className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${visibleColumns.includes(col.key)
+                ? 'bg-sky-50 border-sky-200 text-sky-600'
+                : 'bg-white border-slate-200 text-slate-400 opacity-60'
+                }`}
             >
               {col.label}
             </button>
@@ -343,8 +341,8 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   subrentalTickets?: any[];
 }
 
-const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ 
-  booking, client, assets, companySettings, copyLabel, bw, 
+const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
+  booking, client, assets, companySettings, copyLabel, bw,
   visibleColumns, isEditMode, onLocalUpdate, onRemoveRow,
   totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride,
   subrentalTickets
@@ -363,11 +361,11 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
     return price * (1 - dep / 100);
   };
 
-  const subrentalTotal = subrentalTickets?.reduce((sum, t) => 
+  const subrentalTotal = subrentalTickets?.reduce((sum, t) =>
     sum + (t.items?.reduce((iSum: number, item: any) => iSum + (Number(item.rental_price) * item.quantity), 0) || 0), 0) || 0;
 
-  const totalValue = totalOverride !== null 
-    ? totalOverride 
+  const totalValue = totalOverride !== null
+    ? totalOverride
     : assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0) + subrentalTotal;
 
   const renderCell = (asset: Asset, col: ColumnKey, index: number) => {
@@ -376,9 +374,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         case 'Asset':
           return (
             <div className="flex flex-col">
-              <input 
-                className="w-full bg-slate-50 border-none p-0 text-[8px] font-black uppercase print:hidden" 
-                value={asset.aliasName ?? ''} 
+              <input
+                className="w-full bg-slate-50 border-none p-0 text-[8px] font-black uppercase print:hidden"
+                value={asset.aliasName ?? ''}
                 onChange={e => onLocalUpdate(asset.id, 'aliasName', e.target.value)}
               />
               <span className="hidden print:block font-black uppercase text-[8px] tracking-tighter">{asset.aliasName || ' '}</span>
@@ -387,9 +385,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         case 'SKU':
           return (
             <div className="flex flex-col">
-              <input 
-                className="w-full bg-slate-50 border-none p-0 text-[8px] font-mono print:hidden" 
-                value={asset.sku} 
+              <input
+                className="w-full bg-slate-50 border-none p-0 text-[8px] font-mono print:hidden"
+                value={asset.sku}
                 onChange={e => onLocalUpdate(asset.id, 'sku', e.target.value)}
               />
               <span className="hidden print:block font-mono">{asset.sku}</span>
@@ -398,10 +396,10 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         case 'Rate':
           return (
             <div className="flex items-center justify-end">
-              <input 
+              <input
                 type="number"
-                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right print:hidden" 
-                value={Math.round(getDepreciatedPrice(asset))} 
+                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right print:hidden"
+                value={Math.round(getDepreciatedPrice(asset))}
                 onChange={e => {
                   const val = parseFloat(e.target.value) || 0;
                   const newRate = parseFloat(val.toFixed(2));
@@ -415,10 +413,10 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         case 'Qty':
           return (
             <div className="flex items-center justify-end">
-              <input 
+              <input
                 type="number"
-                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right font-black print:hidden" 
-                value={asset.quantity} 
+                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right font-black print:hidden"
+                value={asset.quantity}
                 onChange={e => onLocalUpdate(asset.id, 'quantity', parseInt(e.target.value))}
               />
               <span className="hidden print:block font-black">{asset.quantity}</span>
@@ -427,9 +425,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         case 'Identifiers':
           return (
             <div className="flex flex-col">
-              <input 
-                className="w-full bg-slate-50 border-none p-0 text-[8px] font-mono print:hidden" 
-                value={asset.serialNumber} 
+              <input
+                className="w-full bg-slate-50 border-none p-0 text-[8px] font-mono print:hidden"
+                value={asset.serialNumber}
                 onChange={e => onLocalUpdate(asset.id, 'serialNumber', e.target.value)}
               />
               <span className="hidden print:block">{asset.serialNumber}</span>
@@ -438,9 +436,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         case 'Total':
           return (
             <div className="flex items-center justify-end">
-              <input 
+              <input
                 type="number"
-                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right font-black print:hidden" 
+                className="w-full bg-slate-50 border-none p-0 text-[8px] text-right font-black print:hidden"
                 value={Math.round(getDepreciatedPrice(asset) * (asset.quantity || 1))}
                 onChange={e => {
                   const val = parseFloat(e.target.value) || 0;
@@ -454,7 +452,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
           );
         case 'Actions':
           return (
-            <button 
+            <button
               onClick={() => onRemoveRow(asset.id)}
               className="text-red-500 hover:text-red-700 transition-colors p-1"
               title="Delete Row"
@@ -510,8 +508,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <div className="text-[9px] font-black uppercase tracking-widest flex items-center justify-end gap-1 mt-1" style={{ color: orange }}>
               <span>Challan No:</span>
               {isEditMode ? (
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="bg-white border text-gray-900 border-slate-200 rounded px-1 w-24 text-right print:hidden"
                   value={challanNoOverride || ''}
                   onChange={e => setChallanNoOverride(e.target.value)}
@@ -521,7 +519,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             </div>
             <div className="mt-0.5 text-right">
               <p className="text-[9px] font-black text-gray-900 uppercase tracking-widest">
-                <span className="text-gray-900 mr-1">Date:</span>
+                <span className="text-gray-900 mr-1"> CHALLAN Date:</span>
                 {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </p>
             </div>
@@ -583,8 +581,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
               const col = ALL_COLUMNS.find(c => c.key === colKey);
               if (!col) return null;
               return (
-                <th 
-                  key={colKey} 
+                <th
+                  key={colKey}
                   className={`py-1 px-2 text-left text-[7px] font-black text-gray-900 uppercase tracking-[0.2em] ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
                   style={{ color: '#111111', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}
                 >
@@ -601,8 +599,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                 const col = ALL_COLUMNS.find(c => c.key === colKey);
                 if (!col) return null;
                 return (
-                  <td 
-                    key={`${asset.id}-${colKey}`} 
+                  <td
+                    key={`${asset.id}-${colKey}`}
                     className={`py-0.5 px-2 text-gray-900 font-bold ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
                   >
                     {renderCell(asset, colKey, index)}
@@ -632,9 +630,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                       {visibleColumns.map(colKey => {
                         const col = ALL_COLUMNS.find(c => c.key === colKey);
                         if (!col) return null;
-                        
+
                         let content: any = '';
-                        if (colKey === 'Seq') content = `SR-${i+1}`;
+                        if (colKey === 'Seq') content = `SR-${i + 1}`;
                         else if (colKey === 'Asset') {
                           const details = item.asset_details;
                           content = item.asset_name || details?.aliasName || details?.alias_name || details?.name || details?.sku || `Subrental Item ${item.id}`;
@@ -650,8 +648,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                         }
 
                         return (
-                          <td 
-                            key={`${item.id}-${colKey}`} 
+                          <td
+                            key={`${item.id}-${colKey}`}
                             className={`py-0.5 px-2 text-gray-900 font-bold ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
                           >
                             {content}
@@ -679,9 +677,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
           </tr>
           <tr className="bg-gray-50">
             <td colSpan={visibleColumns.length} className="py-0.5 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest">
-              Approximate Value of Goods: 
+              Approximate Value of Goods:
               {isEditMode ? (
-                <input 
+                <input
                   type="number"
                   className="w-24 ml-2 bg-white border border-slate-200 rounded px-1 text-[10px] text-right text-orange-500 font-black focus:outline-none focus:border-orange-500"
                   value={totalValue}
