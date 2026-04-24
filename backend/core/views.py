@@ -46,6 +46,8 @@ def asset_list(request):
         ).select_related('assigned_to', 'parent_asset').prefetch_related(
             'sub_assets',
             'sub_assets__assigned_to',
+            'assigned_conferences',
+            'ticket_items__ticket__conference'
         )
 
         # Exclude temporary items created inside subrental tickets from all inventory views

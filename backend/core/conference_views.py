@@ -10,7 +10,9 @@ from django.shortcuts import get_object_or_404
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def conference_list(request):
     if request.method == 'GET':
-        conferences = Conference.objects.all().order_by('-start_date')
+        conferences = Conference.objects.prefetch_related(
+            'assets', 'crosscheck_assets', 'challan_assets', 'requirements', 'assigned_employees'
+        ).order_by('-start_date')
         serializer = ConferenceSerializer(conferences, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
