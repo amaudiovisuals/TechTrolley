@@ -11,7 +11,10 @@ import {
   DeliveryChallanRecord,
   Employee,
   CompanySettings,
-  AssetFlag
+  AssetFlag,
+  SubrentalCompany,
+  SubrentalTicket,
+  SubrentalTicketItem
 } from './types';
 import QRCode from 'qrcode';
 import * as XLSX from 'xlsx';
@@ -77,7 +80,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { QRLabelModal } from './components/QRLabelModal';
 import jsPDF from 'jspdf';
 
-type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings';
+type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings' | 'Subrentals';
 type AssetView = 'List' | 'Form' | 'Details';
 type EmployeeView = 'List' | 'Form';
 type ConferenceView = 'List' | 'Form' | 'Details';
@@ -118,6 +121,32 @@ const App: React.FC = () => {
   const [assetView, setAssetView] = useState<AssetView>('List');
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [isEditingDashboard, setIsEditingDashboard] = useState(false);
+
+  // Subrental State
+  const [subrentalCompanies, setSubrentalCompanies] = useState<SubrentalCompany[]>([]);
+  const [selectedSubrentalCompany, setSelectedSubrentalCompany] = useState<SubrentalCompany | null>(null);
+  const [isSubrentalFormOpen, setIsSubrentalFormOpen] = useState(false);
+  const [subrentalFormData, setSubrentalFormData] = useState({ name: '', address: '', gst_number: '' });
+  const [editingSubrentalId, setEditingSubrentalId] = useState<string | null>(null);
+  const [subrentalAssets, setSubrentalAssets] = useState<Asset[]>([]);
+  const [subrentalSearchQuery, setSubrentalSearchQuery] = useState('');
+  const [subrentalTickets, setSubrentalTickets] = useState<SubrentalTicket[]>([]);
+  const [showSubrentalInventory, setShowSubrentalInventory] = useState(false);
+  const [isTicketFormOpen, setIsTicketFormOpen] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<SubrentalTicket | null>(null);
+  const [ticketFormData, setTicketFormData] = useState({ conference_id: '', custom_conference_name: '', available_from: '', available_till: '', is_custom: false });
+  const [isAddingTicketItem, setIsAddingTicketItem] = useState(false);
+  const [ticketItemForm, setTicketItemForm] = useState({ name: '', price: 0, depreciation: 0, quantity: 1, rental_price: 0, asset_id: '' });
+  const [confSubrentalTickets, setConfSubrentalTickets] = useState<SubrentalTicket[]>([]);
+  const [ticketItemSearch, setTicketItemSearch] = useState('');
+  const [editingTicketItem, setEditingTicketItem] = useState<any>(null);
+  const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS);
+  const [clients] = useState<Client[]>(MOCK_CLIENTS);
+  const [challans, setChallans] = useState<DeliveryChallanRecord[]>([]);
+  const [showScanner, setShowScanner] = useState(false);
+  const [selectedBookingForChallan, setSelectedBookingForChallan] = useState<Booking | null>(null);
+  const [selectedConferenceDetails, setSelectedConferenceDetails] = useState<Booking | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // PWA Update Logic
   const {
@@ -386,7 +415,8 @@ const App: React.FC = () => {
     qrCode: '',
     flag: AssetFlag.NONE,
     quantity: 1,
-    assigned_to: undefined
+    assigned_to: undefined,
+    generateQR: false
   });
 
   // Employee Form State
@@ -424,6 +454,7 @@ const App: React.FC = () => {
             barcodeType: asset.barcode_type,
             qrCode: asset.qr_code,
             lastMaintained: asset.last_maintained,
+            isTemporary: asset.is_temporary,
             returnDate: asset.return_date,
             flag: asset.flag || AssetFlag.NONE,
             currentVenue: asset.current_venue,
@@ -457,11 +488,205 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch employees:", err));
   };
 
+  const fetchSubrentalCompanies = () => {
+    apiFetch(`${API_BASE}/api/subrental-companies/`)
+      .then(async res => {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setSubrentalCompanies(data);
+        }
+      })
+      .catch(err => console.error("Failed to fetch subrental companies:", err));
+  };
+
+  const fetchSubrentalAssets = (companyId: string) => {
+    apiFetch(`${API_BASE}/api/assets/?subrental_company_id=${companyId}`)
+      .then(async res => {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const mapped = data.map((asset: any) => ({
+            ...asset,
+            id: asset.id.toString(),
+            aliasName: asset.alias_name,
+            serialNumber: asset.serial_number,
+            quantity: parseInt(asset.quantity, 10) || 1,
+            itemPrice: parseFloat(asset.item_price),
+            purchasedDate: asset.purchased_date,
+            flag: asset.flag || AssetFlag.NONE,
+            isTemporary: asset.is_temporary
+          }));
+          setSubrentalAssets(mapped.filter((a: any) => !a.isTemporary));
+        }
+      })
+      .catch(err => console.error("Failed to fetch subrental assets:", err));
+  };
+
+  const mapTicketData = (data: any[]) => data.map((t: any) => ({
+    ...t,
+    items: t.items?.map((i: any) => ({
+      ...i,
+      asset_details: i.asset_details ? {
+        ...i.asset_details,
+        aliasName: i.asset_name || i.asset_details?.alias_name || i.asset_details?.name || i.asset_details?.sku || "New Subrental Item",
+        sku: i.asset_details?.sku || i.asset_name || i.asset_details?.alias_name || i.asset_details?.name
+      } : null
+    }))
+  }));
+
+  const fetchSubrentalTickets = (companyId: string | number) => {
+    apiFetch(`${API_BASE}/api/subrental-tickets/?company_id=${companyId}&_t=${Date.now()}`)
+      .then(async res => {
+        if (res.ok) {
+          const data = await res.json();
+          setSubrentalTickets(mapTicketData(data));
+        }
+      })
+      .catch(err => console.error("Failed to fetch subrental tickets:", err));
+  };
+
+  const fetchConferenceSubrentalTickets = (confId: string | number) => {
+    apiFetch(`${API_BASE}/api/subrental-tickets/?conference_id=${confId}&_t=${Date.now()}`)
+      .then(async res => {
+        if (res.ok) {
+          const data = await res.json();
+          setConfSubrentalTickets(mapTicketData(data));
+        }
+      })
+      .catch(err => console.error("Failed to fetch conference subrental tickets:", err));
+  };
+
   // Fetch data on load
   React.useEffect(() => {
     fetchAssets();
     fetchEmployees();
+    fetchSubrentalCompanies();
   }, []);
+
+  const handleCreateSubrentalTicket = async () => {
+    if (!selectedSubrentalCompany) return;
+    
+    let conferenceId = ticketFormData.conference_id;
+    
+    if (ticketFormData.is_custom) {
+      if (!ticketFormData.custom_conference_name) return;
+      const confRes = await apiFetch(`${API_BASE}/api/conferences/`, {
+        method: 'POST',
+        body: JSON.stringify({ 
+          name: ticketFormData.custom_conference_name,
+          start_date: ticketFormData.available_from || new Date().toISOString().split('T')[0]
+        })
+      });
+      if (confRes.ok) {
+        const confData = await confRes.json();
+        conferenceId = confData.id;
+        fetchConferences();
+      } else {
+        showScanToast("Failed to create custom conference", "error");
+        return;
+      }
+    }
+
+    if (!conferenceId) return;
+    
+    apiFetch(`${API_BASE}/api/subrental-tickets/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        company: selectedSubrentalCompany.id,
+        conference: conferenceId,
+        available_from: ticketFormData.available_from,
+        available_till: ticketFormData.available_till
+      })
+    }).then(async res => {
+      if (res.ok) {
+        setIsTicketFormOpen(false);
+        setTicketFormData({ conference_id: '', custom_conference_name: '', available_from: '', available_till: '', is_custom: false });
+        fetchSubrentalTickets(selectedSubrentalCompany.id);
+        showScanToast("Ticket Created Successfully", "success");
+      }
+    });
+  };
+
+  const handleAddTicketItem = () => {
+    if (!selectedTicket) return;
+    
+    const url = editingTicketItem 
+      ? `${API_BASE}/api/subrental-ticket-items/${editingTicketItem.id}/`
+      : `${API_BASE}/api/subrental-tickets/${selectedTicket.id}/add-item/`;
+    
+    const method = editingTicketItem ? 'PATCH' : 'POST';
+
+    apiFetch(url, {
+      method: method,
+      body: JSON.stringify(ticketItemForm)
+    }).then(async res => {
+      if (res.ok) {
+        setIsAddingTicketItem(false);
+        setEditingTicketItem(null);
+        setTicketItemForm({ name: '', price: 0, depreciation: 0, quantity: 1, rental_price: 0, asset_id: '' });
+        
+        // Refresh selected ticket
+        apiFetch(`${API_BASE}/api/subrental-tickets/${selectedTicket.id}/?_t=${Date.now()}`)
+          .then(async r => {
+            if (r.ok) {
+              const updatedTicketData = await r.json();
+              // Wrap in array for mapper, then take first
+              const mapped = mapTicketData([updatedTicketData])[0];
+              setSelectedTicket(mapped);
+              fetchSubrentalTickets(selectedTicket.company);
+              
+              // Also refresh conference tickets if in a booking view
+              if (selectedBookingForChallan) {
+                fetchConferenceSubrentalTickets(selectedBookingForChallan.id);
+              }
+            }
+          });
+          
+        showScanToast(editingTicketItem ? "Item Updated" : "Item Added to Ticket", "success");
+      }
+    });
+  };
+
+  const handleDeleteTicketItem = (itemId: string | number) => {
+    if (!confirm("Are you sure you want to remove this item from the ticket?")) return;
+    apiFetch(`${API_BASE}/api/subrental-ticket-items/${itemId}/`, { method: 'DELETE' })
+      .then(res => {
+        if (res.ok) {
+          if (selectedTicket) {
+             apiFetch(`${API_BASE}/api/subrental-tickets/${selectedTicket.id}/`)
+               .then(async r => {
+                 if (r.ok) {
+                   const updatedTicket = await r.json();
+                   setSelectedTicket(updatedTicket);
+                   fetchSubrentalTickets(selectedTicket.company);
+                 }
+               });
+          }
+          showScanToast("Item Removed", "success");
+        }
+      });
+  };
+
+  const handleEditTicketItem = (item: any) => {
+    setEditingTicketItem(item);
+    setTicketItemForm({
+      name: item.asset_details?.aliasName || item.asset_details?.alias_name || item.asset_details?.sku || '',
+      price: item.asset_details?.item_price || 0,
+      depreciation: item.asset_details?.depreciation_percentage || 0,
+      quantity: item.quantity,
+      rental_price: item.rental_price,
+      asset_id: item.asset.toString()
+    });
+    setIsAddingTicketItem(true);
+  };
+
+  useEffect(() => {
+    const targetId = selectedBookingForChallan?.id || (isPrintMode ? printConfId : null);
+    if (targetId) {
+      fetchConferenceSubrentalTickets(targetId);
+    } else if (!isPrintMode) {
+      setConfSubrentalTickets([]);
+    }
+  }, [selectedBookingForChallan?.id, isPrintMode, printConfId]);
 
   // Poll every 30 seconds to keep asset statuses in sync
   React.useEffect(() => {
@@ -472,14 +697,6 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS);
-  const [clients] = useState<Client[]>(MOCK_CLIENTS);
-  const [challans, setChallans] = useState<DeliveryChallanRecord[]>([]);
-
-  const [showScanner, setShowScanner] = useState(false);
-  const [selectedBookingForChallan, setSelectedBookingForChallan] = useState<Booking | null>(null);
-  const [selectedConferenceDetails, setSelectedConferenceDetails] = useState<Booking | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Performance optimizations: Debounced Search & Pagination
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -515,6 +732,9 @@ const App: React.FC = () => {
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
     const filtered = assets.filter(asset => {
+      // Don't show ticket-only transient items in main inventory
+      if (asset.isTemporary) return false;
+
       // Grouping Logic: Filter by UI Category
       if (inventoryCategoryFilter !== 'All') {
         const assetUICat = getUICategory(asset.type);
@@ -537,6 +757,13 @@ const App: React.FC = () => {
   }, [assets, searchQuery, inventoryCategoryFilter]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
+    
+    // Use deployment history from backend if available (includes subrentals)
+    if ((viewingAsset as any).deployment_history) {
+      const history = (viewingAsset as any).deployment_history;
+      return { history, timesUsed: history.length };
+    }
+
     const history: { name: string, date: string }[] = [];
     backendConferences.forEach(c => {
       const allAssigned = [...(c.assets || []), ...(c.crosscheckAssets || [])];
@@ -691,14 +918,20 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch conferences", err));
   };
 
-  const handleQuickUpdateAsset = async (asset: Asset, updates: Partial<Asset>) => {
+  const handleQuickUpdateAsset = async (asset: Asset, updates: Partial<Asset>, conferenceId?: string, stage?: string) => {
     try {
       // Optimistic Update
       setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, ...updates } as Asset : a));
 
+      const payload = { ...updates };
+      if (conferenceId) {
+        (payload as any).conference_id = conferenceId;
+        (payload as any).stage = stage || 'Unknown';
+      }
+
       const res = await apiFetch(`${API_BASE}/api/assets/${asset.id}/`, {
         method: 'PATCH',
-        body: JSON.stringify(updates)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         showScanToast(`✅ Asset Updated Successfully`, 'success');
@@ -804,11 +1037,50 @@ const App: React.FC = () => {
       if (res.ok) {
         showScanToast(`✅ Goods Value Updated: ₹${value.toLocaleString()}`, 'success');
         fetchConferences();
-        // Update local state for immediate feedback
         setSelectedBookingForChallan(prev => prev ? { ...prev, approximate_value: value } : null);
       }
     } catch (err) {
       console.error("Failed to update conference value", err);
+    }
+  };
+
+  const handleSaveSubrentalCompany = async () => {
+    try {
+      const method = editingSubrentalId ? 'PATCH' : 'POST';
+      const url = editingSubrentalId 
+        ? `${API_BASE}/api/subrental-companies/${editingSubrentalId}/`
+        : `${API_BASE}/api/subrental-companies/`;
+      
+      const res = await apiFetch(url, {
+        method,
+        body: JSON.stringify(subrentalFormData)
+      });
+      
+      if (res.ok) {
+        setIsSubrentalFormOpen(false);
+        setSubrentalFormData({ name: '', address: '', gst_number: '' });
+        setEditingSubrentalId(null);
+        fetchSubrentalCompanies();
+        showScanToast(`✅ Company ${editingSubrentalId ? 'Updated' : 'Created'} Successfully`, 'success');
+      }
+    } catch (err) {
+      console.error("Failed to save subrental company", err);
+      showScanToast(`❌ Failed to save company`, 'error');
+    }
+  };
+
+  const handleDeleteSubrentalCompany = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this company? All associated inventory will be removed.")) return;
+    try {
+      const res = await apiFetch(`${API_BASE}/api/subrental-companies/${id}/`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchSubrentalCompanies();
+        showScanToast(`✅ Company Deleted`, 'success');
+      }
+    } catch (err) {
+      console.error("Failed to delete company", err);
     }
   };
 
@@ -1604,12 +1876,15 @@ const App: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, companyId?: string) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const formData = new FormData();
     formData.append('file', file);
+    if (companyId) {
+      formData.append('subrental_company_id', companyId);
+    }
 
     apiFetch(`${API_BASE}/api/upload-assets/`, {
       method: 'POST',
@@ -1619,7 +1894,11 @@ const App: React.FC = () => {
         const data = await res.json();
         if (res.ok || data.created !== undefined) {
           setUploadResult({ created: data.created ?? 0, skipped: data.skipped ?? 0, errors: data.errors ?? [] });
-          fetchAssets();
+          if (companyId) {
+            fetchSubrentalAssets(companyId);
+          } else {
+            fetchAssets();
+          }
         } else {
           setUploadResult({ created: 0, skipped: 0, errors: [data.error || 'Upload failed'] });
         }
@@ -1755,13 +2034,14 @@ const App: React.FC = () => {
 
     const isNew = !editingAsset;
     const isConsumable = assetFormData.type === AssetCategory.CONSUMABLES;
+    const isSubrental = !!assetFormData.subrental_company;
 
-    // Auto-generate SKU/Serial for consumables if blank
-    const finalSku = (isConsumable && !assetFormData.sku)
-      ? `CONS-${(assetFormData.aliasName || 'ITEM').toUpperCase().replace(/\s+/g, '-')}-${Date.now().toString().slice(-4)}`
+    // Auto-generate SKU/Serial for consumables or subrentals if blank
+    const finalSku = ( (isConsumable || isSubrental) && !assetFormData.sku)
+      ? `${isSubrental ? 'SR' : 'CONS'}-${(assetFormData.aliasName || 'ITEM').toUpperCase().replace(/\s+/g, '-')}-${Date.now().toString().slice(-4)}`
       : assetFormData.sku;
 
-    const finalSerial = (isConsumable && !assetFormData.serialNumber)
+    const finalSerial = ( (isConsumable || isSubrental) && !assetFormData.serialNumber)
       ? finalSku
       : assetFormData.serialNumber;
 
@@ -1787,7 +2067,8 @@ const App: React.FC = () => {
       qr_code: isConsumable ? GLOBAL_CONSUMABLES_SKU : (assetFormData.qrCode || ''),
       flag: assetFormData.flag || '',
       quantity: assetFormData.quantity || 1,
-      assigned_to: assetFormData.assigned_to
+      assigned_to: assetFormData.assigned_to,
+      subrental_company: assetFormData.subrental_company
     };
 
     const url = editingAsset
@@ -1804,11 +2085,17 @@ const App: React.FC = () => {
         if (res.ok) {
           fetchAssets();
           handleViewChange('Assets', 'List');
-          if (isNew && assetFormData.sku) {
-            setQrTarget({ sku: assetFormData.sku as string, name: assetFormData.aliasName || assetFormData.sku as string });
+          if ( (isNew || assetFormData.generateQR) && finalSku) {
+            setQrTarget({ sku: finalSku as string, name: assetFormData.aliasName || finalSku as string });
           }
           setEditingAsset(null);
-          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', availableTill: '', status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined });
+          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', available_till: '', status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined, subrental_company: undefined, generateQR: false });
+          
+          // If we were in a subrental inventory context, refresh its specific list
+          if (selectedSubrentalCompany) {
+             fetchSubrentalAssets(selectedSubrentalCompany.id);
+             setCurrentPage('Subrentals');
+          }
         } else {
           const errorData = await res.json();
           setFormErrors(errorData);
@@ -1857,6 +2144,7 @@ const App: React.FC = () => {
       imeiNumber2: asset.imeiNumber2,
       serialNumber: asset.serialNumber,
       description: asset.description,
+      subrental_company: asset.subrental_company,
       isBarcodeAdded: asset.isBarcodeAdded,
       type: asset.type,
       purchasedDate: asset.purchasedDate,
@@ -3126,6 +3414,646 @@ const App: React.FC = () => {
     </div>
   );
 
+  const renderSubrentals = () => (
+    <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+        <h2 className="text-4xl md:text-5xl font-black text-sky-500 tracking-tighter uppercase">Subrentals</h2>
+        <button 
+          onClick={() => {
+            setEditingSubrentalId(null);
+            setSubrentalFormData({ name: '', address: '', gst_number: '' });
+            setIsSubrentalFormOpen(true);
+          }}
+          className="w-full lg:w-auto px-8 py-4 bg-sky-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-sky-400 transition"
+        >
+          Add Company
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {subrentalCompanies.map(company => (
+          <div key={company.id} className="bg-slate-900/40 backdrop-blur-xl p-8 rounded-[2rem] border border-slate-800/60 shadow-xl group hover:border-sky-500/30 transition-all cursor-pointer"
+            onClick={() => {
+              setSelectedSubrentalCompany(company);
+              fetchSubrentalTickets(company.id);
+              setShowSubrentalInventory(false);
+            }}
+          >
+            <div className="flex justify-between items-start mb-6">
+              <div className="w-12 h-12 bg-sky-500/10 rounded-2xl flex items-center justify-center text-sky-400 text-xl border border-sky-500/20">
+                <i className="fa-solid fa-building"></i>
+              </div>
+              <div className="flex gap-2">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingSubrentalId(company.id);
+                    setSubrentalFormData({ name: company.name, address: company.address, gst_number: company.gst_number });
+                    setIsSubrentalFormOpen(true);
+                  }}
+                  className="w-8 h-8 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:text-sky-400 transition"
+                >
+                  <i className="fa-solid fa-pencil text-[10px]"></i>
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteSubrentalCompany(company.id);
+                  }}
+                  className="w-8 h-8 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:text-red-400 transition"
+                >
+                  <i className="fa-solid fa-trash text-[10px]"></i>
+                </button>
+              </div>
+            </div>
+            <h3 className="text-xl font-black text-white uppercase mb-2 group-hover:text-sky-400 transition-colors">{company.name}</h3>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-4 line-clamp-1">{company.address || 'No Address'}</p>
+            <div className="pt-4 border-t border-slate-800/60 flex items-center justify-between">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">GST: {company.gst_number || 'N/A'}</span>
+              <div className="flex items-center gap-1 text-sky-400">
+                <span className="text-[9px] font-black uppercase tracking-tighter">View Inventory</span>
+                <i className="fa-solid fa-chevron-right text-[8px]"></i>
+              </div>
+            </div>
+          </div>
+        ))}
+        {subrentalCompanies.length === 0 && (
+          <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800 rounded-[2rem]">
+            <i className="fa-solid fa-building-circle-exclamation text-4xl text-slate-800 mb-4"></i>
+            <p className="text-xs font-black text-slate-600 uppercase tracking-widest">No Subrental Companies Found</p>
+          </div>
+        )}
+      </div>
+
+      {isSubrentalFormOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-10">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setIsSubrentalFormOpen(false)}></div>
+          <div className="relative w-full max-w-xl bg-slate-900 rounded-[2.5rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-10">
+              <h3 className="text-3xl font-black text-white uppercase tracking-tighter mb-8">{editingSubrentalId ? 'Edit' : 'Add'} Subrental Company</h3>
+              <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Company Name</label>
+                  <input 
+                    type="text" 
+                    value={subrentalFormData.name}
+                    onChange={(e) => setSubrentalFormData({...subrentalFormData, name: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Address</label>
+                  <textarea 
+                    value={subrentalFormData.address}
+                    onChange={(e) => setSubrentalFormData({...subrentalFormData, address: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all h-32"
+                  ></textarea>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">GST Number</label>
+                  <input 
+                    type="text" 
+                    value={subrentalFormData.gst_number}
+                    onChange={(e) => setSubrentalFormData({...subrentalFormData, gst_number: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-4 mt-10">
+                <button onClick={() => setIsSubrentalFormOpen(false)} className="flex-1 py-4 bg-slate-800 text-slate-300 rounded-2xl font-black uppercase text-xs hover:bg-slate-700 transition">Cancel</button>
+                <button onClick={handleSaveSubrentalCompany} className="flex-1 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition">Save Company</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderSubrentalTickets = () => {
+    if (!selectedSubrentalCompany) return null;
+
+    if (selectedTicket) return renderTicketItems(selectedTicket);
+
+    return (
+      <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setSelectedSubrentalCompany(null)}
+              className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-400 hover:text-white transition"
+            >
+              <i className="fa-solid fa-arrow-left"></i>
+            </button>
+            <div>
+              <h2 className="text-4xl md:text-5xl font-black text-sky-500 tracking-tighter uppercase">{selectedSubrentalCompany.name}</h2>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1">Rental Tickets & Assignments</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => {
+                setShowSubrentalInventory(true);
+                fetchSubrentalAssets(selectedSubrentalCompany.id);
+              }}
+              className="px-8 py-4 bg-slate-800 text-slate-300 rounded-2xl font-black uppercase text-xs hover:bg-slate-700 transition flex items-center gap-2"
+            >
+              <i className="fa-solid fa-boxes-stacked"></i> View Inventory
+            </button>
+            <button 
+              onClick={() => setIsTicketFormOpen(true)}
+              className="px-8 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition"
+            >
+              Create Ticket
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {subrentalTickets.map(ticket => (
+            <div key={ticket.id} onClick={() => setSelectedTicket(ticket)} className="bg-slate-900/40 backdrop-blur-xl p-8 rounded-[2.5rem] border border-slate-800/60 shadow-xl group hover:border-sky-500/30 transition-all cursor-pointer">
+              <div className="flex justify-between items-start mb-6">
+                <div className="w-14 h-14 bg-sky-500/10 rounded-2xl flex items-center justify-center text-sky-400 text-2xl border border-sky-500/20">
+                  <i className="fa-solid fa-ticket"></i>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Items</p>
+                  <p className="text-xl font-black text-white">{ticket.items?.length || 0}</p>
+                </div>
+              </div>
+              <h3 className="text-lg font-black text-white uppercase mb-1 group-hover:text-sky-400 transition-colors">{ticket.conference_name}</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-6">Rented for this event</p>
+              
+              <div className="space-y-3 pt-6 border-t border-slate-800/60">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">From</span>
+                  <span className="text-[10px] font-mono text-slate-300">{ticket.available_from || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">To</span>
+                  <span className="text-[10px] font-mono text-slate-300">{ticket.available_till || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+          {subrentalTickets.length === 0 && (
+            <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800 rounded-[2.5rem]">
+              <i className="fa-solid fa-ticket-simple text-4xl text-slate-800 mb-4"></i>
+              <p className="text-xs font-black text-slate-600 uppercase tracking-widest">No tickets created for this company</p>
+            </div>
+          )}
+        </div>
+
+        {isTicketFormOpen && renderTicketForm()}
+      </div>
+    );
+  };
+
+  const renderTicketForm = () => (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+      <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md" onClick={() => setIsTicketFormOpen(false)}></div>
+      <div className="relative w-full max-w-xl bg-slate-900 rounded-[3rem] border border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 p-10">
+        <h3 className="text-3xl font-black text-white uppercase tracking-tighter mb-10">Create Rental Ticket</h3>
+        <div className="space-y-6">
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Assign to Conference</label>
+              <button 
+                onClick={() => setTicketFormData({...ticketFormData, is_custom: !ticketFormData.is_custom, conference_id: '', custom_conference_name: ''})}
+                className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-lg transition ${ticketFormData.is_custom ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-400'}`}
+              >
+                {ticketFormData.is_custom ? 'Use Existing' : 'Add Custom'}
+              </button>
+            </div>
+            {ticketFormData.is_custom ? (
+              <input 
+                type="text"
+                placeholder="Enter Custom Event/Conference Name..."
+                value={ticketFormData.custom_conference_name}
+                onChange={(e) => setTicketFormData({...ticketFormData, custom_conference_name: e.target.value})}
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+              />
+            ) : (
+              <select 
+                value={ticketFormData.conference_id}
+                onChange={(e) => setTicketFormData({...ticketFormData, conference_id: e.target.value})}
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all appearance-none"
+              >
+                <option value="">Select Conference</option>
+                {backendConferences.filter(c => c.status !== 'Completed').map(c => (
+                  <option key={c.id} value={c.id}>{c.conferenceName}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Rented From</label>
+              <input 
+                type="date" 
+                value={ticketFormData.available_from}
+                onChange={(e) => setTicketFormData({...ticketFormData, available_from: e.target.value})}
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Rented Till</label>
+              <input 
+                type="date" 
+                value={ticketFormData.available_till}
+                onChange={(e) => setTicketFormData({...ticketFormData, available_till: e.target.value})}
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-4 mt-10">
+          <button onClick={() => setIsTicketFormOpen(false)} className="flex-1 py-4 bg-slate-800 text-slate-300 rounded-2xl font-black uppercase text-xs hover:bg-slate-700 transition">Cancel</button>
+          <button onClick={handleCreateSubrentalTicket} className="flex-1 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition">Create Ticket</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderTicketItems = (ticket: SubrentalTicket) => {
+    return (
+      <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={() => setSelectedTicket(null)}
+              className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-400 hover:text-white transition"
+            >
+              <i className="fa-solid fa-arrow-left"></i>
+            </button>
+            <div>
+              <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter uppercase">{ticket.conference_name}</h2>
+              <p className="text-[10px] text-sky-400 font-bold uppercase tracking-[0.2em] mt-1">Ticket #{ticket.id} • {selectedSubrentalCompany?.name}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setIsAddingTicketItem(true)}
+            className="px-8 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition"
+          >
+            Add Items
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="space-y-4">
+            <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Rented Items</h3>
+            {ticket.items?.map(item => (
+              <div key={item.id} className="bg-slate-900/40 p-6 rounded-3xl border border-slate-800/60 flex justify-between items-center">
+                <div>
+                  <h4 className="text-sm font-black text-white uppercase">{item.asset_details?.aliasName || item.asset_details?.alias_name || item.asset_details?.sku || item.asset_details?.name}</h4>
+                  <p className="text-[10px] text-slate-500 font-mono uppercase mt-1">{item.asset_details?.sku}</p>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Total Price</p>
+                    <p className="text-lg font-black text-emerald-400">₹{(Number(item.rental_price) * item.quantity).toLocaleString()}</p>
+                    <p className="text-[9px] text-slate-600 font-bold uppercase">Qty: {item.quantity}</p>
+                  </div>
+                  <div className="flex flex-col gap-2 ml-6 pl-6 border-l border-slate-800/60">
+                    <button 
+                      onClick={() => handleEditTicketItem(item)}
+                      className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-sky-400 transition"
+                      title="Edit Item"
+                    >
+                      <i className="fa-solid fa-pen-to-square text-[10px]"></i>
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteTicketItem(item.id)}
+                      className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-400 transition"
+                      title="Remove Item"
+                    >
+                      <i className="fa-solid fa-trash text-[10px]"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!ticket.items?.length && (
+              <div className="p-10 text-center border border-dashed border-slate-800 rounded-3xl">
+                <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest">No items added to this ticket yet</p>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest">Ticket Details</h3>
+            <div className="bg-slate-900/40 p-10 rounded-[2.5rem] border border-slate-800/60 space-y-8">
+              <div className="grid grid-cols-2 gap-8">
+                <div>
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Availability From</p>
+                  <p className="text-lg font-black text-white uppercase">{ticket.available_from || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Availability Till</p>
+                  <p className="text-lg font-black text-white uppercase">{ticket.available_till || 'N/A'}</p>
+                </div>
+              </div>
+              <div className="pt-8 border-t border-slate-800/60">
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Assigned Conference</p>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-sky-500/10 rounded-xl flex items-center justify-center text-sky-400 text-xl border border-sky-500/20">
+                    <i className="fa-solid fa-calendar-check"></i>
+                  </div>
+                  <div>
+                    <p className="text-lg font-black text-white uppercase">{ticket.conference_name}</p>
+                    <p className="text-[10px] text-slate-600 font-bold uppercase">Active Assignment</p>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-8 border-t border-slate-800/60 flex justify-between items-end">
+                <div>
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Grand Total Value</p>
+                  <p className="text-3xl font-black text-emerald-400">₹{
+                    ticket.items?.reduce((sum, item) => sum + (Number(item.rental_price) * item.quantity), 0).toLocaleString()
+                  }</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Total Items</p>
+                  <p className="text-lg font-black text-white">{ticket.items?.length || 0}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {isAddingTicketItem && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setIsAddingTicketItem(false); setEditingTicketItem(null); }}></div>
+            <div className="relative w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-10 overflow-y-auto custom-scrollbar">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">{editingTicketItem ? 'Edit Item' : 'Add Items to Ticket'}</h3>
+                  {!editingTicketItem && (
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setTicketItemForm({...ticketItemForm, asset_id: ''})} 
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${!ticketItemForm.asset_id ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+                      >New Item</button>
+                      <button 
+                        onClick={() => setTicketItemForm({...ticketItemForm, asset_id: 'SELECT'})} 
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${ticketItemForm.asset_id === 'SELECT' ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+                      >From Inventory</button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-6">
+                  {(!editingTicketItem && ticketItemForm.asset_id === 'SELECT') ? (
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Search/Scan Inventory</label>
+                      <input 
+                        autoFocus
+                        type="text"
+                        value={ticketItemSearch}
+                        onChange={(e) => setTicketItemSearch(e.target.value)}
+                        placeholder="Scan QR or Type Name..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-black text-xs uppercase focus:border-sky-500 outline-none transition-all mb-6 shadow-sm"
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                        {!normalizeSearch(ticketItemSearch) ? (
+                          <ScanPrompt />
+                        ) : (
+                          subrentalAssets.filter(a => {
+                             const q = normalizeSearch(ticketItemSearch);
+                             return normalizeSearch(a.sku).includes(q) || 
+                                    normalizeSearch(a.aliasName).includes(q) ||
+                                    normalizeSearch(a.barcode || '').includes(q);
+                          }).map(a => (
+                            <div 
+                              key={a.id} 
+                              onClick={() => {
+                                setTicketItemForm({...ticketItemForm, asset_id: a.id, name: a.aliasName || a.sku});
+                                setTicketItemSearch(''); // Clear search on select
+                              }} 
+                              className={`p-4 rounded-2xl border transition cursor-pointer flex justify-between items-center ${ticketItemForm.asset_id === a.id ? 'bg-sky-500/10 border-sky-500 text-sky-600' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                            >
+                              <div>
+                                <p className="text-[11px] font-black uppercase">{a.aliasName || a.sku}</p>
+                                <p className="text-[9px] font-mono">{a.sku}</p>
+                              </div>
+                              {ticketItemForm.asset_id === a.id && <i className="fa-solid fa-check-circle"></i>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="col-span-full">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Item Name</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. JBL PRX 815 SPEAKER"
+                          value={ticketItemForm.name}
+                          onChange={(e) => setTicketItemForm({...ticketItemForm, name: e.target.value})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Cost Price (Optional)</label>
+                        <input 
+                          type="number" 
+                          value={ticketItemForm.price}
+                          onChange={(e) => setTicketItemForm({...ticketItemForm, price: parseFloat(e.target.value)})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Depreciation %</label>
+                        <input 
+                          type="number" 
+                          value={ticketItemForm.depreciation}
+                          onChange={(e) => setTicketItemForm({...ticketItemForm, depreciation: parseFloat(e.target.value)})}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-6 pt-6 border-t border-slate-100">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Rental Price (for this ticket)</label>
+                      <input 
+                        type="number" 
+                        value={ticketItemForm.rental_price}
+                        onChange={(e) => setTicketItemForm({...ticketItemForm, rental_price: parseFloat(e.target.value)})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 block">Quantity</label>
+                      <input 
+                        type="number" 
+                        value={ticketItemForm.quantity}
+                        onChange={(e) => setTicketItemForm({...ticketItemForm, quantity: parseInt(e.target.value)})}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-slate-900 font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center mt-4 px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Calculated Total</p>
+                    <p className="text-xl font-black text-emerald-600">₹{(ticketItemForm.rental_price * ticketItemForm.quantity).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 mt-12">
+                  <button onClick={() => setIsAddingTicketItem(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs hover:bg-slate-200 transition">Cancel</button>
+                  <button onClick={handleAddTicketItem} className="flex-1 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition">Add Item to Ticket</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSubrentalInventory = () => (
+    <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+        <div className="flex items-center gap-6">
+          <button 
+            onClick={() => {
+              if (showSubrentalInventory) setShowSubrentalInventory(false);
+              else setSelectedSubrentalCompany(null);
+            }}
+            className="w-12 h-12 bg-slate-900 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-400 hover:text-white transition"
+          >
+            <i className="fa-solid fa-arrow-left"></i>
+          </button>
+          <div>
+            <h2 className="text-4xl md:text-5xl font-black text-sky-500 tracking-tighter uppercase">{selectedSubrentalCompany?.name}</h2>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1">External Inventory Management</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => handleExportInventory('template')}
+            className="px-6 py-4 bg-slate-800 text-slate-300 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-700 transition flex items-center gap-2"
+          >
+            <i className="fa-solid fa-download"></i> Template
+          </button>
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="px-6 py-4 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-amber-400 transition flex items-center gap-2"
+          >
+            <i className="fa-solid fa-file-import"></i> Bulk Import
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={(e) => handleFileUpload(e, selectedSubrentalCompany.id)} 
+            className="hidden" 
+            accept=".xlsx"
+          />
+          <button 
+            onClick={() => {
+              setAssetFormData({ ...assetFormData, subrental_company: selectedSubrentalCompany.id });
+              setAssetView('Form');
+              setCurrentPage('Assets');
+            }}
+            className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-emerald-400 transition"
+          >
+            Add Item
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 items-center mb-8">
+        <div className="relative flex-1">
+          <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-500"></i>
+          <input 
+            type="text"
+            placeholder="Search Subrental Inventory (SKU, Name, Serial)..."
+            value={subrentalSearchQuery}
+            onChange={(e) => setSubrentalSearchQuery(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-16 pr-8 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+          />
+        </div>
+      </div>
+
+      <div className="bg-slate-900/30 rounded-[2rem] border border-slate-800/50 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[1000px]">
+            <thead className="bg-slate-950/40 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">
+              <tr>
+                <th className="px-6 py-6">SKU</th>
+                <th className="px-6 py-6">Alias Name</th>
+                <th className="px-6 py-6">Serial Number</th>
+                <th className="px-6 py-6">Type</th>
+                <th className="px-6 py-6 text-center">Qty</th>
+                <th className="px-6 py-6 text-center">Status</th>
+                <th className="px-6 py-6 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/20">
+              {(() => {
+                const filtered = subrentalAssets.filter(asset => {
+                  const q = subrentalSearchQuery.toLowerCase();
+                  return (asset.sku || '').toLowerCase().includes(q) ||
+                         (asset.aliasName || '').toLowerCase().includes(q) ||
+                         (asset.serialNumber || '').toLowerCase().includes(q);
+                });
+                if (filtered.length > 0) {
+                  return filtered.map((asset) => (
+                    <tr key={asset.id} className="hover:bg-slate-800/10 transition group">
+                      <td className="px-6 py-6">
+                        <p className="text-xs font-black text-sky-400 font-mono">{asset.sku}</p>
+                      </td>
+                      <td className="px-6 py-6">
+                        <p className="font-black text-white text-base uppercase">{asset.aliasName || '-'}</p>
+                      </td>
+                      <td className="px-6 py-6">
+                        <p className="text-xs text-slate-300 font-mono">{asset.serialNumber}</p>
+                      </td>
+                      <td className="px-6 py-6">
+                        <p className="text-[10px] text-slate-500 font-black uppercase">{asset.type}</p>
+                      </td>
+                      <td className="px-6 py-6 text-center">
+                        <p className="text-xs font-black text-white">{asset.quantity}</p>
+                      </td>
+                      <td className="px-6 py-6 text-center">
+                        <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${
+                          asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' : 'bg-orange-500/10 text-orange-400'
+                        }`}>{asset.status}</span>
+                      </td>
+                      <td className="px-6 py-6 text-right space-x-4">
+                         <button onClick={() => {
+                           setEditingAsset(asset);
+                           setAssetFormData({ ...asset, subrental_company: selectedSubrentalCompany.id });
+                           setAssetView('Form');
+                           setCurrentPage('Assets');
+                         }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
+                         <button onClick={() => setQrTarget({ sku: asset.sku, name: asset.aliasName || asset.sku })} className="text-emerald-400">
+                           <i className="fa-solid fa-qrcode"></i>
+                         </button>
+                      </td>
+                    </tr>
+                  ));
+                }
+                return (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-20 text-center">
+                      <p className="text-xs font-black text-slate-600 uppercase tracking-widest">
+                        {subrentalSearchQuery ? 'No results matching search' : 'Inventory is empty'}
+                      </p>
+                    </td>
+                  </tr>
+                );
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   const renderEmployees = () => (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
@@ -3494,6 +4422,7 @@ const App: React.FC = () => {
           client={MOCK_CLIENTS[0]}
           assets={printAssets}
           companySettings={companySettings}
+          subrentalTickets={confSubrentalTickets}
         />
         <style>{`
             @media print {
@@ -3546,6 +4475,9 @@ const App: React.FC = () => {
               ] : []),
               ...(user?.is_staff || user?.role !== 'technician' ? [
                 { id: 'Reports', icon: 'fa-chart-pie', label: 'Reports' }
+              ] : []),
+              ...(user?.is_staff || user?.role !== 'technician' ? [
+                { id: 'Subrentals', icon: 'fa-building-shield', label: 'Subrentals' }
               ] : []),
               { id: 'Settings', icon: 'fa-cog', label: 'Settings' }
             ].map(item => (
@@ -3622,6 +4554,11 @@ const App: React.FC = () => {
         <div className="p-6 md:p-12 max-w-7xl mx-auto">
           {currentPage === 'Dashboard' && renderDashboard()}
           {currentPage === 'Settings' && <SettingsView apiFetch={apiFetch} user={user} />}
+          {currentPage === 'Subrentals' && (
+            selectedSubrentalCompany 
+              ? (showSubrentalInventory ? renderSubrentalInventory() : renderSubrentalTickets()) 
+              : renderSubrentals()
+          )}
           {currentPage === 'Reports' && <ReportsView apiFetch={apiFetch} user={user} onEditAsset={openEditAssetForm} />}
           {currentPage === 'Assets' && assetView === 'List' && renderInventory()}
           {currentPage === 'Assets' && assetView === 'Details' && renderAssetDetails()}
@@ -3697,7 +4634,7 @@ const App: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
-                        <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required />
+                        <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
                         {formErrors.sku && <p className="text-red-500 text-xs mt-1">{formErrors.sku}</p>}
                       </div>
                       <div>
@@ -3724,7 +4661,7 @@ const App: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                       <div className="md:col-span-1">
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Serial Number</label>
-                        <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" required />
+                        <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
                         {formErrors.serial_number && <p className="text-red-500 text-xs mt-1">{formErrors.serial_number}</p>}
                       </div>
                       <div>
@@ -3775,18 +4712,34 @@ const App: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
-                      <div className="flex-1">
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">Barcode Status</label>
-                        <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Has a physical barcode sticker been added?</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
+                        <div className="flex-1">
+                          <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">Barcode Status</label>
+                          <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Has a physical barcode sticker been added?</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAssetFormData({ ...assetFormData, isBarcodeAdded: !assetFormData.isBarcodeAdded })}
+                          className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.isBarcodeAdded ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}
+                        >
+                          {assetFormData.isBarcodeAdded ? 'Yes, Added' : 'Not Added'}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAssetFormData({ ...assetFormData, isBarcodeAdded: !assetFormData.isBarcodeAdded })}
-                        className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.isBarcodeAdded ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}
-                      >
-                        {assetFormData.isBarcodeAdded ? 'Yes, Added' : 'Not Added'}
-                      </button>
+
+                      <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
+                        <div className="flex-1">
+                          <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">QR Generation</label>
+                          <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Show QR print modal after saving?</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAssetFormData({ ...assetFormData, generateQR: !assetFormData.generateQR })}
+                          className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.generateQR ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-500'}`}
+                        >
+                          {assetFormData.generateQR ? 'Yes, Generate' : 'No'}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
@@ -4509,7 +5462,7 @@ const App: React.FC = () => {
                                      return (
                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                          {filteredReqs.map(asset => (
-                                           <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
+                                          <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
                                              <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
                                                <i className="fa-solid fa-list-check"></i>
                                              </div>
@@ -4765,7 +5718,7 @@ const App: React.FC = () => {
 
                                   {/* Pending Requirements (items requested but NOT yet scanned) */}
                                   {assets.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id))).map(asset => (
-                                    <div key={asset.id} className="p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
+                                   <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
                                       <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
                                         <i className="fa-solid fa-hourglass-start"></i>
                                       </div>
@@ -4836,7 +5789,7 @@ const App: React.FC = () => {
                                  normalizeSearch(a.barcode || '').includes(qNorm) || 
                                  normalizeSearch(a.type || '').includes(qNorm);
                              }).map(asset => (
-                              <div key={asset.id} className="p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
+                              <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
                                 <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
                                   <i className="fa-solid fa-check-double"></i>
                                 </div>
@@ -4872,23 +5825,23 @@ const App: React.FC = () => {
                                 
                                 {/* Floating Issue Menu */}
                                 {flagMenuAssetId === asset.id && (
-                                  <div className="absolute top-full right-0 mt-2 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                  <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
                                     <button 
-                                      onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING })}
+                                      onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, assetTab === 'packup' ? 'Packup' : 'Crosscheck')}
                                       className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
                                     >
                                       <i className="fa-solid fa-flag text-red-500 text-xs"></i>
                                       <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
                                     </button>
                                     <button 
-                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE })}
+                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, assetTab === 'packup' ? 'Packup' : 'Crosscheck')}
                                       className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
                                     >
                                       <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
                                       <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
                                     </button>
                                     <button 
-                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE })}
+                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, assetTab === 'packup' ? 'Packup' : 'Crosscheck')}
                                       className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
                                     >
                                       <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
@@ -4910,7 +5863,7 @@ const App: React.FC = () => {
                               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets in crosscheck queue</p>
                             </div>
                           ) : assets.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id))).map(asset => (
-                            <div key={asset.id} className="p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
+                            <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
                               <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
                                 <i className="fa-solid fa-box"></i>
                               </div>
@@ -4943,23 +5896,23 @@ const App: React.FC = () => {
 
                               {/* Floating Issue Menu */}
                               {flagMenuAssetId === asset.id && (
-                                <div className="absolute top-full right-0 mt-2 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
                                   <button 
-                                    onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING })}
+                                    onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, 'Crosscheck')}
                                     className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
                                   >
                                     <i className="fa-solid fa-flag text-red-500 text-xs"></i>
                                     <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
                                   </button>
                                   <button 
-                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE })}
+                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, 'Crosscheck')}
                                     className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
                                   >
                                     <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
                                     <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
                                   </button>
                                   <button 
-                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE })}
+                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, 'Crosscheck')}
                                     className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
                                   >
                                     <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
@@ -5019,6 +5972,7 @@ const App: React.FC = () => {
                     showScanToast={showScanToast}
                     onUpdateConferenceValue={handleUpdateConferenceValue}
                     onUpdateChallanNumber={handleUpdateChallanNumber}
+                    subrentalTickets={confSubrentalTickets}
                     onRemoveAssets={async (assetIds) => {
                       if (!selectedBookingForChallan) return;
                       const currentAssets = (selectedBookingForChallan.assets || []).map(String);

@@ -3,6 +3,15 @@ from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 
+class SubrentalCompany(models.Model):
+    name = models.CharField(max_length=200)
+    address = models.TextField(null=True, blank=True)
+    gst_number = models.CharField(max_length=20, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
 class Asset(models.Model):
     STATUS_CHOICES = [
         ('Available', 'Available'),
@@ -46,7 +55,7 @@ class Asset(models.Model):
         ('Other', 'Other'),
     ]
 
-    sku = models.CharField(max_length=100, db_index=True)
+    sku = models.CharField(max_length=100, db_index=True, null=True, blank=True)
     alias_name = models.CharField(max_length=200, null=True, blank=True)
     mac_address = models.CharField(max_length=100, null=True, blank=True)
     imei_number_1 = models.CharField(max_length=100, null=True, blank=True)
@@ -71,10 +80,12 @@ class Asset(models.Model):
     condition = models.CharField(max_length=50, default='Good')
     flag = models.CharField(max_length=20, choices=FLAG_CHOICES, default='', blank=True, db_index=True)
     last_maintained = models.DateField(null=True, blank=True)
+    is_temporary = models.BooleanField(default=False)
     current_venue = models.CharField(max_length=200, null=True, blank=True)
     return_date = models.DateField(null=True, blank=True)
     assigned_to = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='assets')
     parent_asset = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_assets')
+    subrental_company = models.ForeignKey(SubrentalCompany, on_delete=models.CASCADE, null=True, blank=True, related_name='assets')
     
     # Deprecated fields (will be removed after migration)
     # name, brand, model_number are now part of description or alias_name in the new structure
@@ -119,6 +130,25 @@ class Employee(models.Model):
     def __str__(self):
         return self.name
 
+class SubrentalTicket(models.Model):
+    company = models.ForeignKey(SubrentalCompany, on_delete=models.CASCADE, related_name='tickets')
+    conference = models.ForeignKey('Conference', on_delete=models.CASCADE, related_name='subrental_tickets')
+    created_at = models.DateTimeField(auto_now_add=True)
+    available_from = models.DateField(null=True, blank=True)
+    available_till = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Ticket {self.id} - {self.company.name} for {self.conference.name}"
+
+class SubrentalTicketItem(models.Model):
+    ticket = models.ForeignKey(SubrentalTicket, on_delete=models.CASCADE, related_name='items')
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='ticket_items')
+    rental_price = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal('0.00'))
+    quantity = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return f"{self.asset.alias_name or self.asset.sku} ({self.quantity}) in Ticket {self.ticket.id}"
+
 class Conference(models.Model):
     TYPE_CHOICES = [
         ('Medical Conference', 'Medical Conference'),
@@ -145,6 +175,7 @@ class Conference(models.Model):
     assigned_employees = models.ManyToManyField(Employee, blank=True, related_name='assigned_conferences')
     pdf_document = models.FileField(upload_to='conference_pdfs/', null=True, blank=True)
     approximate_value = models.DecimalField(max_digits=20, decimal_places=2, default=0, null=True, blank=True)
+    flag_log = models.JSONField(default=list, blank=True, help_text="Log of assets flagged during this conference: [{'asset_id': 1, 'flag': 'Missing', 'stage': 'Packup', 'timestamp': '...'}]")
 
     def __str__(self):
         return self.name

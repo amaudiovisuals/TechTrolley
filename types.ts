@@ -83,25 +83,44 @@ export const CATEGORY_MAP: Record<string, UICategory> = {
   'Other': UICategory.OTHER
 };
 
+export interface SubrentalCompany {
+  id: string;
+  name: string;
+  address: string;
+  gst_number: string;
+  created_at: string;
+}
+
 
 export interface Asset {
-  id: string;
+  id: string | number;
   sku: string;
   aliasName: string;
+  alias_name?: string; // Compatibility
   macAddress: string;
+  mac_address?: string; // Compatibility
   imeiNumber1: string;
+  imei_number_1?: string; // Compatibility
   imeiNumber2: string;
+  imei_number_2?: string; // Compatibility
   serialNumber: string;
+  serial_number?: string; // Compatibility
   description: string;
   isBarcodeAdded: boolean;
   type: string;
   quantity: number;
   purchasedDate: string;
+  purchased_date?: string; // Compatibility
   itemPrice: number;
+  item_price?: number; // Compatibility
   depreciationPercentage: number;
+  depreciation_percentage?: number; // Compatibility
   availableFrom: string;
+  available_from?: string; // Compatibility
   availableTill: string;
+  available_till?: string; // Compatibility
   createdAt: string;
+  created_at?: string; // Compatibility
   // System fields
   barcodeType?: string;
   barcode: string;
@@ -110,17 +129,21 @@ export interface Asset {
   flag?: AssetFlag | string;
   condition: string;
   lastMaintained: string;
+  isTemporary?: boolean;
   assigned_to?: number;
   assigned_to_name?: string;
   // Sub-asset / parent-child fields
   parent_asset?: number | null;
   sub_assets?: Asset[];
   current_conference_name?: string | null;
+  subrental_company?: number | string | null;
   // Legacy / Optional compatibility
   name?: string;
   brand?: string;
   modelNumber?: string;
 }
+
+export type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings' | 'Subrentals';
 
 export interface Employee {
   id: string;
@@ -196,4 +219,25 @@ export interface CompanySettings {
   theme_template?: 'blue' | 'green';
   print_label_width: number;
   print_label_height: number;
+}
+
+export interface SubrentalTicketItem {
+  id: string | number;
+  ticket: string | number;
+  asset: string | number;
+  asset_details?: Asset;
+  rental_price: number;
+  quantity: number;
+}
+
+export interface SubrentalTicket {
+  id: string | number;
+  company: string | number;
+  company_name?: string;
+  conference: string | number;
+  conference_name?: string;
+  created_at: string;
+  available_from: string;
+  available_till: string;
+  items: SubrentalTicketItem[];
 }

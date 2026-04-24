@@ -38,12 +38,29 @@ def asset_list(request):
         assigned_qs = Conference.objects.filter(assets=OuterRef('pk')).values('name')[:1]
         crosscheck_qs = Conference.objects.filter(crosscheck_assets=OuterRef('pk')).values('name')[:1]
 
-        assets = Asset.objects.annotate(
+        # Filter by subrental company if provided
+        subrental_company_id = request.query_params.get('subrental_company_id')
+        
+        assets_query = Asset.objects.annotate(
             annotated_conference=Coalesce(Subquery(assigned_qs), Subquery(crosscheck_qs), Value(None))
         ).select_related('assigned_to', 'parent_asset').prefetch_related(
             'sub_assets',
             'sub_assets__assigned_to',
-        ).all()
+        )
+
+        # Exclude temporary items created inside subrental tickets from all inventory views
+        assets_query = assets_query.filter(is_temporary=False)
+
+        if subrental_company_id:
+            if subrental_company_id == 'null':
+                assets_query = assets_query.filter(subrental_company__isnull=True)
+            else:
+                assets_query = assets_query.filter(subrental_company_id=subrental_company_id)
+        else:
+            # By default, show ONLY our main inventory
+            assets_query = assets_query.filter(subrental_company__isnull=True)
+
+        assets = assets_query.all()
         
         serializer = AssetSerializer(assets, many=True)
         return Response(serializer.data)
@@ -89,9 +106,38 @@ def asset_detail(request, pk):
             serializer = AssetSerializer(asset, data=data, partial=partial)
         else:
             serializer = AssetSerializer(asset, data=request.data, partial=partial)
-            
+
         if serializer.is_valid():
             serializer.save()
+            
+            # Contextual Logging for Conferences
+            conference_id = request.data.get('conference_id')
+            flag = request.data.get('flag')
+            if conference_id and flag:
+                from .models import Conference
+                from django.utils import timezone
+                try:
+                    conf = Conference.objects.get(pk=conference_id)
+                    stage = request.data.get('stage', 'Unknown')
+                    
+                    # Update flag_log
+                    log_entry = {
+                        'asset_id': asset.id,
+                        'sku': asset.sku,
+                        'alias_name': asset.alias_name,
+                        'flag': flag,
+                        'stage': stage,
+                        'timestamp': timezone.now().isoformat()
+                    }
+                    
+                    if not isinstance(conf.flag_log, list):
+                        conf.flag_log = []
+                    
+                    conf.flag_log.append(log_entry)
+                    conf.save(update_fields=['flag_log'])
+                except Conference.DoesNotExist:
+                    pass
+
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
@@ -427,6 +473,9 @@ def bulk_upload_assets(request):
                 barcode_added    = bool(qr_code_val or barcode_val) or \
                                    safe_str(row.get(bc_added_col, '')).lower() in ['yes', 'true', '1', 'y']
                 desc             = safe_str(row.get(desc_col, ''))
+                
+                # Check for subrental company context
+                subrental_company_id = request.data.get('subrental_company_id')
 
                 # Depreciation — handle "%" strings and Excel 0-1 float representation
                 raw_deprec = row.get(deprec_col, 0)
@@ -455,9 +504,9 @@ def bulk_upload_assets(request):
                     'purchased_date':         parse_date(row.get(purchase_col)),
                     'available_from':         parse_date(row.get(avail_from_col)),
                     'available_till':         parse_date(row.get(avail_till_col)),
-                    'status':                 'Available',
                     'condition':              'Good',
                     'quantity':               int(row.get(qty_col, 1)) if not math.isnan(float(row.get(qty_col, 1))) else 1,
+                    'subrental_company_id':   subrental_company_id
                 }
 
                 # Smart Matching: Try Serial Number, then QR Code, then Barcode

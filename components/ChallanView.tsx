@@ -13,6 +13,7 @@ interface ChallanViewProps {
   onRemoveAssets?: (assetIds: string[]) => Promise<void>;
   showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
   onUpdateChallanNumber?: (conferenceId: string, challanNumber: string) => Promise<void>;
+  subrentalTickets?: any[];
 }
 
 type ColumnKey = 'Seq' | 'SKU' | 'Asset' | 'Type' | 'Identifiers' | 'MAC' | 'IMEI' | 'Rate' | 'Qty' | 'Total' | 'Actions';
@@ -67,7 +68,7 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({ 
-  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber
+  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, subrentalTickets
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
@@ -319,6 +320,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             setTotalOverride={setTotalValueOverride}
             challanNoOverride={challanNoOverride}
             setChallanNoOverride={setChallanNoOverride}
+            subrentalTickets={subrentalTickets}
           />
         </div>
       ))}
@@ -338,12 +340,14 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   setTotalOverride: (val: number | null) => void;
   challanNoOverride: string | null;
   setChallanNoOverride: (val: string | null) => void;
+  subrentalTickets?: any[];
 }
 
 const ChallanTemplate: React.FC<ChallanTemplateProps> = ({ 
   booking, client, assets, companySettings, copyLabel, bw, 
   visibleColumns, isEditMode, onLocalUpdate, onRemoveRow,
-  totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride
+  totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride,
+  subrentalTickets
 }) => {
   const accent = bw ? '#111111' : '#00AEEF';
   const orange = bw ? '#111111' : '#F15A24';
@@ -359,9 +363,12 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
     return price * (1 - dep / 100);
   };
 
+  const subrentalTotal = subrentalTickets?.reduce((sum, t) => 
+    sum + (t.items?.reduce((iSum: number, item: any) => iSum + (Number(item.rental_price) * item.quantity), 0) || 0), 0) || 0;
+
   const totalValue = totalOverride !== null 
     ? totalOverride 
-    : assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0);
+    : assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0) + subrentalTotal;
 
   const renderCell = (asset: Asset, col: ColumnKey, index: number) => {
     if (isEditMode) {
@@ -604,7 +611,61 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
               })}
             </tr>
           ))}
-          {assets.length === 0 && (
+
+          {/* Subrental Sections */}
+          {Array.isArray(subrentalTickets) && subrentalTickets.length > 0 && (
+            <>
+              <tr className="bg-gray-200">
+                <td colSpan={visibleColumns.length} className="py-2 px-2 text-[9px] font-black text-sky-700 uppercase tracking-[0.2em] border-y border-gray-400">
+                  <i className="fa-solid fa-truck-ramp-box mr-2"></i> Subrental Equipment
+                </td>
+              </tr>
+              {subrentalTickets.map(ticket => (
+                <React.Fragment key={ticket.id}>
+                  <tr className="bg-gray-100/50">
+                    <td colSpan={visibleColumns.length} className="py-1.5 px-3 text-[8px] font-black text-gray-700 uppercase tracking-widest border-b border-gray-300 italic">
+                      {ticket.company_name}
+                    </td>
+                  </tr>
+                  {ticket.items?.map((item: any, i: number) => (
+                    <tr key={item.id} className="border-b border-gray-300">
+                      {visibleColumns.map(colKey => {
+                        const col = ALL_COLUMNS.find(c => c.key === colKey);
+                        if (!col) return null;
+                        
+                        let content: any = '';
+                        if (colKey === 'Seq') content = `SR-${i+1}`;
+                        else if (colKey === 'Asset') {
+                          const details = item.asset_details;
+                          content = item.asset_name || details?.aliasName || details?.alias_name || details?.name || details?.sku || `Subrental Item ${item.id}`;
+                        }
+                        else if (colKey === 'SKU') content = item.asset_details?.sku || item.asset_name || `SR-${item.id}`;
+                        else if (colKey === 'Type') content = item.asset_details?.type;
+                        else if (colKey === 'Qty') content = item.quantity;
+                        else if (colKey === 'Rate') content = `₹${Number(item.rental_price).toLocaleString()}`;
+                        else if (colKey === 'Total') content = `₹${(Number(item.rental_price) * item.quantity).toLocaleString()}`;
+                        else if (colKey === 'Identifiers') {
+                          const details = item.asset_details;
+                          content = details?.serialNumber || details?.serial_number || item.asset_name || '-';
+                        }
+
+                        return (
+                          <td 
+                            key={`${item.id}-${colKey}`} 
+                            className={`py-0.5 px-2 text-gray-900 font-bold ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
+                          >
+                            {content}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </>
+          )}
+
+          {assets.length === 0 && (!Array.isArray(subrentalTickets) || subrentalTickets.length === 0) && (
             <tr>
               <td colSpan={visibleColumns.length} className="py-8 text-center text-[10px] font-black text-gray-900 uppercase tracking-widest">No assets selected.</td>
             </tr>

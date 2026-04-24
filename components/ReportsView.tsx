@@ -34,6 +34,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
     const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
     const [isAssigningTo, setIsAssigningTo] = useState<Employee | null>(null);
     const [assignmentSearch, setAssignmentSearch] = useState('');
+    const [selectedConference, setSelectedConference] = useState<Booking | null>(null);
 
     // ─── Data Loading ──────────────────────────────────────────
     const loadData = useCallback(async () => {
@@ -348,12 +349,119 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
         );
     };
 
+    const renderConferenceDetailModal = () => {
+        if (!selectedConference) return null;
+        
+        // Use challan_assets if available, otherwise fallback to current assets
+        const historicalAssetIds = (selectedConference as any).challan_assets && (selectedConference as any).challan_assets.length > 0 
+            ? (selectedConference as any).challan_assets 
+            : (selectedConference.assets || []);
+        
+        const conferenceAssets = assets.filter(a => historicalAssetIds.map(String).includes(String(a.id)));
+        const flagLog = (selectedConference as any).flag_log || [];
+
+        return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-300">
+                <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setSelectedConference(null)}></div>
+                <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-[3rem] shadow-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[90vh]">
+                    <div className="p-10 border-b border-slate-800 flex justify-between items-center bg-slate-950/30">
+                        <div>
+                            <h3 className="text-3xl font-black text-white uppercase tracking-tight">{selectedConference.conferenceName || (selectedConference as any).name}</h3>
+                            <p className="text-slate-500 font-bold uppercase text-xs mt-1 tracking-widest">{selectedConference.associationName} • {selectedConference.startDate} to {selectedConference.endDate}</p>
+                        </div>
+                        <button onClick={() => setSelectedConference(null)} className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition shadow-xl">
+                            <i className="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar">
+                        {/* Stats Row */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            <div className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Total Assets Used</p>
+                                <p className="text-3xl font-black text-sky-400">{historicalAssetIds.length}</p>
+                            </div>
+                            <div className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Flagged Events</p>
+                                <p className="text-3xl font-black text-red-500">{flagLog.length}</p>
+                            </div>
+                            <div className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Conference Value</p>
+                                <p className="text-xl font-black text-emerald-400">₹{Number(selectedConference.approximate_value || 0).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Challan No</p>
+                                <p className="text-xl font-black text-white">{selectedConference.challanNumber || 'N/A'}</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                            {/* Asset List */}
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <h4 className="text-sm font-black text-white uppercase tracking-widest">Inventory Manifest</h4>
+                                    <span className="px-3 py-1 bg-sky-500/10 text-sky-400 text-[10px] font-black uppercase rounded-lg">Historical View</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {conferenceAssets.length > 0 ? conferenceAssets.map(asset => (
+                                        <div key={asset.id} className="bg-slate-950/20 p-5 rounded-2xl border border-slate-800/50 flex justify-between items-center group hover:bg-slate-800/30 transition-all">
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-200 uppercase">{asset.aliasName || asset.sku}</p>
+                                                <p className="text-[10px] font-mono text-slate-600 uppercase mt-0.5">{asset.sku}</p>
+                                            </div>
+                                            <span className={`px-3 py-1 text-[9px] font-black uppercase rounded-lg ${
+                                                asset.status === 'Available' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'
+                                            }`}>{asset.status}</span>
+                                        </div>
+                                    )) : (
+                                        <p className="text-xs text-slate-600 italic">No asset data found for this conference.</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Flag Log */}
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <h4 className="text-sm font-black text-red-500 uppercase tracking-widest">Incident Log</h4>
+                                    <span className="px-3 py-1 bg-red-500/10 text-red-500 text-[10px] font-black uppercase rounded-lg">Workflow Issues</span>
+                                </div>
+                                <div className="space-y-4">
+                                    {flagLog.length > 0 ? flagLog.map((log: any, i: number) => (
+                                        <div key={i} className="bg-red-500/5 p-5 rounded-2xl border border-red-500/10 space-y-2">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <p className="text-sm font-black text-white uppercase">{log.alias_name || log.sku}</p>
+                                                    <p className="text-[9px] font-mono text-red-400/60 uppercase">{log.sku}</p>
+                                                </div>
+                                                <span className="px-2 py-1 bg-red-500 text-white text-[8px] font-black uppercase rounded-md">{log.flag}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center pt-2 border-t border-red-500/10">
+                                                <p className="text-[9px] font-black text-slate-500 uppercase">Stage: <span className="text-red-400">{log.stage}</span></p>
+                                                <p className="text-[9px] font-mono text-slate-600">{new Date(log.timestamp).toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                    )) : (
+                                        <div className="bg-emerald-500/5 p-10 rounded-3xl border border-emerald-500/10 text-center space-y-3">
+                                            <i className="fa-solid fa-shield-check text-emerald-500/30 text-3xl"></i>
+                                            <p className="text-xs font-black text-emerald-500/40 uppercase tracking-widest">No issues reported during workflow</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div></div>;
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {renderAssetModal()}
             {renderAssignmentModal()}
+            {renderConferenceDetailModal()}
 
             <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-4">
@@ -550,18 +658,28 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                         <input type="text" placeholder="SEARCH CLIENT OR EVENT..." value={confSearch} onChange={e => setConfSearch(e.target.value)} className="form-input-night px-6 py-4 text-[10px] font-black uppercase tracking-widest w-full lg:w-96" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {filteredConferences.map(c => (
-                            <div key={c.id} className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800/50 space-y-4 hover:border-sky-500/50 transition-all">
-                                <div>
-                                    <h4 className="text-sm font-black text-white uppercase truncate">{c.conferenceName || (c as any).name}</h4>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-wider truncate">{c.associationName}</p>
+                        {filteredConferences.map(c => {
+                            const historicalIds = (c as any).challan_assets && (c as any).challan_assets.length > 0 
+                                ? (c as any).challan_assets 
+                                : (c.assets || []);
+                            
+                            return (
+                                <div 
+                                    key={c.id} 
+                                    onClick={() => setSelectedConference(c)}
+                                    className="bg-slate-950/40 p-6 rounded-3xl border border-slate-800/50 space-y-4 hover:border-sky-500/50 hover:bg-slate-900/50 transition-all cursor-pointer group"
+                                >
+                                    <div>
+                                        <h4 className="text-sm font-black text-white uppercase truncate group-hover:text-sky-400 transition-colors">{c.conferenceName || (c as any).name}</h4>
+                                        <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-wider truncate">{c.associationName}</p>
+                                    </div>
+                                    <div className="flex justify-between items-end">
+                                        <div className="text-[10px] font-mono text-sky-400/70">{c.startDate}</div>
+                                        <div className="px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[10px] font-black uppercase">{historicalIds.length} Assets</div>
+                                    </div>
                                 </div>
-                                <div className="flex justify-between items-end">
-                                    <div className="text-[10px] font-mono text-sky-400/70">{c.startDate}</div>
-                                    <div className="px-3 py-1 bg-sky-500/10 text-sky-400 rounded-lg text-[10px] font-black uppercase">{(c.assets?.length || 0) + (c.crosscheckAssets?.length || 0)} Assets</div>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

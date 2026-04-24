@@ -6,7 +6,12 @@ from django.contrib.auth.models import User
 from django.db import OperationalError
 from rest_framework import serializers
 
-from .models import Asset, Employee, Conference, CompanySettings
+from .models import Asset, Employee, Conference, CompanySettings, SubrentalCompany, SubrentalTicket, SubrentalTicketItem
+
+class SubrentalCompanySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubrentalCompany
+        fields = '__all__'
 
 class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,7 +27,7 @@ class SubAssetSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
             'status', 'flag', 'condition', 'barcode_type', 'barcode', 'qr_code', 'assigned_to', 'assigned_to_name',
-            'parent_asset', 'current_conference_name',
+            'parent_asset', 'current_conference_name', 'subrental_company',
         ]
 
     def get_current_conference_name(self, obj):
@@ -38,6 +43,7 @@ class AssetSerializer(serializers.ModelSerializer):
     parent_asset = serializers.PrimaryKeyRelatedField(
         queryset=Asset.objects.all(), allow_null=True, required=False
     )
+    deployment_history = serializers.SerializerMethodField()
 
     class Meta:
         model = Asset
@@ -48,14 +54,31 @@ class AssetSerializer(serializers.ModelSerializer):
             'available_from', 'available_till', 'created_at',
             'barcode_type', 'barcode', 'qr_code', 'status', 'flag', 'condition', 'last_maintained', 
             'current_venue', 'return_date', 'assigned_to', 'assigned_to_name',
-            'parent_asset', 'sub_assets', 'current_conference_name',
+            'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'deployment_history',
         ]
 
     def get_current_conference_name(self, obj):
         if hasattr(obj, 'annotated_conference'):
             return obj.annotated_conference
         conf = obj.assigned_conferences.first() or obj.crosscheck_conferences.first()
-        return conf.name if conf else None
+        if conf: return conf.name
+        
+        try:
+            ticket_item = obj.ticket_items.select_related('ticket__conference').first()
+            if ticket_item: return ticket_item.ticket.conference.name
+        except: pass
+        return None
+
+    def get_deployment_history(self, obj):
+        history = []
+        try:
+            for conf in obj.assigned_conferences.all():
+                history.append({'name': conf.name, 'date': conf.start_date.isoformat() if conf.start_date else None})
+            if hasattr(obj, 'ticket_items'):
+                for item in obj.ticket_items.select_related('ticket__conference').all():
+                    history.append({'name': item.ticket.conference.name, 'date': item.ticket.created_at.isoformat()})
+        except: pass
+        return sorted(history, key=lambda x: (x['date'] or ''), reverse=True)
 
 class ConferenceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -63,19 +86,23 @@ class ConferenceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def to_representation(self, instance):
-        # Professional Database Shield: If the 'requirements' table is missing from Postgres,
-        # we dynamically remove the field to prevent the JOIN crash.
+        # Professional Database Shield: If new tables are missing from the DB (e.g. after a git pull 
+        # but before running migrations), we dynamically strip those fields to prevent an API crash.
         try:
             return super().to_representation(instance)
         except OperationalError as e:
-            if 'core_conference_requirements' in str(e):
-                # Temporarily hide the field to allow the rest of the object to serialize
+            error_str = str(e)
+            missing_fields = []
+            if 'core_conference_requirements' in error_str: missing_fields.append('requirements')
+            if 'core_conference_challan_assets' in error_str: missing_fields.append('challan_assets')
+            
+            if missing_fields:
                 original_fields = self.fields
-                new_fields = {k: v for k, v in self.fields.items() if k != 'requirements'}
-                self.fields = new_fields
+                # Dynamically rebuild the field list excluding only the ones causing the crash
+                self.fields = {k: v for k, v in self.fields.items() if k not in missing_fields}
                 try:
                     data = super().to_representation(instance)
-                    data['requirements'] = [] # Return empty instead of error
+                    for f in missing_fields: data[f] = [] # Return empty arrays instead of error
                     return data
                 finally:
                     self.fields = original_fields
@@ -143,3 +170,23 @@ class CompanySettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = CompanySettings
         fields = '__all__'
+class SubrentalTicketItemSerializer(serializers.ModelSerializer):
+    asset_details = AssetSerializer(source='asset', read_only=True)
+    asset_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubrentalTicketItem
+        fields = ['id', 'ticket', 'asset', 'asset_details', 'asset_name', 'rental_price', 'quantity']
+
+    def get_asset_name(self, obj):
+        if obj.asset:
+            return obj.asset.alias_name or obj.asset.name or obj.asset.sku or "Unnamed Subrental Item"
+        return "Unknown Asset"
+
+class SubrentalTicketSerializer(serializers.ModelSerializer):
+    items = SubrentalTicketItemSerializer(many=True, read_only=True)
+    company_name = serializers.ReadOnlyField(source='company.name')
+    conference_name = serializers.ReadOnlyField(source='conference.name')
+    class Meta:
+        model = SubrentalTicket
+        fields = ['id', 'company', 'company_name', 'conference', 'conference_name', 'created_at', 'available_from', 'available_till', 'items']

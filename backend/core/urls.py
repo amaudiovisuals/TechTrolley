@@ -4,6 +4,8 @@ from . import auth_views
 from . import user_views
 from . import conference_views
 from . import profile_view
+from . import subrental_views
+from . import subrental_ticket_views
 
 urlpatterns = [
     # API endpoints or views
@@ -31,5 +33,13 @@ urlpatterns = [
     path('conferences/<int:conference_id>/download-pdf/', views.download_conference_pdf, name='download_conference_pdf'),
     path('export-inventory/', views.export_inventory, name='export_inventory'),
     path('system-recovery/', views.system_recovery, name='system_recovery'),
+    
+    path('subrental-companies/', subrental_views.subrental_company_list, name='subrental_company_list'),
+    path('subrental-companies/<int:pk>/', subrental_views.subrental_company_detail, name='subrental_company_detail'),
+    
+    path('subrental-tickets/', subrental_ticket_views.subrental_ticket_list, name='subrental_ticket_list'),
+    path('subrental-tickets/<int:pk>/', subrental_ticket_views.subrental_ticket_detail, name='subrental_ticket_detail'),
+    path('subrental-tickets/<int:ticket_pk>/add-item/', subrental_ticket_views.add_ticket_item, name='add_ticket_item'),
+    path('subrental-ticket-items/<int:pk>/', subrental_ticket_views.ticket_item_detail, name='ticket_item_detail'),
 ]
 
