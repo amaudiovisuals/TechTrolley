@@ -50,7 +50,7 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
               powered by
             </p>
             <p className="text-sm font-bold mt-0.5 leading-none lowercase" style={{ fontFamily: 'Tahoma, sans-serif' }}>
-              <span className="text-[#F15A24]">am</span>
+              <span className="text-[#F15A24]">a m </span>
               <span className="text-[#00AEEF]">audiovisuals</span>
             </p>
           </div>
