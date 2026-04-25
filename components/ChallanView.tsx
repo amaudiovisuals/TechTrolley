@@ -491,7 +491,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       {/* Header, Consignee sections remain unchanged (already premium) */}
       <div className="flex justify-between items-start pb-2 mb-2" style={{ borderBottom: `2px solid ${accent}` }}>
         <div>
-          <Logo size="sm" companySettings={companySettings} variant="challan" />
+          <Logo size="sm" companySettings={companySettings} variant="challan" showText={false} />
           <div className="mt-1 text-[9px] text-gray-900 font-medium leading-snug">
             <p className="font-black text-gray-900 uppercase tracking-tighter text-[10px]">{companySettings?.name || 'TECH TROLLEY'}</p>
             <p className="whitespace-pre-wrap">{companySettings?.address || 'Warehouse Complex 7, Industrial Area Phase II, New Delhi - 110020.'}</p>
@@ -499,7 +499,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <p>Tel: {companySettings?.phone || '+91 9999 888 777'} | Email: {companySettings?.email || 'support@amaudiovisuals.in'}</p>
           </div>
         </div>
-        <div className="text-right pt-20">
+        <div className="text-right">
           <div className="mb-0.5">
             <span className="text-[8px] font-black uppercase tracking-widest border border-gray-900 px-2 py-0.5 rounded text-gray-900">{copyLabel}</span>
           </div>
@@ -543,17 +543,19 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       <div className="grid grid-cols-2 gap-2 mb-2">
         <div>
           <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Service Receiver</h4>
-          <div className="mt-0.5 space-y-0.5">
-            <p className="text-[9px] text-gray-900 font-bold flex items-center gap-2">
-              <i className="fa-solid fa-user-doctor text-[8px]" style={{ color: orange }}></i>
-              {booking.contactPerson}
-            </p>
-            <p className="text-[9px] text-gray-900 font-bold flex items-center gap-2">
-              <i className="fa-solid fa-phone text-[8px]" style={{ color: accent }}></i>
-              {booking.contactPhone}
-            </p>
-            <p className="text-[8px] text-gray-900 font-medium uppercase leading-tight">{booking.billingAddress}</p>
+          <div className="mt-1 space-y-1">
+            <p className="text-[10px] text-gray-900 font-black uppercase leading-tight">{booking.billingAddress}</p>
             {booking.gstNumber && <p className="text-[8px] font-bold text-gray-900 uppercase">GST: {booking.gstNumber}</p>}
+            <div className="pt-0.5 border-t border-gray-100 space-y-0.5">
+              <p className="text-[8px] text-gray-600 font-bold flex items-center gap-2">
+                <i className="fa-solid fa-user-doctor text-[7px]" style={{ color: orange }}></i>
+                {booking.contactPerson}
+              </p>
+              <p className="text-[8px] text-gray-600 font-bold flex items-center gap-2">
+                <i className="fa-solid fa-phone text-[7px]" style={{ color: accent }}></i>
+                {booking.contactPhone}
+              </p>
+            </div>
           </div>
         </div>
         <div className="text-right flex flex-col justify-between">
@@ -722,9 +724,6 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
 
       <div className="mt-4 pt-2 text-[6px] text-gray-900 text-center leading-relaxed font-black uppercase tracking-[0.3em]" style={{ borderTop: '1px solid #999' }}>
         Technical Desk: {companySettings?.phone || '+91 9999 888 777'} | {companySettings?.email || 'support@amaudiovisuals.in'}
-        <br />
-        <span>Tech Trolley Monitor System</span> • Internal Asset of{' '}
-        <span style={{ color: bw ? '#111' : '#00AEEF' }}>{companySettings?.name || 'TECH TROLLEY'}</span>
         <br />
         <span className="text-[9px] font-black text-gray-900 uppercase tracking-widest mt-0.5 inline-block border border-gray-400 px-1 rounded-sm">{copyLabel}</span>
       </div>
