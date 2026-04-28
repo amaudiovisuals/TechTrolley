@@ -10,10 +10,10 @@ django.setup()
 
 from core.models import Asset
 
-print("Searching for 'TFT' in all assets:")
-count = 0
-for a in Asset.objects.all():
-    if "TFT" in str(a.name) or "TFT" in str(a.alias_name) or "TFT" in str(a.sku):
-        print(f"ID: {a.id}, Name: {a.name}, Alias: {a.alias_name}, SKU: {a.sku}")
-        count += 1
-print(f"Total found: {count}")
+term = "BT6B4PA#ACJ"
+print(f"Searching for: {term}")
+
+matches = Asset.objects.filter(qr_code__icontains=term) | Asset.objects.filter(sku__icontains=term) | Asset.objects.filter(serial_number__icontains=term)
+
+for a in matches:
+    print(f"ID: {a.id}, Alias: {a.alias_name}, SKU: {a.sku}, QR: {a.qr_code}")

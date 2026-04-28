@@ -1494,11 +1494,7 @@ const App: React.FC = () => {
         if (a.id === part || a.sku === part || a.barcode === part || (a.qrCode && a.qrCode === part) || a.serialNumber === part) return true;
         if (normalizeId(a.id) === partNorm || aSkuNorm === partNorm || aBarcodeNorm === partNorm || (aQrCodeNorm && aQrCodeNorm === partNorm) || aSerialNorm === partNorm) return true;
       }
-
-      const legacyParts = [a.brand, a.name, a.modelNumber].filter(p => p && p.trim());
-      const legacyId = `${legacyParts.join('_').toUpperCase().replace(/\s+/g, '_')}-${a.id}`;
-      const legacyNorm = normalizeId(legacyId);
-      return normalizedParts.some(pNorm => pNorm === legacyNorm);
+      return false;
     });
 
     return asset || null;
