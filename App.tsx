@@ -101,7 +101,7 @@ const GlobalQRPreview: React.FC = () => {
 
 const App: React.FC = () => {
   const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
-    ? 'http://localhost:8000' 
+    ? 'http://127.0.0.1:8000' 
     : window.location.origin;
 
   const showUnknownError = true;
