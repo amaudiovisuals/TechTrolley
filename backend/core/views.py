@@ -525,7 +525,7 @@ def bulk_upload_assets(request):
         return Response({
             'created': created_count,
             'updated': updated_count,
-            'skipped': updated_count,
+            'skipped': 0,
             'errors': errors,
             'message': f'{created_count} asset(s) created, {updated_count} updated.'
         }, status=200)

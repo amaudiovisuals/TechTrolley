@@ -13,6 +13,7 @@ interface ChallanViewProps {
   onRemoveAssets?: (assetIds: string[]) => Promise<void>;
   showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
   onUpdateChallanNumber?: (conferenceId: string, challanNumber: string) => Promise<void>;
+  onSaveFullChallan?: (conferenceId: string, assetIds: string[]) => Promise<void>;
   subrentalTickets?: any[];
 }
 
@@ -68,7 +69,7 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({
-  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, subrentalTickets
+  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
@@ -100,6 +101,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     } catch (e) { }
     return booking.challanNumber || null;
   });
+  const [isGrouped, setIsGrouped] = React.useState(false);
 
   React.useEffect(() => {
     localStorage.setItem('challan_visible_columns', JSON.stringify(visibleColumns));
@@ -201,6 +203,15 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         }
       }
 
+      // 4. Save the full list of assets to "freeze" the challan state
+      if (onSaveFullChallan) {
+        console.log("Saving full challan asset list...");
+        const finalAssetIds = localAssets
+          .filter(a => !String(a.id).startsWith('new-')) // Exclude new ad-hoc items that haven't been saved to DB yet (they'll be added via onAddAdhocItem)
+          .map(a => String(a.id));
+        await onSaveFullChallan(booking.id, finalAssetIds);
+      }
+
       showScanToast && showScanToast("✅ All changes saved successfully", "success");
     } catch (err) {
       console.error("Critical error during saveAllChanges:", err);
@@ -237,6 +248,36 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     setLocalAssets(prev => [...prev, newItem]);
   };
 
+  const processedAssets = React.useMemo(() => {
+    if (!isGrouped || isEditMode) return localAssets;
+
+    const groups: Record<string, Asset & { serials: string[], ids: (string | number)[] }> = {};
+
+    localAssets.forEach(asset => {
+      const key = asset.aliasName || asset.sku || 'Unknown';
+      if (!groups[key]) {
+        groups[key] = {
+          ...asset,
+          quantity: 0,
+          serials: [],
+          ids: []
+        };
+      }
+      groups[key].quantity += (Number(asset.quantity) || 1);
+      if (asset.serialNumber && asset.serialNumber.trim()) {
+        groups[key].serials.push(asset.serialNumber.trim());
+      }
+      groups[key].ids.push(asset.id);
+    });
+
+    return Object.values(groups).map(g => ({
+      ...g,
+      serialNumber: g.serials.length > 0 ? g.serials.join(', ') : '',
+      // We keep the first ID for the row key, but note it's a group
+      id: `group-${g.sku}-${g.aliasName}`
+    }));
+  }, [localAssets, isGrouped]);
+
   return (
     <div className="flex flex-col gap-4">
       {/* ── Customization Toolbar (Hidden in Print) ── */}
@@ -259,6 +300,15 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             >
               <i className={`fa-solid ${isEditMode ? 'fa-check' : 'fa-pen-to-square'} mr-2`}></i>
               {isEditMode ? 'Close Edit Mode' : 'Edit Mode'}
+            </button>
+            <button
+              onClick={() => setIsGrouped(!isGrouped)}
+              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isGrouped ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              title="Aggregate similar items by name"
+            >
+              <i className={`fa-solid ${isGrouped ? 'fa-layer-group' : 'fa-list'} mr-2`}></i>
+              {isGrouped ? 'Ungroup Items' : 'Group by Model'}
             </button>
             {isEditMode && (
               <>
@@ -306,7 +356,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
           <ChallanTemplate
             booking={booking}
             client={client}
-            assets={localAssets}
+            assets={processedAssets}
             companySettings={companySettings}
             copyLabel={copy.label}
             bw={false}
@@ -476,7 +526,12 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </>
       );
       case 'Type': return asset.type;
-      case 'Identifiers': return `${asset.serialNumber} / ${asset.sku}`;
+      case 'Identifiers': return (
+        <div className="flex flex-col gap-0.5 max-w-[120px]">
+          <span className="leading-tight break-words">{asset.serialNumber || '—'}</span>
+          <span className="text-[6px] text-gray-400 font-mono uppercase tracking-tighter">{asset.sku}</span>
+        </div>
+      );
       case 'MAC': return asset.macAddress || '—';
       case 'IMEI': return `${asset.imeiNumber1 || '—'} / ${asset.imeiNumber2 || '—'}`;
       case 'Rate': return `₹${Math.round(getDepreciatedPrice(asset)).toLocaleString()}`;

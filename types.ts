@@ -182,6 +182,7 @@ export interface Booking {
   assets: string[];
   crosscheckAssets?: string[];
   challanAssets?: string[];
+  staged_assets?: string[];
   status: 'Pending' | 'Active' | 'Completed' | 'Cancelled';
   operatorId: string;
   challanNumber: string;

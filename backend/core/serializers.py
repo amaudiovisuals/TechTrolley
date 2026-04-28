@@ -113,6 +113,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         requirements_data = validated_data.pop('requirements', [])
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
         challan_data = validated_data.pop('challan_assets', [])
+        staged_data = validated_data.pop('staged_assets', [])
         employees_data = validated_data.pop('assigned_employees', [])
         
         pdf_doc = validated_data.get('pdf_document')
@@ -123,6 +124,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         if assets_data: conference.assets.set(assets_data)
         if crosscheck_data: conference.crosscheck_assets.set(crosscheck_data)
         if challan_data: conference.challan_assets.set(challan_data)
+        if staged_data: conference.staged_assets.set(staged_data)
         if requirements_data:
             try:
                 conference.requirements.set(requirements_data)
@@ -137,6 +139,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         requirements_data = validated_data.pop('requirements', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
         challan_data = validated_data.pop('challan_assets', None)
+        staged_data = validated_data.pop('staged_assets', None)
         employees_data = validated_data.pop('assigned_employees', None)
         
         pdf_doc = validated_data.get('pdf_document')
@@ -149,6 +152,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
         if assets_data is not None: instance.assets.set(assets_data)
         if crosscheck_data is not None: instance.crosscheck_assets.set(crosscheck_data)
         if challan_data is not None: instance.challan_assets.set(challan_data)
+        if staged_data is not None: instance.staged_assets.set(staged_data)
         if requirements_data is not None:
             try:
                 instance.requirements.set(requirements_data)

@@ -887,9 +887,10 @@ const App: React.FC = () => {
             contactPerson: c.contact_person,
             contactPhone: c.contact_phone,
             contactEmail: c.contact_email,
-            challanNumber: (1000 + parseInt(c.id)).toString(),
+            challanNumber: c.challan_number || (1000 + parseInt(c.id)).toString(),
             assets: (c.assets || []).map((id: any) => id.toString()),
             requirements: (c.requirements || []).map((id: any) => id.toString()),
+            staged_assets: (c.staged_assets || []).map((id: any) => id.toString()),
             crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
             challanAssets: (c.challan_assets || []).map((id: any) => id.toString()),
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
@@ -1028,6 +1029,23 @@ const App: React.FC = () => {
     }
   };
   
+  const handleSaveFullChallan = async (conferenceId: string, assetIds: string[]) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          challan_assets: assetIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id))
+        })
+      });
+      if (res.ok) {
+        showScanToast('✅ Challan State Frozen/Saved Successfully', 'success');
+        fetchConferences();
+      }
+    } catch (err) {
+      console.error("Failed to save full challan", err);
+    }
+  };
+
   const handleUpdateConferenceValue = async (conferenceId: string, value: number) => {
     try {
       const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/`, {
@@ -1131,14 +1149,13 @@ const App: React.FC = () => {
     const token = localStorage.getItem('token');
 
     // Coerce IDs to integers and handle empty strings for optional fields
-    const { staged_assets, ...cleanConferenceData } = conferenceFormData;
-    
     const payload = {
-      ...cleanConferenceData,
+      ...conferenceFormData,
       start_date: conferenceFormData.start_date || null,
       end_date: conferenceFormData.end_date || null,
       assets: (conferenceFormData.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       requirements: (conferenceFormData.requirements || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+      staged_assets: (conferenceFormData.staged_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       crosscheck_assets: (conferenceFormData.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       assigned_employees: (conferenceFormData.assigned_employees || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id))
     };
@@ -1445,9 +1462,7 @@ const App: React.FC = () => {
       (a.sku && a.sku === scanned) ||
       (a.barcode && a.barcode === scanned) ||
       (a.qrCode && a.qrCode === scanned) ||
-      (a.qrCode && scanned.includes(a.qrCode)) || 
       (a.serialNumber && a.serialNumber === scanned) ||
-      (a.serialNumber && scanned.includes(a.serialNumber)) ||
       String(a.id) === scanned
     );
     if (exactMatch) return exactMatch;
@@ -1607,6 +1622,27 @@ const App: React.FC = () => {
         }));
         showScanToast(`🗑️ Removed Accident: "${asset.aliasName || asset.sku}"`, 'success');
       }
+    }
+
+    // AUTO-SAVE to backend if we have a conference ID
+    if (editingConference?.id) {
+      setTimeout(() => {
+        setConferenceFormData((current: any) => {
+          const payload = {
+            assets: (current.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+            requirements: (current.requirements || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+            staged_assets: (current.staged_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+            crosscheck_assets: (current.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+          };
+          apiFetch(`${API_BASE}/api/conferences/${editingConference.id}/`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload)
+          }).then(res => {
+            if (res.ok) fetchConferences();
+          });
+          return current;
+        });
+      }, 0);
     }
   };
 
@@ -1802,22 +1838,33 @@ const App: React.FC = () => {
               const allIdsToProcess = [pendingParentAsset.id, ...(pendingParentAsset.sub_assets?.map(s => s.id.toString()) || [])];
 
               if (pendingAction === 'add') {
-                setConferenceFormData((prev: any) => ({
-                  ...prev,
-                  assets: Array.from(new Set([...prev.assets, ...allIdsToProcess]))
-                }));
-                showScanToast(`✅ Successfully added "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components`, 'success');
+                if (user?.role === 'technician') {
+                  setConferenceFormData((prev: any) => ({
+                    ...prev,
+                    requirements: Array.from(new Set([...(prev.requirements || []), ...allIdsToProcess]))
+                  }));
+                  showScanToast(`📋 Requirement Added: "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components`, 'success');
+                } else {
+                  // Admin/Godown: Move to STAGED and clear from requirements
+                  setConferenceFormData((prev: any) => ({
+                    ...prev,
+                    staged_assets: Array.from(new Set([...(prev.staged_assets || []), ...allIdsToProcess.map(String)])),
+                    requirements: (prev.requirements || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString()))
+                  }));
+                  showScanToast(`📦 Staged for Packing: "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components`, 'success');
+                }
               } else if (pendingAction === 'remove') {
                 setConferenceFormData((prev: any) => ({
                   ...prev,
-                  assets: prev.assets.filter((id: any) => !allIdsToProcess.includes(id.toString())),
-                  crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess]))
+                  assets: (prev.assets || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString())),
+                  staged_assets: (prev.staged_assets || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString())),
+                  crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess.map(String)]))
                 }));
                 showScanToast(`✅ Moved "${pendingParentAsset.aliasName || pendingParentAsset.sku}" and components to Crosscheck`, 'success');
               } else if (pendingAction === 'verify_crosscheck') {
                 setConferenceFormData((prev: any) => ({
                   ...prev,
-                  crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.includes(id.toString()))
+                  crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString()))
                 }));
                 showScanToast(`✅ Verified locally: "${pendingParentAsset.aliasName || pendingParentAsset.sku}" (Click Submit to release)`, 'success');
               }
@@ -1826,6 +1873,27 @@ const App: React.FC = () => {
               setPendingParentAsset(null);
               setPendingAction(null);
               setScannedSubAssetIds([]);
+
+              // AUTO-SAVE to backend
+              if (editingConference?.id) {
+                setTimeout(() => {
+                  setConferenceFormData((current: any) => {
+                    const payload = {
+                      assets: (current.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                      requirements: (current.requirements || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                      staged_assets: (current.staged_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                      crosscheck_assets: (current.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                    };
+                    apiFetch(`${API_BASE}/api/conferences/${editingConference.id}/`, {
+                      method: 'PATCH',
+                      body: JSON.stringify(payload)
+                    }).then(res => {
+                      if (res.ok) fetchConferences();
+                    });
+                    return current;
+                  });
+                }, 0);
+              }
             }
           } else {
             showScanToast(`⚠️ Component "${asset.aliasName || asset.sku}" already scanned.`, 'warning');
@@ -4111,9 +4179,9 @@ const App: React.FC = () => {
     // Store locally to persist exact current state across the new tab boundary
     localStorage.setItem('print_conf_data', JSON.stringify(conf));
     const relevantAssets = assets.filter(a => {
-      const historicalList = conf.challanAssets && conf.challanAssets.length > 0 
+      const historicalList = (conf.challanAssets && conf.challanAssets.length > 0) 
                              ? conf.challanAssets 
-                             : (conf.assets || []);
+                             : [...(conf.assets || []), ...(conf.staged_assets || [])];
       return historicalList.map(String).includes(String(a.id));
     });
     localStorage.setItem('print_assets_data', JSON.stringify(relevantAssets));
@@ -4164,7 +4232,7 @@ const App: React.FC = () => {
                 {sortedChallans.map((conf) => {
                   const historicalCount = (conf.challanAssets && conf.challanAssets.length > 0) 
                     ? conf.challanAssets.length 
-                    : (conf.assets ? conf.assets.length : 0);
+                    : ((conf.assets?.length || 0) + (conf.staged_assets?.length || 0));
                   const hasAssets = historicalCount > 0;
                   
                   return (
@@ -5963,7 +6031,7 @@ const App: React.FC = () => {
                     assets={assets.filter(a => {
                       const historicalList = selectedBookingForChallan.challanAssets && selectedBookingForChallan.challanAssets.length > 0 
                                              ? selectedBookingForChallan.challanAssets 
-                                             : (selectedBookingForChallan.assets || []);
+                                             : [...(selectedBookingForChallan.assets || []), ...(selectedBookingForChallan.staged_assets || [])];
                       return historicalList.map(String).includes(a.id.toString());
                     })}
                     companySettings={companySettings}
@@ -5972,6 +6040,7 @@ const App: React.FC = () => {
                     showScanToast={showScanToast}
                     onUpdateConferenceValue={handleUpdateConferenceValue}
                     onUpdateChallanNumber={handleUpdateChallanNumber}
+                    onSaveFullChallan={handleSaveFullChallan}
                     subrentalTickets={confSubrentalTickets}
                     onRemoveAssets={async (assetIds) => {
                       if (!selectedBookingForChallan) return;
@@ -6071,23 +6140,53 @@ const App: React.FC = () => {
                             // Proceed if all done via clicks too
                             const allIdsToProcess = [pendingParentAsset.id, ...(pendingParentAsset.sub_assets?.map(s => s.id.toString()) || [])];
                             if (pendingAction === 'add') {
-                              setConferenceFormData((prev: any) => ({
-                                ...prev,
-                                assets: Array.from(new Set([...prev.assets, ...allIdsToProcess]))
-                              }));
+                              if (user?.role === 'technician') {
+                                setConferenceFormData((prev: any) => ({
+                                  ...prev,
+                                  requirements: Array.from(new Set([...(prev.requirements || []), ...allIdsToProcess]))
+                                }));
+                              } else {
+                                setConferenceFormData((prev: any) => ({
+                                  ...prev,
+                                  staged_assets: Array.from(new Set([...(prev.staged_assets || []), ...allIdsToProcess.map(String)])),
+                                  requirements: (prev.requirements || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString()))
+                                }));
+                              }
                             } else if (pendingAction === 'remove') {
                               setConferenceFormData((prev: any) => ({
                                 ...prev,
-                                assets: prev.assets.filter((id: any) => !allIdsToProcess.includes(id.toString())),
-                                crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess]))
+                                assets: (prev.assets || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString())),
+                                staged_assets: (prev.staged_assets || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString())),
+                                crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), ...allIdsToProcess.map(String)]))
                               }));
                             } else if (pendingAction === 'verify_crosscheck') {
                               setConferenceFormData((prev: any) => ({
                                 ...prev,
-                                crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.includes(id.toString()))
+                                crosscheck_assets: (prev.crosscheck_assets || []).filter((id: any) => !allIdsToProcess.map(String).includes(id.toString()))
                               }));
                             }
                             setPendingParentAsset(null); setPendingAction(null); setScannedSubAssetIds([]);
+
+                            // AUTO-SAVE to backend
+                            if (editingConference?.id) {
+                              setTimeout(() => {
+                                setConferenceFormData((current: any) => {
+                                  const payload = {
+                                    assets: (current.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                                    requirements: (current.requirements || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                                    staged_assets: (current.staged_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                                    crosscheck_assets: (current.crosscheck_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
+                                  };
+                                  apiFetch(`${API_BASE}/api/conferences/${editingConference.id}/`, {
+                                    method: 'PATCH',
+                                    body: JSON.stringify(payload)
+                                  }).then(res => {
+                                    if (res.ok) fetchConferences();
+                                  });
+                                  return current;
+                                });
+                              }, 0);
+                            }
                           }
                         }
                       }}

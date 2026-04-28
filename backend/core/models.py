@@ -174,6 +174,8 @@ class Conference(models.Model):
     challan_assets = models.ManyToManyField(Asset, blank=True, related_name='challan_conferences')
     assigned_employees = models.ManyToManyField(Employee, blank=True, related_name='assigned_conferences')
     pdf_document = models.FileField(upload_to='conference_pdfs/', null=True, blank=True)
+    challan_number = models.CharField(max_length=50, default='', blank=True)
+    staged_assets = models.ManyToManyField(Asset, blank=True, related_name='staged_conferences')
     approximate_value = models.DecimalField(max_digits=20, decimal_places=2, default=0, null=True, blank=True)
     flag_log = models.JSONField(default=list, blank=True, help_text="Log of assets flagged during this conference: [{'asset_id': 1, 'flag': 'Missing', 'stage': 'Packup', 'timestamp': '...'}]")
 
