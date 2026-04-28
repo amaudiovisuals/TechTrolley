@@ -511,32 +511,10 @@ def bulk_upload_assets(request):
                     'subrental_company_id':   subrental_company_id
                 }
 
-                # Smart Matching: Try Serial Number, then QR Code, then Barcode
-                existing = Asset.objects.filter(serial_number=serial).values_list('id', flat=True).first()
-                if not existing and qr_code_val:
-                    existing = Asset.objects.filter(qr_code=qr_code_val).values_list('id', flat=True).first()
-                if not existing and barcode_val:
-                    existing = Asset.objects.filter(barcode=barcode_val).values_list('id', flat=True).first()
-
-                if existing is None:
-                    # CREATE new asset
-                    asset = Asset(**defaults)
-                    asset.save()
-                    created_count += 1
-                else:
-                    # UPDATE only tracking metadata (barcode/QR) via raw SQL to avoid ORM decimal read
-                    update_fields = {}
-                    if qr_code_val:
-                        update_fields['qr_code'] = qr_code_val
-                        update_fields['is_barcode_added'] = True
-                    if barcode_val:
-                        update_fields['barcode'] = barcode_val
-                        update_fields['is_barcode_added'] = True
-                    if barcode_type_val:
-                        update_fields['barcode_type'] = barcode_type_val
-                    if update_fields:
-                        Asset.objects.filter(id=existing).update(**update_fields)
-                    updated_count += 1
+                # ALWAYS CREATE new asset
+                asset = Asset(**defaults)
+                asset.save()
+                created_count += 1
 
 
             except Exception as e:
