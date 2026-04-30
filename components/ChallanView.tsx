@@ -254,34 +254,44 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const processedAssets = React.useMemo(() => {
-    if (!isGrouped || isEditMode) return localAssets;
+    let list: Asset[] = [];
+    if (!isGrouped || isEditMode) {
+      list = [...localAssets];
+    } else {
+      const groups: Record<string, Asset & { serials: string[], ids: (string | number)[] }> = {};
 
-    const groups: Record<string, Asset & { serials: string[], ids: (string | number)[] }> = {};
+      localAssets.forEach(asset => {
+        const key = asset.aliasName || asset.sku || 'Unknown';
+        if (!groups[key]) {
+          groups[key] = {
+            ...asset,
+            quantity: 0,
+            serials: [],
+            ids: []
+          };
+        }
+        groups[key].quantity += (Number(asset.quantity) || 1);
+        if (asset.serialNumber && asset.serialNumber.trim()) {
+          groups[key].serials.push(asset.serialNumber.trim());
+        }
+        groups[key].ids.push(asset.id);
+      });
 
-    localAssets.forEach(asset => {
-      const key = asset.aliasName || asset.sku || 'Unknown';
-      if (!groups[key]) {
-        groups[key] = {
-          ...asset,
-          quantity: 0,
-          serials: [],
-          ids: []
-        };
-      }
-      groups[key].quantity += (Number(asset.quantity) || 1);
-      if (asset.serialNumber && asset.serialNumber.trim()) {
-        groups[key].serials.push(asset.serialNumber.trim());
-      }
-      groups[key].ids.push(asset.id);
+      list = Object.values(groups).map(g => ({
+        ...g,
+        serialNumber: g.serials.length > 0 ? g.serials.join(', ') : '',
+        // We keep the first ID for the row key, but note it's a group
+        id: `group-${g.sku}-${g.aliasName}`
+      }));
+    }
+
+    // Alphabetical sort by name (aliasName or sku)
+    return list.sort((a, b) => {
+      const nameA = (a.aliasName || a.sku || '').toLowerCase();
+      const nameB = (b.aliasName || b.sku || '').toLowerCase();
+      return nameA.localeCompare(nameB);
     });
-
-    return Object.values(groups).map(g => ({
-      ...g,
-      serialNumber: g.serials.length > 0 ? g.serials.join(', ') : '',
-      // We keep the first ID for the row key, but note it's a group
-      id: `group-${g.sku}-${g.aliasName}`
-    }));
-  }, [localAssets, isGrouped]);
+  }, [localAssets, isGrouped, isEditMode]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -620,7 +630,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </div>
         <div className="text-right flex flex-col justify-between">
           <div>
-            <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Event Venue</h4>
+            <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Event Context</h4>
             <p className="font-black text-gray-900 leading-tight text-[10px] tracking-tighter uppercase">{booking.conferenceName}</p>
             <div className="mt-1 p-1.5 rounded-lg text-right" style={{ backgroundColor: venueBg, border: `1px dashed ${venueBrd}` }}>
               <h5 className="text-[7px] font-black uppercase mb-0.5 tracking-[0.2em]" style={{ color: venueHd }}>Place of Supply</h5>
