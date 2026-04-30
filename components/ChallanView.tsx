@@ -8,7 +8,7 @@ interface ChallanViewProps {
   assets: Asset[];
   companySettings?: CompanySettings;
   onUpdateAsset?: (assetId: string, updates: Partial<Asset>) => Promise<void>;
-  onAddAdhocItem?: (item: Partial<Asset>) => Promise<void>;
+  onAddAdhocItem?: (item: Partial<Asset>) => Promise<string | void>;
   onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
   onRemoveAssets?: (assetIds: string[]) => Promise<void>;
   showScanToast?: (msg: string, type: 'success' | 'warning' | 'error') => void;
@@ -144,6 +144,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         await onRemoveAssets(removedIds);
       }
 
+      const newAdhocIds: string[] = [];
+
       for (const asset of localAssets) {
         const isNew = String(asset.id).startsWith('new-');
 
@@ -151,7 +153,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
           if (onAddAdhocItem) {
             console.log("Saving new ad-hoc item:", asset.sku);
             // Must map camelCase to snake_case for API
-            await onAddAdhocItem({
+            const returnedId = await onAddAdhocItem({
               sku: asset.sku,
               alias_name: asset.aliasName,
               quantity: asset.quantity,
@@ -160,6 +162,9 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               serial_number: asset.serialNumber,
               type: asset.type,
             } as any);
+            if (returnedId) {
+              newAdhocIds.push(returnedId as string);
+            }
           }
         } else {
           if (onUpdateAsset) {
@@ -209,7 +214,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         const finalAssetIds = localAssets
           .filter(a => !String(a.id).startsWith('new-')) // Exclude new ad-hoc items that haven't been saved to DB yet (they'll be added via onAddAdhocItem)
           .map(a => String(a.id));
-        await onSaveFullChallan(booking.id, finalAssetIds);
+        await onSaveFullChallan(booking.id, [...finalAssetIds, ...newAdhocIds]);
       }
 
       showScanToast && showScanToast("✅ All changes saved successfully", "success");

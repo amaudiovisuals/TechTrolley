@@ -430,7 +430,7 @@ const App: React.FC = () => {
 
 
   const fetchAssets = () => {
-    return apiFetch(`${API_BASE}/api/assets/`)
+    return apiFetch(`${API_BASE}/api/assets/?_t=${Date.now()}`)
       .then(async res => {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -864,7 +864,7 @@ const App: React.FC = () => {
   });
 
   const fetchConferences = () => {
-    return apiFetch(`${API_BASE}/api/conferences/`)
+    return apiFetch(`${API_BASE}/api/conferences/?_t=${Date.now()}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -1000,27 +1000,24 @@ const App: React.FC = () => {
         const newAsset = await res.json();
         showScanToast(`✅ New Ad-hoc Asset Created: ${newAsset.sku}`, 'success');
         
-        // 2. Assign to conference
-        const currentAssets = (selectedBookingForChallan.assets || []).map(String);
-        const updatedAssets = Array.from(new Set([...currentAssets, String(newAsset.id)]));
-        
+        // 2. Assign to conference (only to challan_assets, not main assets)
         const currentChallanAssets = (selectedBookingForChallan.challanAssets || []).map(String);
         const updatedChallanAssets = Array.from(new Set([...currentChallanAssets, String(newAsset.id)]));
         
         const confRes = await apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/`, {
           method: 'PATCH',
           body: JSON.stringify({
-            assets: updatedAssets.map(id => parseInt(id, 10)),
             challan_assets: updatedChallanAssets.map(id => parseInt(id, 10))
           })
         });
 
         if (confRes.ok) {
-          showScanToast(`✅ Asset Assigned to Conference`, 'success');
+          showScanToast(`✅ Asset Assigned to Challan`, 'success');
           // Update local state to reflect change in ChallanView
-          setSelectedBookingForChallan(prev => prev ? { ...prev, assets: updatedAssets, challanAssets: updatedChallanAssets } : null);
+          setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: updatedChallanAssets } : null);
           await fetchAssets();
           await fetchConferences();
+          return String(newAsset.id);
         }
       }
     } catch (err) {
