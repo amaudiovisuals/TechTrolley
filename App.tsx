@@ -753,7 +753,11 @@ const App: React.FC = () => {
         normalizeSearch(asset.sku || '').includes(q) ||
         normalizeSearch(asset.barcode || '').includes(q);
     });
-    return filtered;
+    return filtered.sort((a, b) => {
+      const nameA = (a.aliasName || a.sku || '').toLowerCase();
+      const nameB = (b.aliasName || b.sku || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }, [assets, searchQuery, inventoryCategoryFilter]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };

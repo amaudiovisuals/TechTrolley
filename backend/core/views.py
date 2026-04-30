@@ -62,7 +62,10 @@ def asset_list(request):
             # By default, show ONLY our main inventory
             assets_query = assets_query.filter(subrental_company__isnull=True)
 
-        assets = assets_query.all()
+        from django.db.models.functions import Coalesce, Lower
+        assets = assets_query.annotate(
+            sort_name=Lower(Coalesce('alias_name', 'sku'))
+        ).order_by('sort_name')
         
         serializer = AssetSerializer(assets, many=True)
         return Response(serializer.data)
@@ -198,7 +201,12 @@ def generate_pdf_challan(request, conference_id):
     y = 720
     p.drawString(100, y, "Assets Shipped:")
     y -= 20
-    for asset in conference.assets.all():
+    from django.db.models.functions import Coalesce, Lower
+    sorted_assets = conference.assets.annotate(
+        sort_name=Lower(Coalesce('alias_name', 'sku'))
+    ).order_by('sort_name')
+    
+    for asset in sorted_assets:
         display_name = asset.alias_name or asset.sku
         p.drawString(120, y, f"- {display_name} (SN: {asset.serial_number})")
         y -= 20

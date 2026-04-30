@@ -697,7 +697,11 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                       {ticket.company_name}
                     </td>
                   </tr>
-                  {ticket.items?.map((item: any, i: number) => (
+                  {ticket.items?.sort((a: any, b: any) => {
+                    const nameA = (a.asset_name || a.asset_details?.aliasName || a.asset_details?.alias_name || a.asset_details?.name || a.asset_details?.sku || '').toLowerCase();
+                    const nameB = (b.asset_name || b.asset_details?.aliasName || b.asset_details?.alias_name || b.asset_details?.name || b.asset_details?.sku || '').toLowerCase();
+                    return nameA.localeCompare(nameB);
+                  }).map((item: any, i: number) => (
                     <tr key={item.id} className="border-b border-gray-300">
                       {visibleColumns.map(colKey => {
                         const col = ALL_COLUMNS.find(c => c.key === colKey);
