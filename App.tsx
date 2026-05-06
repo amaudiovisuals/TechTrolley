@@ -994,7 +994,8 @@ const App: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({
           ...item,
-          status: 'In Use',
+          status: 'Available', // Start as available, marking as 'In Use' happens via assignment
+          is_temporary: true,
           condition: 'Good',
           purchased_date: new Date().toISOString().split('T')[0]
         })

@@ -55,6 +55,7 @@ class AssetSerializer(serializers.ModelSerializer):
             'barcode_type', 'barcode', 'qr_code', 'status', 'flag', 'condition', 'last_maintained', 
             'current_venue', 'return_date', 'assigned_to', 'assigned_to_name',
             'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'deployment_history',
+            'is_temporary',
         ]
 
     def get_current_conference_name(self, obj):

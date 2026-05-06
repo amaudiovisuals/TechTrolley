@@ -519,10 +519,15 @@ def bulk_upload_assets(request):
                     'subrental_company_id':   subrental_company_id
                 }
 
-                # ALWAYS CREATE new asset
-                asset = Asset(**defaults)
-                asset.save()
-                created_count += 1
+                # UPDATE OR CREATE asset based on serial number
+                asset, created = Asset.objects.update_or_create(
+                    serial_number=serial,
+                    defaults=defaults
+                )
+                if created:
+                    created_count += 1
+                else:
+                    updated_count += 1
 
 
             except Exception as e:
