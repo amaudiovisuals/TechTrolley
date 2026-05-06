@@ -33,6 +33,7 @@ urlpatterns = [
     path('conferences/<int:conference_id>/download-pdf/', views.download_conference_pdf, name='download_conference_pdf'),
     path('export-inventory/', views.export_inventory, name='export_inventory'),
     path('system-recovery/', views.system_recovery, name='system_recovery'),
+    path('ad-hoc-cleanup/', views.ad_hoc_cleanup, name='ad_hoc_cleanup'),
     
     path('subrental-companies/', subrental_views.subrental_company_list, name='subrental_company_list'),
     path('subrental-companies/<int:pk>/', subrental_views.subrental_company_detail, name='subrental_company_detail'),

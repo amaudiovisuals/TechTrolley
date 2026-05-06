@@ -783,3 +783,39 @@ def system_recovery(request):
         "assigned": assigned_count,
         "total_assets": Asset.objects.count()
     })
+
+@api_view(['POST', 'GET'])
+@permission_classes([AllowAny]) # Allow easy triggering via browser for now
+def ad_hoc_cleanup(request):
+    """
+    Cleans up the 775 'In Use' items and marks ad-hoc items as temporary on the live DB.
+    """
+    from django.db.models import Count
+    from .models import Asset, Conference
+
+    # 1. Reset 'In Use' status for assets not currently assigned to any conference
+    assigned_ids = set(Conference.objects.values_list('assets', flat=True))
+    in_use_but_not_assigned = Asset.objects.filter(status='In Use').exclude(id__in=assigned_ids)
+    count_reset = in_use_but_not_assigned.update(status='Available')
+
+    # 2. Mark Ad-hoc items as temporary
+    adhoc_by_sku = Asset.objects.filter(sku__startswith='ADHOC-')
+    count_adhoc = adhoc_by_sku.update(is_temporary=True)
+
+    # 3. Handle the '775' issue: Force reset all remaining 'In Use' assets per user request
+    all_in_use = Asset.objects.filter(status='In Use')
+    remaining_reset = all_in_use.count()
+    if remaining_reset > 0:
+        all_in_use.update(status='Available')
+
+    total_now = Asset.objects.count()
+    inventory_assets = Asset.objects.filter(is_temporary=False).count()
+
+    return Response({
+        "message": "Cleanup complete!",
+        "reset_unassigned": count_reset,
+        "marked_temporary": count_adhoc,
+        "force_reset_remaining_in_use": remaining_reset,
+        "total_assets_in_db": total_now,
+        "visible_inventory_assets": inventory_assets
+    })
