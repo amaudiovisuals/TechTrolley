@@ -9,9 +9,9 @@ import io
 import pandas as pd
 
 def dashboard(request):
-    total_assets = Asset.objects.count()
-    assets_in_use = Asset.objects.filter(status='In Use').count()
-    assets_available = Asset.objects.filter(status='Available').count()
+    total_assets = Asset.objects.filter(is_temporary=False).count()
+    assets_in_use = Asset.objects.filter(is_temporary=False, status='In Use').count()
+    assets_available = Asset.objects.filter(is_temporary=False, status='Available').count()
     conferences = Conference.objects.all().order_by('-start_date')[:5]
     
     context = {
@@ -786,36 +786,74 @@ def system_recovery(request):
 
 @api_view(['POST', 'GET'])
 @permission_classes([AllowAny]) # Allow easy triggering via browser for now
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def ad_hoc_cleanup(request):
-    """
-    Cleans up the 775 'In Use' items and marks ad-hoc items as temporary on the live DB.
+    """Delete all ad‑hoc assets and deduplicate the database.
+    This removes:
+    1. Assets whose SKU starts with ``ADHOC-``.
+    2. Assets present only via ``challan_assets`` (not linked to ``assets`` or ``staged_assets``).
+    3. Duplicate assets by serial number (keeps the earliest entry).
     """
     from django.db.models import Count
     from .models import Asset, Conference
 
-    # 1. Reset 'In Use' status for assets not currently assigned to any conference
-    assigned_ids = set(Conference.objects.values_list('assets', flat=True))
-    in_use_but_not_assigned = Asset.objects.filter(status='In Use').exclude(id__in=assigned_ids)
-    count_reset = in_use_but_not_assigned.update(status='Available')
+    # Delete by SKU prefix
+    sku_deleted, _ = Asset.objects.filter(sku__startswith='ADHOC-').delete()
 
-    # 2. Mark Ad-hoc items as temporary
-    adhoc_by_sku = Asset.objects.filter(sku__startswith='ADHOC-')
-    count_adhoc = adhoc_by_sku.update(is_temporary=True)
+    # Delete assets that exist only via challan linkage
+    challan_ids = set(Conference.objects.values_list('challan_assets', flat=True))
+    linked_ids = set(Conference.objects.values_list('assets', flat=True)) | set(Conference.objects.values_list('staged_assets', flat=True))
+    only_challan_qs = Asset.objects.filter(id__in=challan_ids).exclude(id__in=linked_ids)
+    only_deleted, _ = only_challan_qs.delete()
 
-    # 3. Handle the '775' issue: Force reset all remaining 'In Use' assets per user request
-    all_in_use = Asset.objects.filter(status='In Use')
-    remaining_reset = all_in_use.count()
-    if remaining_reset > 0:
-        all_in_use.update(status='Available')
+    # Deduplicate by serial_number (keep earliest)
+    duplicates = Asset.objects.exclude(serial_number__exact='').exclude(serial_number__isnull=True).values('serial_number').annotate(count=Count('id')).filter(count__gt=1)
+    total_deleted_dup = 0
+    for d in duplicates:
+        serial = d['serial_number']
+        assets = Asset.objects.filter(serial_number=serial).order_by('id')
+        to_keep = assets.first()
+        to_delete = assets.exclude(id=to_keep.id)
+        cnt = to_delete.count()
+        to_delete.delete()
+        total_deleted_dup += cnt
 
     total_now = Asset.objects.count()
-    inventory_assets = Asset.objects.filter(is_temporary=False).count()
-
     return Response({
-        "message": "Cleanup complete!",
-        "reset_unassigned": count_reset,
-        "marked_temporary": count_adhoc,
-        "force_reset_remaining_in_use": remaining_reset,
-        "total_assets_in_db": total_now,
-        "visible_inventory_assets": inventory_assets
+        "message": "Ad‑hoc cleanup complete",
+        "deleted_by_sku": sku_deleted,
+        "deleted_challan_only": only_deleted,
+        "deleted_duplicates": total_deleted_dup,
+        "total_assets_remaining": total_now,
     })
+
+# ---------- New endpoint: permanently delete ad‑hoc assets ----------
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def delete_ad_hoc_assets(request):
+    """Permanently delete all assets created as ad‑hoc.
+    This removes:
+    1. Any asset whose SKU starts with ``ADHOC-``.
+    2. Assets that appear only in ``challan_assets`` and are not linked to the main inventory
+       (i.e., not present in ``assets`` or ``staged_assets`` of any conference).
+    """
+    from .models import Asset, Conference
+
+    # 1. Delete by SKU prefix
+    sku_deleted, _ = Asset.objects.filter(sku__startswith='ADHOC-').delete()
+
+    # 2. Delete assets that exist only via challan linkage
+    challan_ids = set(Conference.objects.values_list('challan_assets', flat=True))
+    linked_ids = set(Conference.objects.values_list('assets', flat=True)) | set(Conference.objects.values_list('staged_assets', flat=True))
+    only_challan_qs = Asset.objects.filter(id__in=challan_ids).exclude(id__in=linked_ids)
+    only_deleted, _ = only_challan_qs.delete()
+
+    total_remaining = Asset.objects.count()
+    return Response({
+        "message": "Ad‑hoc assets deleted",
+        "deleted_by_sku": sku_deleted,
+        "deleted_challan_only": only_deleted,
+        "total_assets_remaining": total_remaining,
+    })
+
