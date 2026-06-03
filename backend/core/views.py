@@ -514,8 +514,8 @@ def bulk_upload_assets(request):
                     'purchased_date':         parse_date(row.get(purchase_col)),
                     'available_from':         parse_date(row.get(avail_from_col)),
                     'available_till':         parse_date(row.get(avail_till_col)),
-                    'condition':              'Good',
                     'quantity':               int(row.get(qty_col, 1)) if not math.isnan(float(row.get(qty_col, 1))) else 1,
+                    # BUG J-27: 'condition' removed — do not overwrite 'Damaged'/'Fair' on updates; rely on DB default ('Good') for new records only
                     'subrental_company_id':   subrental_company_id
                 }
 
@@ -658,7 +658,7 @@ def export_inventory(request):
     Support two modes via query parameter: type=template or type=master
     """
     export_type = request.query_params.get('type', 'template')
-    assets = Asset.objects.all().select_related('assigned_to', 'parent_asset')
+    assets = Asset.objects.filter(is_temporary=False).select_related('assigned_to', 'parent_asset')  # BUG J-13: Exclude temp assets from export
     data = []
     
     for a in assets:
@@ -714,9 +714,10 @@ def system_recovery(request):
     """
     One-click database repair: runs migrations and restores key assignments.
     """
-    if not request.user.is_staff:
-        return Response({"error": "Unauthorized"}, status=403)
-    
+    # BUG J-4: Strict superuser guard — only superusers may run recovery
+    if not request.user.is_superuser:
+        return Response({'error': 'Unauthorized'}, status=403)
+
     # Run migrations to fix missing columns/tables on live site
     from django.core.management import call_command
     try:
@@ -724,70 +725,18 @@ def system_recovery(request):
         migration_error = None
     except Exception as e:
         migration_error = str(e)
-        
-    assignments = {
-        'NHQLTSI006338035C47600': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-1'},
-        'NHQLTSI005336025607600': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-2'},
-        'MNWJK9R63F': {'name': 'JITHIN RAMESH', 'dept': 'USER', 'sku': 'LAPTOP-JR-1'},
-        'D2507N0000517': {'name': 'JISHNU K P', 'dept': 'USER', 'sku': 'LAPTOP-JKP-1'},
-        '5CD52409KL': {'name': 'NIHAL', 'dept': 'MANAGEMENT', 'sku': 'LAPTOP-NIHAL-1'},
-        'D2507N0000644': {'name': 'BHAVIN', 'dept': 'USER', 'sku': 'LAPTOP-BH-3'},
-        'FVFY84UXHV22': {'name': 'RIYAN', 'dept': 'MANAGEMENT', 'sku': 'LAPTOP-RIYAN-1'}
-    }
 
-    recovered_count = 0
-    assigned_count = 0
-
-    for sn, info in assignments.items():
-        # Get or create employee
-        emp_id = info['name'].replace(" ", "_").upper()
-        emp, created = Employee.objects.get_or_create(
-            employee_id=emp_id,
-            defaults={
-                'name': info['name'], 
-                'department': info['dept'], 
-                'email': f"{emp_id.lower()}@techtrolley.amaudiovisuals.com",
-                'phone': '0000000000'
-            }
-        )
-
-        # Check if asset exists by SN or SKU
-        asset = Asset.objects.filter(serial_number=sn).first()
-        if not asset:
-            asset = Asset.objects.filter(sku=info['sku']).first()
-
-        if not asset:
-            # Re-create missing asset
-            Asset.objects.create(
-                sku=info['sku'],
-                serial_number=sn,
-                alias_name=f"Laptop - {info['name']}",
-                type='Laptops',
-                description=f"Recovered laptop for {info['name']}",
-                status='Available',
-                item_price=Decimal('0.00'),
-                assigned_to=emp
-            )
-            recovered_count += 1
-        else:
-            # Update assignment if missing
-            if asset.assigned_to != emp:
-                asset.assigned_to = emp
-                asset.save()
-                assigned_count += 1
+    # BUG J-4: Hardcoded assignments loop removed — it polluted the live DB with hardcoded employee names.
+    # If specific asset assignments need recovering, do them via the admin panel or a data migration.
 
     return Response({
         "message": "Recovery complete!" if not migration_error else f"Recovery partial: {migration_error}",
         "migrations_applied": not bool(migration_error),
-        "recovered": recovered_count,
-        "assigned": assigned_count,
         "total_assets": Asset.objects.count()
     })
 
-@api_view(['POST', 'GET'])
-@permission_classes([AllowAny]) # Allow easy triggering via browser for now
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([AllowAny]) # Allow easy triggering via browser for now
 def ad_hoc_cleanup(request):
     """Delete all ad‑hoc assets and deduplicate the database.
     This removes:

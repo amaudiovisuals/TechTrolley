@@ -218,8 +218,7 @@ class CompanySettings(models.Model):
             existing.email = self.email
             existing.gst_number = self.gst_number
             existing.website = self.website
-            if self.logo:
-                existing.logo = self.logo
+            existing.logo = self.logo  # BUG J-9: Unconditional mirror — allows clearing logo when empty
             existing.powered_by_name = self.powered_by_name
             existing.dashboard_config = self.dashboard_config
             existing.theme_template = self.theme_template

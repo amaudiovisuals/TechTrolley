@@ -318,17 +318,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                     role: 'admin',
                     source: 'system'
                 });
-            } else {
-                // If already present as employee, ensure role is prioritized as admin if in sys list
-                const existing = merged.get(email);
-                if (existing.role !== 'admin') {
-                    merged.set(email, {
-                        ...existing,
-                        role: 'admin',
-                        source: 'employee' // Keep employee as source for name/ID, but update role
-                    });
-                }
             }
+            // BUG J-21: Do NOT override the employee's actual role just because
+            // a Django system user exists for their email. Display their real role.
         });
 
         return Array.from(merged.values())
