@@ -689,13 +689,17 @@ const App: React.FC = () => {
   }, [selectedBookingForChallan?.id, isPrintMode, printConfId]);
 
   // Poll every 5 seconds to keep asset statuses in sync (reduced from 30s to prevent scanning conflicts)
+  // BUG J-19: Do NOT re-fetch conferences while the user is in the conference form —
+  // it causes a race condition that can overwrite unsaved staged asset state.
   React.useEffect(() => {
     const interval = setInterval(() => {
-      fetchAssets();
-      fetchConferences();
+      fetchAssets(); // Always poll assets for live lock-checking
+      if (conferenceView !== 'Form') {
+        fetchConferences();
+      }
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [conferenceView]);
 
 
   // Performance optimizations: Debounced Search & Pagination
@@ -1224,6 +1228,21 @@ const App: React.FC = () => {
     });
   };
 
+  const handleDeleteChallan = (challanId: string) => {
+    if (!window.confirm("Are you absolutely sure you want to permanently delete this Delivery Challan? This cannot be undone.")) return;
+    apiFetch(`${API_BASE}/api/conferences/${challanId}/`, {
+      method: 'DELETE'
+    }).then(res => {
+      if (res.ok) {
+        fetchConferences();
+        fetchAssets(); // Refresh asset statuses
+        alert("Challan deleted successfully.");
+      } else {
+        alert("Failed to delete challan.");
+      }
+    });
+  };
+
   const handleUpdateLogistics = async () => {
     const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees, staged_assets, pdf_document, ...restConferenceData } = conferenceFormData;
     
@@ -1329,6 +1348,9 @@ const App: React.FC = () => {
       conference_type: conf.type,
       assets: conf.assets || [],
       requirements: conf.requirements || [],
+      // BUG J-5: Restore staged_assets from server so auto-saved staged items
+      // are not lost when the form is opened or the page reloads.
+      staged_assets: conf.staged_assets || [],
       crosscheck_assets: conf.crosscheckAssets || [],
       assigned_employees: conf.assigned_employees || [],
       pdf_document: conf.pdf_document
@@ -4274,6 +4296,15 @@ const App: React.FC = () => {
                         >
                           <i className="fa-solid fa-print mr-2"></i> Print
                         </button>
+                        {(user?.is_staff || user?.role === 'admin') && (
+                          <button
+                            onClick={() => handleDeleteChallan(conf.id)}
+                            className="text-red-400 hover:text-white text-[10px] font-black uppercase tracking-widest"
+                            title="Delete Challan"
+                          >
+                            <i className="fa-solid fa-trash mr-2"></i> Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
