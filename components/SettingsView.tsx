@@ -240,6 +240,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     };
 
     const handleUpdateRole = async (email: string, role: string) => {
+        // BUG J-10: Prevent admin from demoting their own account (self-lockout)
+        if (email === user?.email && role === 'technician') {
+            alert('You cannot demote your own admin account.');
+            fetchEmployees();
+            fetchUsers();
+            return;
+        }
         if (!window.confirm(`Are you sure you want to change the role for ${email} to ${role.toUpperCase()}?`)) {
             // Re-fetch to reset dropdown if they cancel (optional but good)
             fetchEmployees();

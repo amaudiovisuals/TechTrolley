@@ -49,9 +49,10 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md', showTex
             <p className={`text-[10px] font-black lowercase tracking-[0.4em] leading-none whitespace-nowrap ${getPoweredByColor()}`}>
               powered by
             </p>
+            {/* BUG J-35: Use dynamic poweredBy from companySettings, not hardcoded brand */}
             <p className="text-sm font-bold mt-0.5 leading-none lowercase" style={{ fontFamily: 'Tahoma, sans-serif' }}>
-              <span className="text-[#F15A24]">a m </span>
-              <span className="text-[#00AEEF]">audiovisuals</span>
+              <span className="text-[#F15A24]">{poweredParts.slice(0, Math.ceil(poweredParts.length / 2)).join(' ')} </span>
+              <span className="text-[#00AEEF]">{poweredParts.slice(Math.ceil(poweredParts.length / 2)).join(' ')}</span>
             </p>
           </div>
         </div>

@@ -688,12 +688,12 @@ const App: React.FC = () => {
     }
   }, [selectedBookingForChallan?.id, isPrintMode, printConfId]);
 
-  // Poll every 30 seconds to keep asset statuses in sync
+  // Poll every 5 seconds to keep asset statuses in sync (reduced from 30s to prevent scanning conflicts)
   React.useEffect(() => {
     const interval = setInterval(() => {
       fetchAssets();
       fetchConferences();
-    }, 30000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -3335,7 +3335,7 @@ const App: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-black text-sky-400 font-mono uppercase truncate">{asset.sku}</p>
                     <div className="flex items-center gap-2 mt-1 min-w-0">
-                      <h4 className="text-base font-black text-white uppercase truncate flex-1">{asset.aliasName || 'Untiled Asset'}</h4>
+                      <h4 className="text-base font-black text-white uppercase truncate flex-1">{asset.aliasName || 'Untitled Asset'}</h4>
                       {asset.sub_assets && asset.sub_assets.length > 0 && (
                         <span className="w-5 h-5 bg-sky-500/20 text-sky-400 rounded-lg flex items-center justify-center text-[8px]" title="Main Asset with Components">
                           <i className="fa-solid fa-boxes-stacked" />
@@ -4173,7 +4173,12 @@ const App: React.FC = () => {
     </div>
   );
 
-  const handlePrintChallan = (conf: Booking) => {
+  const handlePrintChallan = (conf: Booking | null) => {
+    // BUG J-1: Guard against null conference (e.g. unsaved editing state)
+    if (!conf) {
+      alert('Please save the conference first before printing the challan.');
+      return;
+    }
     // Store locally to persist exact current state across the new tab boundary
     localStorage.setItem('print_conf_data', JSON.stringify(conf));
     const relevantAssets = assets.filter(a => {
@@ -4197,8 +4202,9 @@ const App: React.FC = () => {
         (conf.conferenceName && conf.conferenceName.toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
         (conf.associationName && conf.associationName.toLowerCase().includes(challanSearchQuery.toLowerCase()))
       )
+      // BUG J-29: parseInt can return NaN for empty challanNumber; use fallback '0'
       .sort((a, b) =>
-        parseInt(b.challanNumber) - parseInt(a.challanNumber)
+        parseInt(b.challanNumber || '0') - parseInt(a.challanNumber || '0')
       );
 
     return (
@@ -5723,7 +5729,7 @@ const App: React.FC = () => {
                                             // Trigger save to backend immediately
                                             try {
                                               const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/`, {
-                                                method: 'POST',
+                                                method: 'PATCH', // BUG J-7: Use PATCH (not POST) when updating an existing conference
                                                 body: JSON.stringify({
                                                   assets: newAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),
                                                   challan_assets: newChallanAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),

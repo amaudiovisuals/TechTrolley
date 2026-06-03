@@ -262,9 +262,16 @@ from django.db.models.signals import m2m_changed
 
 @receiver(m2m_changed, sender=Conference.assets.through)
 def update_asset_status_on_assets_change(sender, instance, action, pk_set, **kwargs):
+    # BUG J-2: When .clear() is called, Django fires 'pre_clear' with pk_set=None.
+    # We must snapshot the current relationship BEFORE Django wipes it.
+    if action == 'pre_clear':
+        pk_set = set(instance.assets.values_list('pk', flat=True))
+
     if not pk_set:
         return
+
     if action == 'post_add':
+        # Intentional bypass of Asset.save() flag logic for bulk performance
         Asset.objects.filter(pk__in=pk_set).update(status='In Use')
     elif action in ('post_remove', 'pre_clear'):
         # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
@@ -273,13 +280,21 @@ def update_asset_status_on_assets_change(sender, instance, action, pk_set, **kwa
         
         to_revert = [aid for aid in pk_set if aid not in others_using and aid not in crosscheck_using]
         if to_revert:
+            # Intentional bypass of Asset.save() flag logic for bulk performance
             Asset.objects.filter(pk__in=to_revert).exclude(status='Damaged').update(status='Available')
 
 @receiver(m2m_changed, sender=Conference.crosscheck_assets.through)
 def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, **kwargs):
+    # BUG J-2: When .clear() is called, Django fires 'pre_clear' with pk_set=None.
+    # We must snapshot the current relationship BEFORE Django wipes it.
+    if action == 'pre_clear':
+        pk_set = set(instance.crosscheck_assets.values_list('pk', flat=True))
+
     if not pk_set:
         return
+
     if action == 'post_add':
+        # Intentional bypass of Asset.save() flag logic for bulk performance
         Asset.objects.filter(pk__in=pk_set).update(status='Crosscheck')
     elif action in ('post_remove', 'pre_clear'):
         # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
@@ -288,4 +303,6 @@ def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, *
         
         to_revert = [aid for aid in pk_set if aid not in actual_using and aid not in others_cc_using]
         if to_revert:
+            # Intentional bypass of Asset.save() flag logic for bulk performance
             Asset.objects.filter(pk__in=to_revert).exclude(status='Damaged').update(status='Available')
+

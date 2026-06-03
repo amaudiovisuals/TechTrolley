@@ -22,7 +22,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
       try {
         const hasCamera = await Html5Qrcode.getCameras();
         if (!hasCamera || hasCamera.length === 0) {
-          throw new Error("No camera camera found");
+          throw new Error("No camera found"); // TYPO J-39: was 'No camera camera found'
         }
 
         if (!isMounted) return;
