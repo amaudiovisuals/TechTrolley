@@ -403,19 +403,43 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                                     <span className="px-3 py-1 bg-sky-500/10 text-sky-400 text-[10px] font-black uppercase rounded-lg">Historical View</span>
                                 </div>
                                 <div className="space-y-3">
-                                    {conferenceAssets.length > 0 ? conferenceAssets.map(asset => (
-                                        <div key={asset.id} className="bg-slate-950/20 p-5 rounded-2xl border border-slate-800/50 flex justify-between items-center group hover:bg-slate-800/30 transition-all">
-                                            <div>
-                                                <p className="text-sm font-bold text-slate-200 uppercase">{asset.aliasName || asset.sku}</p>
-                                                <p className="text-[10px] font-mono text-slate-600 uppercase mt-0.5">{asset.sku}</p>
-                                            </div>
-                                            <span className={`px-3 py-1 text-[9px] font-black uppercase rounded-lg ${
-                                                asset.status === 'Available' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'
-                                            }`}>{asset.status}</span>
-                                        </div>
-                                    )) : (
+                                    {conferenceAssets.length > 0 ? (() => {
+                                        const groups = conferenceAssets.reduce((acc: Record<string, Asset[]>, a) => {
+                                            const key = a.aliasName || a.sku || 'Unknown';
+                                            if (!acc[key]) acc[key] = [];
+                                            acc[key].push(a);
+                                            return acc;
+                                        }, {} as Record<string, Asset[]>);
+                                        return Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                                            const gKey = `report-${name}`;
+                                            const isOpen = !!((selectedConference as any)?._expandedGroups?.[gKey]);
+                                            return (
+                                                <div key={gKey} className="bg-slate-950/20 rounded-2xl border border-slate-800/50 overflow-hidden group hover:bg-slate-800/30 transition-all">
+                                                    <button
+                                                        onClick={() => setSelectedConference(prev => prev ? { ...prev, _expandedGroups: { ...((prev as any)._expandedGroups || {}), [gKey]: !(prev as any)._expandedGroups?.[gKey] } } as any : prev)}
+                                                        className="w-full flex items-center gap-3 p-4 text-left"
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-sm font-bold text-slate-200 uppercase truncate">{name}</p>
+                                                        </div>
+                                                        <span className="shrink-0 px-2 py-0.5 bg-sky-500/20 text-sky-400 text-[9px] font-black rounded-full border border-sky-500/30">x {items.length}</span>
+                                                        <i className="fa-solid fa-chevron-down text-slate-600 text-[10px] shrink-0 group-hover:text-slate-400 transition-colors"></i>
+                                                    </button>
+                                                    <div className="border-t border-slate-800/50 divide-y divide-slate-800/30">
+                                                        {items.map(asset => (
+                                                            <div key={asset.id} className="flex items-center justify-between px-4 py-2.5">
+                                                                <p className="text-[10px] font-mono text-slate-500 truncate">{asset.sku}</p>
+                                                                <span className={`shrink-0 px-2 py-0.5 text-[9px] font-black uppercase rounded-lg ${asset.status === 'Available' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-500'}`}>{asset.status}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })() : (
                                         <p className="text-xs text-slate-600 italic">No asset data found for this conference.</p>
                                     )}
+
                                 </div>
                             </div>
 

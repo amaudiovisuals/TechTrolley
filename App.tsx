@@ -807,6 +807,9 @@ const App: React.FC = () => {
   const [unrecognizedScan, setUnrecognizedScan] = useState<string | null>(null);
   const [linkingAsset, setLinkingAsset] = useState<Asset | null>(null);
   const [flagMenuAssetId, setFlagMenuAssetId] = useState<string | null>(null);
+  // F-3: Cart view expanded-group state
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (key: string) => setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   // Dedicated refs for deduplication (to prevent double-processing on hardware scanners)
   const lastScannedCode = useRef('');
@@ -5562,33 +5565,50 @@ const App: React.FC = () => {
                                          </div>
                                        );
                                      }
-                                     return (
-                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                         {filteredReqs.map(asset => (
-                                          <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
-                                             <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
-                                               <i className="fa-solid fa-list-check"></i>
-                                             </div>
-                                             <div className="min-w-0 flex-1">
-                                               <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                               <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type} (Requirement)</p>
-                                             </div>
-                                             <button
-                                               onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                               className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                               title="Remove Requirement"
-                                             >
-                                               <i className="fa-solid fa-trash-can text-xs"></i>
-                                             </button>
-                                           </div>
-                                         ))}
-                                       </div>
-                                     );
+                                     // F-3: Cart view — group by aliasName
+                                      const groups = filteredReqs.reduce((acc: Record<string, Asset[]>, a) => {
+                                        const key = a.aliasName || a.sku || 'Unknown';
+                                        if (!acc[key]) acc[key] = [];
+                                        acc[key].push(a);
+                                        return acc;
+                                      }, {} as Record<string, Asset[]>);
+                                      return (
+                                        <div className="space-y-2">
+                                          {Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                                            const gKey = `req-${name}`;
+                                            const isOpen = !!expandedGroups[gKey];
+                                            return (
+                                              <div key={gKey} className="rounded-2xl border border-sky-100 bg-sky-50/10 overflow-hidden shadow-sm">
+                                                <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-sky-50/20 transition-all">
+                                                  <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-xl flex items-center justify-center text-sm border border-sky-200 shrink-0">
+                                                    <i className="fa-solid fa-list-check"></i>
+                                                  </div>
+                                                  <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                                  <span className="shrink-0 px-2 py-0.5 bg-sky-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                                  <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                                </button>
+                                                {isOpen && (
+                                                  <div className="border-t border-sky-100 divide-y divide-sky-50">
+                                                    {items.map(asset => (
+                                                      <div key={asset.id} className="flex items-center gap-3 px-4 py-2.5">
+                                                        <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                        <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
+                                                          <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                                        </button>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
                                  })()}
                                </div>
                             </div>
                           ) : user?.role === 'godown_incharge' ? (
-                             <div className="col-span-2 space-y-12">
+<div className="col-span-2 space-y-12">
                                 {/* 1. Pending Requirements (From Tech) */}
                                 <div className="space-y-4">
                                   <div className="flex items-center justify-between px-1">
@@ -5599,25 +5619,49 @@ const App: React.FC = () => {
                                     <div className="p-8 text-center bg-slate-50/50 rounded-3xl border border-dashed border-slate-200">
                                       <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No pending requirements</p>
                                     </div>
-                                  ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      {assets.filter(a => new Set((conferenceFormData.requirements || []).map(String)).has(String(a.id))).map(asset => {
-                                        const isAssigned = new Set((conferenceFormData.assets || []).map(String)).has(String(asset.id)) || new Set((conferenceFormData.staged_assets || []).map(String)).has(String(asset.id));
-                                        if (isAssigned) return null; // Only show truly pending here
-                                        return (
-                                          <div key={asset.id} className="p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
-                                              <i className="fa-solid fa-hourglass-start"></i>
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                              <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 truncate">{asset.type} • PENDING SCAN</p>
-                                            </div>
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  )}
+                                   ) : (() => {
+                                     const pendingAssets = assets.filter(a => {
+                                       const inReqs = new Set((conferenceFormData.requirements || []).map(String)).has(String(a.id));
+                                       const isAssigned = new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)) || new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id));
+                                       return inReqs && !isAssigned;
+                                     });
+                                     const groups = pendingAssets.reduce((acc: Record<string, Asset[]>, a) => {
+                                       const key = a.aliasName || a.sku || 'Unknown';
+                                       if (!acc[key]) acc[key] = [];
+                                       acc[key].push(a);
+                                       return acc;
+                                     }, {} as Record<string, Asset[]>);
+                                     return (
+                                       <div className="space-y-2">
+                                         {Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                                           const gKey = `godown-req-${name}`;
+                                           const isOpen = !!expandedGroups[gKey];
+                                           return (
+                                             <div key={gKey} className="rounded-2xl border border-orange-100 bg-orange-50/10 overflow-hidden">
+                                               <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-orange-50/20 transition-all">
+                                                 <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-sm border border-orange-200 shrink-0">
+                                                   <i className="fa-solid fa-hourglass-start"></i>
+                                                 </div>
+                                                 <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                                 <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                                 <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                               </button>
+                                               {isOpen && (
+                                                 <div className="border-t border-orange-100 divide-y divide-orange-50">
+                                                   {items.map(asset => (
+                                                     <div key={asset.id} className="flex items-center gap-3 px-4 py-2.5">
+                                                       <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                       <span className="shrink-0 px-2 py-0.5 bg-orange-400 text-white text-[8px] font-black rounded-full">PENDING</span>
+                                                     </div>
+                                                   ))}
+                                                 </div>
+                                               )}
+                                             </div>
+                                           );
+                                         })}
+                                       </div>
+                                     );
+                                   })()}
                                 </div>
 
                                 {/* 2. Godown Search/Scan Bar */}
@@ -5687,53 +5731,59 @@ const App: React.FC = () => {
                                     <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{(conferenceFormData.assets || []).length + (conferenceFormData.staged_assets || []).length} READY</span>
                                   </div>
                                   
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Show officially packed assets first */}
-                                    {assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))).map(asset => {
-                                      const isExtra = !new Set((conferenceFormData.requirements || []).map(String)).has(String(asset.id));
-                                      return (
-                                        <div key={asset.id} className={`p-5 rounded-[1.5rem] border items-center gap-4 shadow-sm group flex ${isExtra ? 'border-amber-200 bg-amber-50/20' : 'border-emerald-100 bg-emerald-50/10'}`}>
-                                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner border ${isExtra ? 'bg-amber-100 text-amber-600 border-amber-200' : 'bg-emerald-100 text-emerald-600 border-emerald-200'}`}>
-                                            <i className={isExtra ? "fa-solid fa-layer-group" : "fa-solid fa-check-double"}></i>
-                                          </div>
-                                          <div className="min-w-0 flex-1">
-                                            <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                            <div className="flex gap-2 items-center mt-1">
-                                              <span className={`px-2 py-0.5 text-white text-[8px] font-black uppercase tracking-widest rounded-full ${isExtra ? 'bg-amber-500' : 'bg-emerald-500'}`}>
-                                                {isExtra ? 'EXTRA INCIDENT' : 'FULFILLED'}
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <button
-                                            onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                            className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                            title="Undo Packing"
-                                          >
-                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                          </button>
-                                        </div>
-                                      )
-                                    })}
-
-                                    {/* Show staged (just scanned) assets */}
-                                    {assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id))).map(asset => (
-                                      <div key={`staged-${asset.id}`} className="p-5 rounded-[1.5rem] border border-sky-200 bg-sky-50/30 flex items-center gap-4 shadow-sm group">
-                                        <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-300 animate-pulse">
-                                          <i className="fa-solid fa-box"></i>
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                          <p className="text-[9px] text-sky-600 font-bold uppercase mt-1">Staged • Unsaved</p>
-                                        </div>
-                                        <button
-                                          onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                          className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                        >
-                                          <i className="fa-solid fa-xmark text-xs"></i>
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
+                                   {/* F-3: Cart view for godown staged/assigned items */}
+                                   <div className="space-y-2">
+                                     {(() => {
+                                       const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
+                                       const packedList = assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)));
+                                       const stagedList = assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
+                                       const allItems = [
+                                         ...packedList.map(a => ({ asset: a, type: requirementIds.has(String(a.id)) ? 'fulfilled' : 'extra' })),
+                                         ...stagedList.map(a => ({ asset: a, type: 'staged' }))
+                                       ];
+                                       const groups = allItems.reduce((acc: Record<string, {asset: Asset, type: string}[]>, item) => {
+                                         const key = item.asset.aliasName || item.asset.sku || 'Unknown';
+                                         if (!acc[key]) acc[key] = [];
+                                         acc[key].push(item);
+                                         return acc;
+                                       }, {} as Record<string, {asset: Asset, type: string}[]>);
+                                       return Object.entries(groups).map(([name, items]: [string, {asset: Asset, type: string}[]]) => {
+                                         const gKey = `godown-staged-${name}`;
+                                         const isOpen = !!expandedGroups[gKey];
+                                         const dominantType = items[0]?.type;
+                                         const colors = dominantType === 'extra' ? { border: 'border-amber-200', bg: 'bg-amber-50/10', iconBg: 'bg-amber-100 text-amber-600 border-amber-200', badge: 'bg-amber-500', icon: 'fa-layer-group' }
+                                           : dominantType === 'staged' ? { border: 'border-sky-200', bg: 'bg-sky-50/20', iconBg: 'bg-sky-100 text-sky-600 border-sky-300', badge: 'bg-sky-500', icon: 'fa-box' }
+                                           : { border: 'border-emerald-100', bg: 'bg-emerald-50/10', iconBg: 'bg-emerald-100 text-emerald-600 border-emerald-200', badge: 'bg-emerald-500', icon: 'fa-check-double' };
+                                         return (
+                                           <div key={gKey} className={`rounded-2xl border ${colors.border} ${colors.bg} overflow-hidden shadow-sm`}>
+                                             <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:brightness-105 transition-all">
+                                               <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm border shrink-0 ${colors.iconBg}`}>
+                                                 <i className={`fa-solid ${colors.icon}`}></i>
+                                               </div>
+                                               <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                               <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {items.length}</span>
+                                               <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                             </button>
+                                             {isOpen && (
+                                               <div className={`border-t ${colors.border} divide-y divide-slate-100/50`}>
+                                                 {items.map(({ asset, type }) => (
+                                                   <div key={`${type}-${asset.id}`} className="flex items-center gap-3 px-4 py-2.5">
+                                                     <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                     <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
+                                                       {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : 'PACKED'}
+                                                     </span>
+                                                     <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
+                                                       <i className="fa-solid fa-xmark text-[9px]"></i>
+                                                     </button>
+                                                   </div>
+                                                 ))}
+                                               </div>
+                                             )}
+                                           </div>
+                                         );
+                                       });
+                                     })()}
+                                   </div>
 
                                   {(conferenceFormData.staged_assets || []).length > 0 && (
                                     <div className="pt-8 border-t border-slate-200 mt-4">
@@ -5806,62 +5856,66 @@ const App: React.FC = () => {
 
                               return (
                                 <>
-                                  {/* Staged Items (Just scanned, not yet dispatched) */}
-                                  {assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id))).map(asset => (
-                                    <div key={`staged-${asset.id}`} className="p-5 rounded-[1.5rem] border border-sky-200 bg-sky-50/30 flex items-center gap-4 shadow-sm group">
-                                      <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-300 animate-pulse">
-                                        <i className="fa-solid fa-box"></i>
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                        <p className="text-[9px] text-sky-600 font-bold uppercase mt-1">Staged • Unsaved</p>
-                                      </div>
-                                    </div>
-                                  ))}
-
-                                  {/* Pending Requirements (items requested but NOT yet scanned) */}
-                                  {assets.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id))).map(asset => (
-                                   <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
-                                      <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
-                                        <i className="fa-solid fa-hourglass-start"></i>
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                        <div className="flex gap-2 items-center mt-1">
-                                          <span className="px-2 py-0.5 bg-orange-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full">PENDING</span>
-                                          <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{asset.type}</p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-
-                                  {/* Actual Assignments (Fulfilled requirements or extra) */}
-                                  {assets.filter(a => assignedIds.has(String(a.id))).map(asset => {
-                                    const isExtra = !requirementIds.has(String(asset.id));
+                                  {/* F-3: Cart view — Admin: Staged + Pending + Assigned grouped by alias */}
+                                  {(() => {
+                                    const stagedList = assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
+                                    const pendingList = assets.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id)));
+                                    const assignedList = assets.filter(a => assignedIds.has(String(a.id)));
+                                    type CartEntry = { asset: Asset; type: 'staged' | 'pending' | 'extra' | 'assigned' };
+                                    const allItems: CartEntry[] = [
+                                      ...stagedList.map(a => ({ asset: a, type: 'staged' as const })),
+                                      ...pendingList.map(a => ({ asset: a, type: 'pending' as const })),
+                                      ...assignedList.map(a => ({ asset: a, type: requirementIds.has(String(a.id)) ? 'assigned' as const : 'extra' as const }))
+                                    ];
+                                    const groups = allItems.reduce((acc: Record<string, CartEntry[]>, item) => {
+                                      const key = item.asset.aliasName || item.asset.sku || 'Unknown';
+                                      if (!acc[key]) acc[key] = [];
+                                      acc[key].push(item);
+                                      return acc;
+                                    }, {} as Record<string, CartEntry[]>);
                                     return (
-                                      <div key={asset.id} className={`p-5 rounded-[1.5rem] border flex items-center gap-4 shadow-sm group ${isExtra ? 'border-amber-200 bg-amber-50/20' : 'border-emerald-100 bg-emerald-50/10'}`}>
-                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-inner border ${isExtra ? 'bg-amber-100 text-amber-600 border-amber-200' : 'bg-emerald-100 text-emerald-600 border-emerald-200'}`}>
-                                          <i className={isExtra ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-check-double"}></i>
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                          <div className="flex gap-2 items-center mt-1">
-                                            <span className={`px-2 py-0.5 text-white text-[8px] font-black uppercase tracking-widest rounded-full ${isExtra ? 'bg-amber-500' : 'bg-emerald-500'}`}>
-                                              {isExtra ? 'EXTRA SCAN' : 'ASSIGNED'}
-                                            </span>
-                                            <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{asset.type}</p>
-                                          </div>
-                                        </div>
-                                        <button
-                                          onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                          className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                          title="Hard Remove (Accidental Scan)"
-                                        >
-                                          <i className="fa-solid fa-trash-can text-xs"></i>
-                                        </button>
-                                      </div>
-                                    )
-                                  })}
+                                      <>
+                                        {Object.entries(groups).map(([name, items]: [string, CartEntry[]]) => {
+                                          const gKey = `admin-cart-${name}`;
+                                          const isOpen = !!expandedGroups[gKey];
+                                          const hasExtra = items.some(i => i.type === 'extra');
+                                          const hasStaged = items.some(i => i.type === 'staged');
+                                          const colors = hasExtra ? { border: 'border-amber-200', bg: 'bg-amber-50/10', iconBg: 'bg-amber-100 text-amber-600 border-amber-200', badge: 'bg-amber-500', icon: 'fa-triangle-exclamation' }
+                                            : hasStaged ? { border: 'border-sky-200', bg: 'bg-sky-50/10', iconBg: 'bg-sky-100 text-sky-600 border-sky-200', badge: 'bg-sky-500', icon: 'fa-box' }
+                                            : { border: 'border-emerald-100', bg: 'bg-emerald-50/10', iconBg: 'bg-emerald-100 text-emerald-600 border-emerald-200', badge: 'bg-emerald-500', icon: 'fa-check-double' };
+                                          return (
+                                            <div key={gKey} className={`rounded-2xl border ${colors.border} ${colors.bg} overflow-hidden shadow-sm`}>
+                                              <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:brightness-105 transition-all">
+                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm border shrink-0 ${colors.iconBg}`}>
+                                                  <i className={`fa-solid ${colors.icon}`}></i>
+                                                </div>
+                                                <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                                <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {items.length}</span>
+                                                <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                              </button>
+                                              {isOpen && (
+                                                <div className={`border-t ${colors.border} divide-y divide-slate-100/50`}>
+                                                  {items.map(({ asset, type }) => (
+                                                    <div key={`${type}-${asset.id}`} className="flex items-center gap-3 px-4 py-2.5">
+                                                      <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                      <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
+                                                        {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : type === 'pending' ? 'PENDING' : 'ASSIGNED'}
+                                                      </span>
+                                                      {(type === 'extra' || type === 'assigned' || type === 'staged') && (
+                                                        <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
+                                                          <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                                        </button>
+                                                      )}
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </>
+                                    );
+                                  })()}
                                 </>
                               );
                             })()
@@ -5965,66 +6019,74 @@ const App: React.FC = () => {
                               <div className="text-slate-200 text-6xl"><i className="fa-solid fa-truck-loading"></i></div>
                               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets in crosscheck queue</p>
                             </div>
-                          ) : assets.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id))).map(asset => (
-                            <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-orange-100 bg-orange-50/10 flex items-center gap-4 shadow-sm group">
-                              <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-200">
-                                <i className="fa-solid fa-box"></i>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                <p className="text-[9px] text-orange-600/60 font-black uppercase mt-1 truncate tracking-tighter">Pending Godown Receipt</p>
-                              </div>
-                              {(user?.role === 'godown_incharge' || user?.is_staff) && (
-                                <div className="flex gap-2">
-                                  <button 
-                                    onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
-                                    className={`w-10 h-10 border rounded-xl flex items-center justify-center transition-all ${
-                                      asset.status === 'Damaged' || asset.flag === 'Missing'
-                                        ? 'bg-red-500 border-red-400 text-white animate-pulse'
-                                        : 'bg-white border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-500/50'
-                                    }`}
-                                    title="Report Issue (Damaged/Missing)"
-                                  >
-                                    <i className="fa-solid fa-circle-exclamation text-xs"></i>
-                                  </button>
-                                  <button
-                                    onClick={() => verifyCrosscheckAsset(asset)}
-                                    className="w-10 h-10 bg-orange-500 text-white rounded-xl shadow-lg shadow-orange-500/30 flex items-center justify-center transition-all active:scale-95"
-                                    title="Verify Receipt"
-                                  >
-                                    <i className="fa-solid fa-check"></i>
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Floating Issue Menu */}
-                              {flagMenuAssetId === asset.id && (
-                                <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
-                                  <button 
-                                    onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, 'Crosscheck')}
-                                    className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
-                                  >
-                                    <i className="fa-solid fa-flag text-red-500 text-xs"></i>
-                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
-                                  </button>
-                                  <button 
-                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, 'Crosscheck')}
-                                    className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
-                                  >
-                                    <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
-                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
-                                  </button>
-                                  <button 
-                                    onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, 'Crosscheck')}
-                                    className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
-                                  >
-                                    <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
-                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
+                          ) : (() => {
+                             // F-3: Cart view for crosscheck tab
+                             const crosscheckList = assets.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id)));
+                             const groups = crosscheckList.reduce((acc: Record<string, Asset[]>, a) => {
+                               const key = a.aliasName || a.sku || 'Unknown';
+                               if (!acc[key]) acc[key] = [];
+                               acc[key].push(a);
+                               return acc;
+                             }, {} as Record<string, Asset[]>);
+                             return Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                               const gKey = `crosscheck-${name}`;
+                               const isOpen = !!expandedGroups[gKey];
+                               return (
+                                 <div key={gKey} className="relative rounded-2xl border border-orange-100 bg-orange-50/10 overflow-hidden shadow-sm">
+                                   <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-orange-50/20 transition-all">
+                                     <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-sm border border-orange-200 shrink-0">
+                                       <i className="fa-solid fa-box"></i>
+                                     </div>
+                                     <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                     <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                     <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                   </button>
+                                   {isOpen && (
+                                     <div className="border-t border-orange-100 divide-y divide-orange-50">
+                                       {items.map(asset => (
+                                         <div key={asset.id} className="flex items-center gap-2 px-4 py-2.5">
+                                           <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                           {(user?.role === 'godown_incharge' || user?.is_staff) && (
+                                             <div className="flex gap-1.5 shrink-0">
+                                               <button 
+                                                 onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
+                                                 className={`w-7 h-7 border rounded-lg flex items-center justify-center transition-all ${
+                                                   asset.status === 'Damaged' || asset.flag === 'Missing'
+                                                     ? 'bg-red-500 border-red-400 text-white animate-pulse'
+                                                     : 'bg-white border-slate-200 text-slate-400 hover:text-red-500'
+                                                 }`} title="Report Issue">
+                                                 <i className="fa-solid fa-circle-exclamation text-[9px]"></i>
+                                               </button>
+                                               <button onClick={() => verifyCrosscheckAsset(asset)} className="w-7 h-7 bg-orange-500 text-white rounded-lg flex items-center justify-center transition-all active:scale-95" title="Verify Receipt">
+                                                 <i className="fa-solid fa-check text-[9px]"></i>
+                                               </button>
+                                             </div>
+                                           )}
+                                           {/* Floating Issue Menu */}
+                                           {flagMenuAssetId === asset.id && (
+                                             <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
+                                               <button onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, 'Crosscheck')} className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left">
+                                                 <i className="fa-solid fa-flag text-red-500 text-xs"></i>
+                                                 <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
+                                               </button>
+                                               <button onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, 'Crosscheck')} className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left">
+                                                 <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
+                                                 <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
+                                               </button>
+                                               <button onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, 'Crosscheck')} className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100">
+                                                 <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
+                                                 <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
+                                               </button>
+                                             </div>
+                                           )}
+                                         </div>
+                                       ))}
+                                     </div>
+                                   )}
+                                 </div>
+                               );
+                             });
+                           })()}
                           
                           {(user?.role === 'godown_incharge' || user?.is_staff) && (
                             <div className="col-span-2 pt-10 border-t border-slate-100 mt-6">
