@@ -345,7 +345,6 @@ const App: React.FC = () => {
   const [conferenceView, setConferenceView] = useState<ConferenceView>('List');
   const [challanViewMode, setChallanViewMode] = useState<'List' | 'Detail'>('List');
   const [quickAddInput, setQuickAddInput] = useState('');
-  const [addRequirementQty, setAddRequirementQty] = useState<number>(1);
   const [quickRemoveInput, setQuickRemoveInput] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
 
@@ -5453,35 +5452,25 @@ const App: React.FC = () => {
                             <div className="col-span-2 space-y-12">
                                {/* 1. Technician Search/Scan Bar (Inline - Matching Godown) */}
                                <div className="space-y-4 text-left">
-                                 <div className="flex gap-2 relative group">
-                                   <div className="relative flex-1">
-                                     <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
-                                       <i className="fa-solid fa-magnifying-glass"></i>
-                                     </div>
-                                     <input 
-                                       type="text"
-                                       placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
-                                       value={quickAddInput}
-                                       onChange={(e) => setQuickAddInput(e.target.value)}
-                                       onKeyDown={(e) => {
-                                         if (e.key === 'Enter') {
-                                           const val = (e.target as HTMLInputElement).value.trim();
-                                           if (val) {
-                                              handleScan(val, true); 
-                                              setQuickAddInput('');
-                                           }
-                                         }
-                                       }}
-                                       className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
-                                     />
+                                 <div className="relative group">
+                                   <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                                     <i className="fa-solid fa-magnifying-glass"></i>
                                    </div>
-                                   <input
-                                     type="number"
-                                     min="1"
-                                     value={addRequirementQty}
-                                     onChange={e => setAddRequirementQty(Math.max(1, parseInt(e.target.value) || 1))}
-                                     className="w-24 bg-sky-50 border-none rounded-2xl px-4 py-6 text-center text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all"
-                                     title="Quantity to add"
+                                   <input 
+                                     type="text"
+                                     placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
+                                     value={quickAddInput}
+                                     onChange={(e) => setQuickAddInput(e.target.value)}
+                                     onKeyDown={(e) => {
+                                       if (e.key === 'Enter') {
+                                         const val = (e.target as HTMLInputElement).value.trim();
+                                         if (val) {
+                                            handleScan(val, true); 
+                                            setQuickAddInput('');
+                                         }
+                                       }
+                                     }}
+                                     className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
                                    />
                                  </div>
                                  
@@ -5527,9 +5516,8 @@ const App: React.FC = () => {
                                              <div 
                                                key={asset.id} 
                                                onClick={() => {
-                                                 triggerAssetConferenceAction(asset, 'add', addRequirementQty);
+                                                 triggerAssetConferenceAction(asset, 'add');
                                                  setQuickAddInput('');
-                                                 setAddRequirementQty(1);
                                                }}
                                                className="p-4 rounded-2xl border border-slate-100 bg-white hover:bg-sky-50/50 cursor-pointer transition-all flex items-center gap-3 border-l-4 border-l-sky-500 group shadow-sm"
                                              >
@@ -5567,8 +5555,11 @@ const App: React.FC = () => {
                                  ) : (() => {
                                      const q = quickAddInput.toLowerCase();
                                      const qNorm = normalizeSearch(q);
-                                     const filteredReqs = assets.filter(a => {
-                                       if (!new Set(conferenceFormData.requirements.map(String)).has(String(a.id))) return false;
+                                     const fullReqsList = conferenceFormData.requirements
+                                       .map((id: any) => assets.find(a => String(a.id) === String(id)))
+                                       .filter(Boolean) as Asset[];
+
+                                     const filteredReqs = fullReqsList.filter(a => {
                                        if (!q) return true;
                                        return (a.sku && a.sku.toLowerCase().includes(q)) || 
                                               (a.aliasName && a.aliasName.toLowerCase().includes(q)) ||
