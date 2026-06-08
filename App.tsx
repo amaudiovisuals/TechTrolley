@@ -5923,94 +5923,123 @@ const App: React.FC = () => {
                         </div>
                       )}
 
-                      {assetTab === 'packup' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {(conferenceFormData.assets || []).length === 0 ? (
-                             <div className="col-span-2 py-20 text-center space-y-4">
-                               <div className="text-slate-200 text-6xl"><i className="fa-solid fa-truck-ramp-box"></i></div>
-                               <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets dispatched to site yet</p>
-                             </div>
-                          ) : (
-                            assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)))
-                             .filter(a => {
-                               const q = quickRemoveInput.toLowerCase();
-                               const qNorm = normalizeSearch(q);
-                               return !q || 
-                                 (a.sku && a.sku.toLowerCase() === q) ||
-                                 (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
-                                 normalizeSearch(a.sku || '').includes(qNorm) || 
-                                 normalizeSearch(a.aliasName || '').includes(qNorm) || 
-                                 normalizeSearch(a.name || '').includes(qNorm) || 
-                                 normalizeSearch(a.description || '').includes(qNorm) || 
-                                 normalizeSearch(a.serialNumber || '').includes(qNorm) || 
-                                 normalizeSearch(a.barcode || '').includes(qNorm) || 
-                                 normalizeSearch(a.type || '').includes(qNorm);
-                             }).map(asset => (
-                              <div key={asset.id} className="relative p-5 rounded-[1.5rem] border border-sky-100 bg-sky-50/10 flex items-center gap-4 shadow-sm group">
-                                <div className="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-sky-200">
-                                  <i className="fa-solid fa-check-double"></i>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
-                                  <div className="flex gap-2 items-center mt-1">
-                                    <span className="px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full">ON-SITE / PACKED</span>
-                                    <p className="text-[9px] text-slate-400 font-bold uppercase truncate">{asset.type}</p>
-                                  </div>
-                                </div>
-                                {user?.role === 'technician' && (
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
-                                      className={`w-10 h-10 border rounded-xl flex items-center justify-center transition-all ${
-                                        asset.status === 'Damaged' || asset.flag === 'Missing'
-                                          ? 'bg-red-500 border-red-400 text-white animate-pulse'
-                                          : 'bg-white border-slate-100 text-slate-400 hover:text-red-500 hover:border-red-500/50'
-                                      }`}
-                                      title="Report Issue (Damaged/Missing)"
-                                    >
-                                      <i className="fa-solid fa-circle-exclamation text-xs"></i>
-                                    </button>
-                                    <button
-                                      onClick={() => triggerAssetConferenceAction(asset, 'remove')}
-                                      className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-orange-500 hover:border-orange-500/50 transition-all flex items-center justify-center"
-                                      title="Move to Crosscheck (Return)"
-                                    >
-                                      <i className="fa-solid fa-arrow-right-from-bracket text-xs"></i>
-                                    </button>
-                                  </div>
-                                )}
-                                
-                                {/* Floating Issue Menu */}
-                                {flagMenuAssetId === asset.id && (
-                                  <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
-                                    <button 
-                                      onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, assetTab === 'packup' ? 'Packup' : 'Crosscheck')}
-                                      className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
-                                    >
-                                      <i className="fa-solid fa-flag text-red-500 text-xs"></i>
-                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
-                                    </button>
-                                    <button 
-                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, assetTab === 'packup' ? 'Packup' : 'Crosscheck')}
-                                      className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
-                                    >
-                                      <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
-                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
-                                    </button>
-                                    <button 
-                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, assetTab === 'packup' ? 'Packup' : 'Crosscheck')}
-                                      className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
-                                    >
-                                      <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
-                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
-                                    </button>
-                                  </div>
-                                )}
+                      {assetTab === 'packup' && (() => {
+                        // J-46: Cart view for packup tab
+                        const packupList = assets.filter(a =>
+                          new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))
+                        ).filter(a => {
+                          const q = quickRemoveInput.toLowerCase();
+                          const qNorm = normalizeSearch(q);
+                          return !q ||
+                            (a.sku && a.sku.toLowerCase() === q) ||
+                            (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
+                            normalizeSearch(a.sku || '').includes(qNorm) ||
+                            normalizeSearch(a.aliasName || '').includes(qNorm) ||
+                            normalizeSearch(a.name || '').includes(qNorm) ||
+                            normalizeSearch(a.description || '').includes(qNorm) ||
+                            normalizeSearch(a.serialNumber || '').includes(qNorm) ||
+                            normalizeSearch(a.barcode || '').includes(qNorm) ||
+                            normalizeSearch(a.type || '').includes(qNorm);
+                        });
+
+                        if (packupList.length === 0) {
+                          return (
+                            <div className="grid grid-cols-1">
+                              <div className="col-span-2 py-20 text-center space-y-4">
+                                <div className="text-slate-200 text-6xl"><i className="fa-solid fa-truck-ramp-box"></i></div>
+                                <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets dispatched to site yet</p>
                               </div>
-                            ))
-                          )}
-                        </div>
-                      )}
+                            </div>
+                          );
+                        }
+
+                        const groups = packupList.reduce((acc: Record<string, Asset[]>, a) => {
+                          const key = a.aliasName || a.sku || 'Unknown';
+                          if (!acc[key]) acc[key] = [];
+                          acc[key].push(a);
+                          return acc;
+                        }, {} as Record<string, Asset[]>);
+
+                        return (
+                          <div className="space-y-2">
+                            {Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                              const gKey = `packup-${name}`;
+                              const isOpen = !!expandedGroups[gKey];
+                              return (
+                                <div key={gKey} className="rounded-2xl border border-emerald-100 bg-emerald-50/10 overflow-hidden shadow-sm">
+                                  <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/20 transition-all">
+                                    <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-sm border border-emerald-200 shrink-0">
+                                      <i className="fa-solid fa-check-double"></i>
+                                    </div>
+                                    <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                    <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                    <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                  </button>
+                                  {isOpen && (
+                                    <div className="border-t border-emerald-100 divide-y divide-emerald-50">
+                                      {items.map(asset => (
+                                        <div key={asset.id} className="relative flex items-center gap-2 px-4 py-2.5">
+                                          <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                          <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded-full">ON-SITE</span>
+                                          {user?.role === 'technician' && (
+                                            <div className="flex gap-1.5 shrink-0">
+                                              <button
+                                                onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
+                                                className={`w-7 h-7 border rounded-lg flex items-center justify-center transition-all ${
+                                                  asset.status === 'Damaged' || asset.flag === 'Missing'
+                                                    ? 'bg-red-500 border-red-400 text-white animate-pulse'
+                                                    : 'bg-white border-slate-200 text-slate-400 hover:text-red-500'
+                                                }`}
+                                                title="Report Issue"
+                                              >
+                                                <i className="fa-solid fa-circle-exclamation text-[9px]"></i>
+                                              </button>
+                                              <button
+                                                onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                                                className="w-7 h-7 bg-white border border-slate-200 text-slate-400 hover:text-orange-500 hover:border-orange-300 rounded-lg flex items-center justify-center transition-all"
+                                                title="Move to Crosscheck (Return)"
+                                              >
+                                                <i className="fa-solid fa-arrow-right-from-bracket text-[9px]"></i>
+                                              </button>
+                                            </div>
+                                          )}
+                                          {/* Floating Issue Menu */}
+                                          {flagMenuAssetId === asset.id && (
+                                            <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
+                                              <button
+                                                onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, 'Packup')}
+                                                className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                              >
+                                                <i className="fa-solid fa-flag text-red-500 text-xs"></i>
+                                                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
+                                              </button>
+                                              <button
+                                                onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, 'Packup')}
+                                                className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                              >
+                                                <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
+                                                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
+                                              </button>
+                                              <button
+                                                onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, 'Packup')}
+                                                className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
+                                              >
+                                                <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
+                                                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
 
                       {assetTab === 'crosscheck' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

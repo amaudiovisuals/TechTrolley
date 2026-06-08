@@ -82,7 +82,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       const stored = localStorage.getItem('challan_visible_columns');
       if (stored) return JSON.parse(stored);
     } catch (e) { }
-    return ['Seq', 'Asset', 'Identifiers', 'Qty', 'Total'];
+    return ['Seq', 'Asset', 'Qty'];
   });
 
   const [isEditMode, setIsEditMode] = React.useState(false);
@@ -101,7 +101,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     } catch (e) { }
     return booking.challanNumber || null;
   });
-  const [isGrouped, setIsGrouped] = React.useState(false);
+  const [isGrouped, setIsGrouped] = React.useState(true);
 
   React.useEffect(() => {
     localStorage.setItem('challan_visible_columns', JSON.stringify(visibleColumns));
