@@ -93,6 +93,44 @@ class Asset(models.Model):
     brand = models.CharField(max_length=100, blank=True, default='')
     model_number = models.CharField(max_length=100, blank=True, default='')
 
+    @property
+    def current_value(self):
+        from datetime import date
+        
+        if not self.item_price or not self.purchased_date:
+            return int(self.item_price or 0)
+            
+        # 1. Determine the Base Rate
+        it_categories = ['Computers & Servers', 'Laptops', 'IT & Networking']
+        name_lower = f"{self.alias_name or ''} {self.description or ''} {self.type or ''}".lower()
+        if self.type in it_categories or 'laptop' in name_lower or 'computer' in name_lower or 'it gear' in name_lower:
+            base_rate = 0.40
+        else:
+            base_rate = 0.15
+            
+        # 2. Financial Year Handling
+        def get_fy_end_year(dt):
+            return dt.year if dt.month < 4 else dt.year + 1
+            
+        purchase_fy_end = get_fy_end_year(self.purchased_date)
+        current_date = date.today()
+        current_fy_end = get_fy_end_year(current_date)
+        
+        # 3. The 180-Day Rule
+        march_31 = date(purchase_fy_end, 3, 31)
+        days_in_first_fy = (march_31 - self.purchased_date).days + 1
+        
+        year_1_rate = base_rate / 2.0 if days_in_first_fy < 180 else base_rate
+        
+        # 4. Compounding
+        value = float(self.item_price)
+        for fy in range(purchase_fy_end, current_fy_end):
+            rate = year_1_rate if fy == purchase_fy_end else base_rate
+            value = value - (value * rate)
+            
+        # 5. Return the final compounded integer value
+        return int(value)
+
     def save(self, *args, **kwargs):
         # Ensure QR Code is permanently embedded on creation/save if blank
         if not self.qr_code and self.sku:
