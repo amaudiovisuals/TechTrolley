@@ -451,7 +451,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                 value={asset.aliasName ?? ''}
                 onChange={e => onLocalUpdate(asset.id, 'aliasName', e.target.value)}
               />
-              <span className="hidden print:block font-black uppercase text-[8px] tracking-tighter">{asset.aliasName || ' '}</span>
+              <span className="hidden print:block font-black uppercase text-[8px] tracking-tighter">{asset.aliasName || asset.sku}</span>
+
             </div>
           );
         case 'SKU':
@@ -541,7 +542,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       case 'SKU': return asset.sku;
       case 'Asset': return (
         <>
-          <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName !== '' ? asset.aliasName : ' '}</span>
+          <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName || asset.sku}</span>
+
           {!visibleColumns.includes('Type') && (
             <span className="text-[7px] font-bold uppercase tracking-widest print:hidden" style={{ color: accent }}>{asset.type}</span>
           )}

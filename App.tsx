@@ -345,6 +345,7 @@ const App: React.FC = () => {
   const [conferenceView, setConferenceView] = useState<ConferenceView>('List');
   const [challanViewMode, setChallanViewMode] = useState<'List' | 'Detail'>('List');
   const [quickAddInput, setQuickAddInput] = useState('');
+  const [addRequirementQty, setAddRequirementQty] = useState<number>(1);
   const [quickRemoveInput, setQuickRemoveInput] = useState('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
 
@@ -1527,7 +1528,7 @@ const App: React.FC = () => {
     return asset || null;
   };
 
-  const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove' | 'unassign') => {
+  const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove' | 'unassign', qty: number = 1) => {
     const assetIdStr = asset.id.toString();
     const existingAssets = conferenceFormData.assets.map((id: any) => id.toString());
     const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => id.toString()));
@@ -1590,9 +1591,9 @@ const App: React.FC = () => {
           // Technician adds to REQUIREMENTS
           setConferenceFormData((prev: any) => ({
             ...prev,
-            requirements: [...(prev.requirements || []), assetIdStr]
+            requirements: [...(prev.requirements || []), ...Array(qty).fill(assetIdStr)]
           }));
-          showScanToast(`📋 Requirement Added: "${asset.aliasName || asset.sku}"`, 'success');
+          showScanToast(`📋 Requirement Added: ${qty}x "${asset.aliasName || asset.sku}"`, 'success');
         } else {
           // Admin/Godown: Items go to STAGED first in Requirements/Packing tab
           setConferenceFormData((prev: any) => {
@@ -5446,25 +5447,35 @@ const App: React.FC = () => {
                             <div className="col-span-2 space-y-12">
                                {/* 1. Technician Search/Scan Bar (Inline - Matching Godown) */}
                                <div className="space-y-4 text-left">
-                                 <div className="relative group">
-                                   <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
-                                     <i className="fa-solid fa-magnifying-glass"></i>
-                                   </div>
-                                   <input 
-                                     type="text"
-                                     placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
-                                     value={quickAddInput}
-                                     onChange={(e) => setQuickAddInput(e.target.value)}
-                                     onKeyDown={(e) => {
-                                       if (e.key === 'Enter') {
-                                         const val = (e.target as HTMLInputElement).value.trim();
-                                         if (val) {
-                                            handleScan(val, true); 
-                                            setQuickAddInput('');
+                                 <div className="flex gap-2 relative group">
+                                   <div className="relative flex-1">
+                                     <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                                       <i className="fa-solid fa-magnifying-glass"></i>
+                                     </div>
+                                     <input 
+                                       type="text"
+                                       placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
+                                       value={quickAddInput}
+                                       onChange={(e) => setQuickAddInput(e.target.value)}
+                                       onKeyDown={(e) => {
+                                         if (e.key === 'Enter') {
+                                           const val = (e.target as HTMLInputElement).value.trim();
+                                           if (val) {
+                                              handleScan(val, true); 
+                                              setQuickAddInput('');
+                                           }
                                          }
-                                       }
-                                     }}
-                                     className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                                       }}
+                                       className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                                     />
+                                   </div>
+                                   <input
+                                     type="number"
+                                     min="1"
+                                     value={addRequirementQty}
+                                     onChange={e => setAddRequirementQty(Math.max(1, parseInt(e.target.value) || 1))}
+                                     className="w-24 bg-sky-50 border-none rounded-2xl px-4 py-6 text-center text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all"
+                                     title="Quantity to add"
                                    />
                                  </div>
                                  
@@ -5510,8 +5521,9 @@ const App: React.FC = () => {
                                              <div 
                                                key={asset.id} 
                                                onClick={() => {
-                                                 triggerAssetConferenceAction(asset, 'add');
+                                                 triggerAssetConferenceAction(asset, 'add', addRequirementQty);
                                                  setQuickAddInput('');
+                                                 setAddRequirementQty(1);
                                                }}
                                                className="p-4 rounded-2xl border border-slate-100 bg-white hover:bg-sky-50/50 cursor-pointer transition-all flex items-center gap-3 border-l-4 border-l-sky-500 group shadow-sm"
                                              >
