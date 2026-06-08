@@ -1631,10 +1631,16 @@ const App: React.FC = () => {
     } else if (action === 'unassign') {
       if (user?.role === 'technician') {
         // Technician removes from REQUIREMENTS
-        setConferenceFormData((prev: any) => ({
-          ...prev,
-          requirements: (prev.requirements || []).filter((id: any) => id.toString() !== assetIdStr)
-        }));
+        setConferenceFormData((prev: any) => {
+          const reqs = prev.requirements || [];
+          const idx = reqs.findIndex((id: any) => id.toString() === assetIdStr);
+          if (idx > -1) {
+            const newReqs = [...reqs];
+            newReqs.splice(idx, 1);
+            return { ...prev, requirements: newReqs };
+          }
+          return prev;
+        });
         showScanToast(`🗑️ Requirement Removed: "${asset.aliasName || asset.sku}"`, 'success');
       } else {
         // Admin/Godown unassigns from ACTUAL ASSETS or STAGED
@@ -5596,7 +5602,21 @@ const App: React.FC = () => {
                                                     <i className="fa-solid fa-list-check"></i>
                                                   </div>
                                                   <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                                  <span className="shrink-0 px-2 py-0.5 bg-sky-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                                  <div className="shrink-0 flex items-center bg-gray-200 rounded-full text-[10px] font-black overflow-hidden mr-2">
+                                                    <button 
+                                                      onClick={(e) => { e.stopPropagation(); triggerAssetConferenceAction(items[0], 'unassign'); }} 
+                                                      className="px-2.5 py-1 hover:bg-gray-300 hover:text-red-600 transition-colors"
+                                                    >
+                                                      <i className="fa-solid fa-minus"></i>
+                                                    </button>
+                                                    <span className="px-1 text-slate-800 w-4 text-center">{items.length}</span>
+                                                    <button 
+                                                      onClick={(e) => { e.stopPropagation(); triggerAssetConferenceAction(items[0], 'add'); }} 
+                                                      className="px-2.5 py-1 hover:bg-gray-300 hover:text-green-600 transition-colors"
+                                                    >
+                                                      <i className="fa-solid fa-plus"></i>
+                                                    </button>
+                                                  </div>
                                                   <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                                 </button>
                                                 {isOpen && (
