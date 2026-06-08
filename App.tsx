@@ -5600,9 +5600,23 @@ const App: React.FC = () => {
                                                     >
                                                       <i className="fa-solid fa-minus"></i>
                                                     </button>
-                                                    <span className="px-1 text-slate-800 w-4 text-center">{items.length}</span>
+                                                    <span className="text-gray-900 font-bold px-3 min-w-[2rem] text-center">{items.length}</span>
                                                     <button 
-                                                      onClick={(e) => { e.stopPropagation(); triggerAssetConferenceAction(items[0], 'add'); }} 
+                                                      onClick={(e) => { 
+                                                        e.stopPropagation();
+                                                        const targetName = name;
+                                                        const availableAsset = assets.find(a => 
+                                                          (a.aliasName || a.sku || 'Unknown') === targetName && 
+                                                          !conferenceFormData.requirements.some((id: any) => String(id) === String(a.id)) &&
+                                                          !conferenceFormData.assets.some((id: any) => String(id) === String(a.id)) &&
+                                                          a.status !== AssetStatus.DAMAGED
+                                                        );
+                                                        if (availableAsset) {
+                                                          triggerAssetConferenceAction(availableAsset, 'add');
+                                                        } else {
+                                                          alert("No more available items of this type in stock.");
+                                                        }
+                                                      }} 
                                                       className="px-2.5 py-1 hover:bg-gray-300 hover:text-green-600 transition-colors"
                                                     >
                                                       <i className="fa-solid fa-plus"></i>
@@ -5643,11 +5657,14 @@ const App: React.FC = () => {
                                       <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">No pending requirements</p>
                                     </div>
                                    ) : (() => {
-                                     const pendingAssets = assets.filter(a => {
-                                       const inReqs = new Set((conferenceFormData.requirements || []).map(String)).has(String(a.id));
-                                       const isAssigned = new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)) || new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id));
-                                       return inReqs && !isAssigned;
-                                     });
+                                     const isAssignedSet = new Set([
+                                       ...(conferenceFormData.assets || []).map(String),
+                                       ...(conferenceFormData.staged_assets || []).map(String)
+                                     ]);
+                                     const pendingAssets = (conferenceFormData.requirements || [])
+                                       .filter((id: any) => !isAssignedSet.has(String(id)))
+                                       .map((id: any) => assets.find(a => String(a.id) === String(id)))
+                                       .filter(Boolean) as Asset[];
                                      const groups = pendingAssets.reduce((acc: Record<string, Asset[]>, a) => {
                                        const key = a.aliasName || a.sku || 'Unknown';
                                        if (!acc[key]) acc[key] = [];
