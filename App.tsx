@@ -855,6 +855,8 @@ const App: React.FC = () => {
   const [editingConference, setEditingConference] = useState<Booking | null>(null);
   const [expandedConferenceId, setExpandedConferenceId] = useState<string | number | null>(null);
   const [assetTab, setAssetTab] = useState<'available' | 'assigned' | 'packup' | 'crosscheck'>('available');
+  const [conferenceSearchTerm, setConferenceSearchTerm] = useState("");
+  const [conferenceStatusFilter, setConferenceStatusFilter] = useState("ALL");
   const loadCachedArray = (key: string) => {
     try {
       const cached = localStorage.getItem(key);
@@ -3067,11 +3069,37 @@ const App: React.FC = () => {
   // --- RENDERERS ---
 
   const filteredConferences = useMemo(() => {
-    if (user?.is_staff || user?.role === 'godown_incharge') return backendConferences;
-    return backendConferences.filter(conf =>
-      conf.assigned_employees?.includes(Number(user?.employee_id))
-    );
-  }, [backendConferences, user]);
+    let list = backendConferences;
+    if (!user?.is_staff && user?.role !== 'godown_incharge') {
+      list = list.filter(conf =>
+        conf.assigned_employees?.includes(Number(user?.employee_id))
+      );
+    }
+
+    if (conferenceSearchTerm) {
+      const lowerSearch = conferenceSearchTerm.toLowerCase();
+      list = list.filter(c => 
+        (c.name || '').toLowerCase().includes(lowerSearch) ||
+        (c.conferenceName || '').toLowerCase().includes(lowerSearch) ||
+        (c.association || '').toLowerCase().includes(lowerSearch) ||
+        (c.venue || '').toLowerCase().includes(lowerSearch)
+      );
+    }
+
+    if (conferenceStatusFilter !== 'ALL') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      list = list.filter(c => {
+        const start = new Date(c.startDate);
+        const end = new Date(c.endDate);
+        if (conferenceStatusFilter === 'UPCOMING') return today < start;
+        if (conferenceStatusFilter === 'COMPLETED') return today > end;
+        return today >= start && today <= end;
+      });
+    }
+
+    return list.sort((a, b) => Number(b.id) - Number(a.id));
+  }, [backendConferences, user, conferenceSearchTerm, conferenceStatusFilter]);
 
   const renderDashboard = () => (
     <div className="space-y-12 animate-in fade-in duration-500">
@@ -4453,6 +4481,26 @@ const App: React.FC = () => {
         {user?.is_staff && (
           <button onClick={openNewConferenceForm} className="w-full md:w-auto px-8 py-4 bg-violet-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-violet-500/20">Add Conference</button>
         )}
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-4 bg-slate-900/30 p-4 rounded-3xl border border-slate-800/50">
+         <input
+            type="text"
+            value={conferenceSearchTerm}
+            onChange={(e) => setConferenceSearchTerm(e.target.value)}
+            placeholder="Search conference name or venue..."
+            className="flex-1 bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+         />
+         <select
+            value={conferenceStatusFilter}
+            onChange={(e) => setConferenceStatusFilter(e.target.value)}
+            className="md:w-64 bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+         >
+            <option value="ALL">All Statuses</option>
+            <option value="UPCOMING">Upcoming</option>
+            <option value="ONGOING">Ongoing</option>
+            <option value="COMPLETED">Completed</option>
+         </select>
       </div>
 
       {/* Mobile Card View for Conferences */}
