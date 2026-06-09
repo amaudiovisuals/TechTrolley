@@ -28,16 +28,16 @@ interface ColumnDef {
 }
 
 const ALL_COLUMNS: ColumnDef[] = [
-  { key: 'Seq', label: 'Seq', width: 'w-6', className: 'w-6' },
+  { key: 'Seq', label: 'SEQ', width: 'w-6', className: 'w-6' },
   { key: 'SKU', label: 'SKU', width: 'w-24', className: 'w-24' },
-  { key: 'Asset', label: 'Asset Specification' },
+  { key: 'Asset', label: 'ALIAS NAME' },
   { key: 'Type', label: 'Type' },
   { key: 'Identifiers', label: 'Identifiers' },
   { key: 'MAC', label: 'MAC Address' },
   { key: 'IMEI', label: 'IMEI (1/2)' },
   { key: 'Rate', label: 'Unit Rate', width: 'w-16', className: 'w-16', printHidden: true },
-  { key: 'Qty', label: 'Qty', width: 'w-10', className: 'w-10 text-right' },
-  { key: 'Total', label: 'Total', width: 'w-20', className: 'w-20 text-right', printHidden: true },
+  { key: 'Qty', label: 'QUANTITY', width: 'w-10', className: 'w-10 text-right' },
+  { key: 'Total', label: 'TOTAL', width: 'w-20', className: 'w-20 text-right' },
   { key: 'Actions', label: 'Actions', className: 'w-10 print:hidden' },
 ];
 
@@ -82,7 +82,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       const stored = localStorage.getItem('challan_visible_columns');
       if (stored) return JSON.parse(stored);
     } catch (e) { }
-    return ['Seq', 'Asset', 'Qty'];
+    return ['Seq', 'Asset', 'Qty', 'Total'];
   });
 
   const [isEditMode, setIsEditMode] = React.useState(false);
@@ -428,6 +428,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   const hdrBg = '#ffffff'; // explicitly white for headings
 
   const getDepreciatedPrice = (a: Asset) => {
+    if ((a as any).current_value !== undefined && (a as any).current_value !== null) {
+      return parseFloat((a as any).current_value);
+    }
     const price = a.itemPrice || 0;
     const dep = a.depreciationPercentage || 0;
     return price * (1 - dep / 100);
@@ -761,22 +764,22 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             </td>
           </tr>
           <tr className="bg-gray-50">
-            <td colSpan={visibleColumns.length} className="py-0.5 px-2 text-right text-[8px] font-black text-gray-900 uppercase tracking-widest">
-              Approximate Value of Goods:
+            <td colSpan={visibleColumns.length} className="py-1 px-2 text-right text-[10px] font-black text-gray-900 uppercase tracking-widest">
+              GRAND TOTAL:
               {isEditMode ? (
                 <input
                   type="number"
-                  className="w-24 ml-2 bg-white border border-slate-200 rounded px-1 text-[10px] text-right text-orange-500 font-black focus:outline-none focus:border-orange-500"
+                  className="w-24 ml-2 bg-white border border-slate-200 rounded px-1 text-[12px] text-right text-orange-500 font-black focus:outline-none focus:border-orange-500"
                   value={totalValue}
                   onChange={e => setTotalOverride(parseFloat(e.target.value) || 0)}
                 />
               ) : (
-                <span className="text-[10px] ml-2" style={{ color: orange }}>₹{Math.round(totalValue).toLocaleString()}</span>
+                <span className="text-[12px] ml-2" style={{ color: orange }}>₹{Math.round(totalValue).toLocaleString()}</span>
               )}
             </td>
           </tr>
           <tr>
-            <td colSpan={visibleColumns.length} className="pb-1 px-2 text-right text-[7px] text-gray-900 italic font-medium">
+            <td colSpan={visibleColumns.length} className="pb-1 px-2 text-right text-[8px] text-gray-900 italic font-bold">
               ({numberToWords(totalValue)})
             </td>
           </tr>
