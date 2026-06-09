@@ -6,7 +6,12 @@ interface ScannerProps {
   onClose: () => void;
 }
 
-export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
+const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
+  const onScanRef = useRef(onScan);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isScanning = useRef(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -83,7 +88,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
               setTimeout(() => setIsSuccessFlash(false), 400);
               
               // Pass to parent
-              onScan(code);
+              onScanRef.current(code);
             }
           },
           () => {
@@ -129,7 +134,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         scannerRef.current = null;
       }
     };
-  }, [onScan]);
+  }, []); // Empty dependency array to prevent camera blinking
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-0 sm:p-4 animate-in fade-in duration-300">
@@ -200,3 +205,5 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
     </div>
   );
 };
+
+export const Scanner = React.memo(ScannerComponent);
