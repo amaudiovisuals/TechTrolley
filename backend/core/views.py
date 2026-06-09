@@ -67,8 +67,12 @@ def asset_list(request):
             sort_name=Lower(Coalesce('alias_name', 'sku'))
         ).order_by('sort_name')
         
-        serializer = AssetSerializer(assets, many=True)
-        return Response(serializer.data)
+        from rest_framework.pagination import PageNumberPagination
+        paginator = PageNumberPagination()
+        paginator.page_size = 50
+        paginated_assets = paginator.paginate_queryset(assets, request)
+        serializer = AssetSerializer(paginated_assets, many=True)
+        return paginator.get_paginated_response(serializer.data)
     elif request.method == 'POST':
         serializer = AssetSerializer(data=request.data)
         if serializer.is_valid():

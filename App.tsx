@@ -392,6 +392,7 @@ const App: React.FC = () => {
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
+  const [nextPageUrl, setNextPageUrl] = useState<string | null>(null);
 
   // Asset Form State
   const [assetFormData, setAssetFormData] = useState<Partial<Asset>>({
@@ -434,8 +435,14 @@ const App: React.FC = () => {
     return apiFetch(`${API_BASE}/api/assets/?_t=${Date.now()}`)
       .then(async res => {
         const data = await res.json();
-        if (Array.isArray(data)) {
-          const mappedAssets: Asset[] = data.map((asset: any) => ({
+        const results = data.results || data;
+        
+        if (data.next !== undefined) {
+          setNextPageUrl(data.next);
+        }
+
+        if (Array.isArray(results)) {
+          const mappedAssets: Asset[] = results.map((asset: any) => ({
             ...asset,
             id: asset.id.toString(),
             aliasName: asset.alias_name,
@@ -473,6 +480,58 @@ const App: React.FC = () => {
       .catch(err => {
         console.error("Failed to fetch assets:", err);
       });
+  };
+
+  const loadMoreAssets = () => {
+    if (!nextPageUrl) return;
+    return apiFetch(nextPageUrl)
+      .then(async res => {
+        const data = await res.json();
+        const results = data.results || data;
+
+        if (data.next !== undefined) {
+          setNextPageUrl(data.next);
+        }
+
+        if (Array.isArray(results)) {
+          const mappedAssets: Asset[] = results.map((asset: any) => ({
+            ...asset,
+            id: asset.id.toString(),
+            aliasName: asset.alias_name,
+            macAddress: asset.mac_address,
+            imeiNumber1: asset.imei_number_1,
+            imeiNumber2: asset.imei_number_2,
+            serialNumber: asset.serial_number,
+            isBarcodeAdded: asset.is_barcode_added,
+            quantity: parseInt(asset.quantity, 10) || 1,
+            itemPrice: parseFloat(asset.item_price),
+            depreciationPercentage: parseFloat(asset.depreciation_percentage),
+            purchasedDate: asset.purchased_date,
+            availableFrom: asset.available_from,
+            availableTill: asset.available_till,
+            createdAt: asset.created_at,
+            barcode: asset.barcode,
+            barcodeType: asset.barcode_type,
+            qrCode: asset.qr_code,
+            lastMaintained: asset.last_maintained,
+            isTemporary: asset.is_temporary,
+            returnDate: asset.return_date,
+            flag: asset.flag || AssetFlag.NONE,
+            currentVenue: asset.current_venue,
+            assigned_to: asset.assigned_to,
+            assigned_to_name: asset.assigned_to_name,
+            parent_asset: asset.parent_asset,
+            current_conference_name: asset.current_conference_name,
+            sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+          }));
+          setAssets(prev => {
+            const existingIds = new Set(prev.map(a => a.id));
+            const newAssets = mappedAssets.filter(a => !existingIds.has(a.id));
+            return [...prev, ...newAssets];
+          });
+        }
+      })
+      .catch(err => console.error("Failed to load more assets:", err));
   };
 
   const fetchEmployees = () => {
@@ -3644,6 +3703,14 @@ const App: React.FC = () => {
               <button disabled={inventoryPage === 1} onClick={() => setInventoryPage(p => p - 1)} className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 disabled:opacity-30 hover:text-white transition"><i className="fa-solid fa-chevron-left"></i></button>
               <button disabled={inventoryPage === totalInventoryPages} onClick={() => setInventoryPage(p => p + 1)} className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 disabled:opacity-30 hover:text-white transition"><i className="fa-solid fa-chevron-right"></i></button>
             </div>
+          </div>
+        )}
+        
+        {nextPageUrl && (
+          <div className="p-6 border-t border-slate-800 bg-slate-950/40 flex items-center justify-center">
+            <button onClick={loadMoreAssets} className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase text-xs tracking-widest transition flex items-center gap-2">
+              <i className="fa-solid fa-cloud-arrow-down" /> Load More Assets
+            </button>
           </div>
         )}
 
