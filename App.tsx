@@ -4846,12 +4846,48 @@ const App: React.FC = () => {
           {currentPage === 'Conferences' && conferenceView === 'List' && renderConferences()}
 
 
-          {currentPage === 'Assets' && assetView === 'Form' && (
+          {currentPage === 'Assets' && assetView === 'Form' && (() => {
+            const uniqueAliasNames = Array.from(new Set(assets.map(a => a.aliasName).filter(Boolean)));
+            
+            const handleAliasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+              const val = e.target.value;
+              const match = assets.find(a => a.aliasName === val);
+              if (match) {
+                setAssetFormData({ ...assetFormData, aliasName: val, type: match.type });
+              } else {
+                setAssetFormData({ ...assetFormData, aliasName: val });
+              }
+            };
+
+            const isEditing = !!editingAsset;
+            const skuExists = !!(assetFormData.sku && assets.some(a => a.sku?.toLowerCase() === assetFormData.sku.toLowerCase() && (!isEditing || a.id !== editingAsset.id)));
+            
+            let suggestedSku = '';
+            if (!isEditing && assetFormData.aliasName) {
+              const base = assetFormData.aliasName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+              const matches = assets.filter(a => a.sku?.toLowerCase().startsWith(`${base}_`));
+              let max = 0;
+              matches.forEach(m => {
+                const numPart = m.sku?.toLowerCase().replace(`${base}_`, '');
+                const num = parseInt(numPart || '0');
+                if (!isNaN(num) && num > max) max = num;
+              });
+              if (matches.length > 0 || assets.some(a => a.sku?.toLowerCase() === base)) {
+                suggestedSku = `${base}_${max + 1}`;
+              } else {
+                suggestedSku = `${base}_1`;
+              }
+            }
+
+            return (
             <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <h2 className="text-5xl font-black text-white uppercase">
                 {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CONSUMABLES ? 'Register Consumable' : 'Register Asset')}
               </h2>
               <form onSubmit={handleSaveAsset} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8">
+                <datalist id="alias-names">
+                  {uniqueAliasNames.map(alias => <option key={alias || 'unknown'} value={alias} />)}
+                </datalist>
                 {formErrors.non_field_errors && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs font-bold uppercase">
                     {formErrors.non_field_errors.join(', ')}
@@ -4862,13 +4898,9 @@ const App: React.FC = () => {
                   /* Simplified Consumables Form */
                   <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                      <div className="md:col-span-1">
+                      <div className="md:col-span-2">
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Item Name (Alias)</label>
-                        <input value={assetFormData.aliasName} onChange={e => setAssetFormData({ ...assetFormData, aliasName: e.target.value })} className="form-input-night" placeholder="e.g. Batteries AAA" required />
-                      </div>
-                      <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Quantity</label>
-                        <input type="number" min="1" value={assetFormData.quantity} onChange={e => setAssetFormData({ ...assetFormData, quantity: parseInt(e.target.value) || 1 })} className="form-input-night" required />
+                        <input list="alias-names" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" placeholder="e.g. Batteries AAA" required />
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Unit Rate / Price</label>
@@ -4915,11 +4947,20 @@ const App: React.FC = () => {
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
                         <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
+                        {skuExists && <p className="text-red-500 font-bold text-xs mt-1 uppercase tracking-widest animate-pulse">Warning: This SKU already exists!</p>}
+                        {suggestedSku && !skuExists && (
+                          <p 
+                            className="text-sky-400 font-bold text-[10px] mt-1 uppercase tracking-widest cursor-pointer hover:text-sky-300 transition"
+                            onClick={() => setAssetFormData({ ...assetFormData, sku: suggestedSku })}
+                          >
+                            Suggested: {suggestedSku}
+                          </p>
+                        )}
                         {formErrors.sku && <p className="text-red-500 text-xs mt-1">{formErrors.sku}</p>}
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
-                        <input value={assetFormData.aliasName} onChange={e => setAssetFormData({ ...assetFormData, aliasName: e.target.value })} className="form-input-night" />
+                        <input list="alias-names" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" />
                       </div>
                     </div>
 
@@ -4938,8 +4979,8 @@ const App: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
-                      <div className="md:col-span-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                      <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Serial Number</label>
                         <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
                         {formErrors.serial_number && <p className="text-red-500 text-xs mt-1">{formErrors.serial_number}</p>}
@@ -4954,10 +4995,6 @@ const App: React.FC = () => {
                           {Object.values(UICategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                         </select>
                         {formErrors.type && <p className="text-red-500 text-xs mt-1">{formErrors.type}</p>}
-                      </div>
-                      <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Quantity</label>
-                        <input type="number" min="1" value={assetFormData.quantity} onChange={e => setAssetFormData({ ...assetFormData, quantity: parseInt(e.target.value) || 1 })} className="form-input-night" required />
                       </div>
                     </div>
 
@@ -5045,11 +5082,11 @@ const App: React.FC = () => {
 
                 <div className="flex gap-4 pt-4">
                   <button type="button" onClick={() => handleViewChange('Assets', 'List')} className="flex-1 py-6 bg-slate-800 text-white rounded-2xl font-black uppercase hover:bg-slate-700 transition">Cancel</button>
-                  <button type="submit" className="flex-1 py-6 bg-sky-500 text-white rounded-2xl font-black uppercase hover:bg-sky-400 transition">Save Record</button>
+                  <button type="submit" disabled={skuExists} className={`flex-1 py-6 rounded-2xl font-black uppercase transition ${skuExists ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-sky-500 text-white hover:bg-sky-400'}`}>Save Record</button>
                 </div>
               </form>
             </div>
-          )}
+          )})()}
 
           {currentPage === 'Employees' && employeeView === 'Form' && (
             <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
