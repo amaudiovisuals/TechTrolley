@@ -1934,11 +1934,39 @@ const App: React.FC = () => {
         return;
       }
 
+      const strId = String(asset.id);
+      
       if (assetTab === 'packup') {
-        // In Packup mode, the scanner should default to returning items
+        if ((conferenceFormData.crosscheck_assets || []).some((id: any) => String(id) === strId)) {
+          alert("This specific item has already been scanned/added!");
+          setQuickAddInput('');
+          setQuickRemoveInput('');
+          return;
+        }
         triggerAssetConferenceAction(asset, 'remove');
       } else if (assetTab === 'assigned') {
         const scanAction = (isAddingVal === true || user?.role === 'technician' || user?.role === 'godown_incharge') ? 'add' : 'remove';
+        
+        if (scanAction === 'add') {
+          const isDuplicate = user?.role === 'technician' 
+            ? (conferenceFormData.requirements || []).some((id: any) => String(id) === strId)
+            : (conferenceFormData.staged_assets || []).some((id: any) => String(id) === strId);
+            
+          if (isDuplicate) {
+            alert("This specific item has already been scanned/added!");
+            setQuickAddInput('');
+            setQuickRemoveInput('');
+            return;
+          }
+        } else if (scanAction === 'remove') {
+          if ((conferenceFormData.crosscheck_assets || []).some((id: any) => String(id) === strId)) {
+            alert("This specific item has already been scanned/added!");
+            setQuickAddInput('');
+            setQuickRemoveInput('');
+            return;
+          }
+        }
+        
         triggerAssetConferenceAction(asset, scanAction);
       } else if (assetTab === 'crosscheck') {
         if (user?.role === 'godown_incharge' || user?.is_staff) {
@@ -1947,6 +1975,17 @@ const App: React.FC = () => {
           showScanToast(`❌ Technicians cannot verify assets. Please wait for Godown Incharge.`, 'error');
         }
       } else {
+        // Available tab / fallback
+        const isDuplicate = user?.role === 'technician' 
+          ? (conferenceFormData.requirements || []).some((id: any) => String(id) === strId)
+          : (conferenceFormData.staged_assets || []).some((id: any) => String(id) === strId);
+          
+        if (isDuplicate) {
+          alert("This specific item has already been scanned/added!");
+          setQuickAddInput('');
+          setQuickRemoveInput('');
+          return;
+        }
         triggerAssetConferenceAction(asset, 'add');
       }
     }
