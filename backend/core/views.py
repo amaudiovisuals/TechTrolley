@@ -26,6 +26,20 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .serializers import AssetSerializer, EmployeeSerializer
 
+@api_view(['GET'])
+def asset_stats(request):
+    total = Asset.objects.filter(is_temporary=False).count()
+    ready = Asset.objects.filter(is_temporary=False, status='Available').count()
+    in_use = Asset.objects.filter(is_temporary=False, status__in=['In Use', 'Dispatched']).count()
+    maintenance = Asset.objects.filter(is_temporary=False, status='Maintenance').count()
+    
+    return Response({
+        "total": total,
+        "ready": ready,
+        "in_use": in_use,
+        "maintenance": maintenance
+    })
+
 @api_view(['GET', 'POST'])
 def asset_list(request):
     if request.method == 'GET':
