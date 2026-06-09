@@ -173,6 +173,10 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           <div className="relative w-full h-full aspect-[3/4] sm:aspect-square bg-black flex items-center justify-center pt-20 sm:pt-0">
             <div id="qr-reader" className="w-full h-full absolute inset-0 [&>video]:object-cover" />
 
+            <button onClick={handleClose} className="absolute top-4 left-4 z-[999] bg-black/70 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg flex items-center font-semibold border border-white/20">
+              ← Back
+            </button>
+
             {/* Visual Scan Area (Stylistic overlay) */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-40">
               <div className={`w-[220px] h-[220px] sm:w-[260px] sm:h-[260px] border-2 rounded-[2.5rem] relative transition-all duration-300 ${isSuccessFlash ? 'border-emerald-500 scale-110' : 'border-white/20'}`}>
