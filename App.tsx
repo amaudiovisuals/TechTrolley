@@ -393,6 +393,7 @@ const App: React.FC = () => {
 
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
   const [nextPageUrl, setNextPageUrl] = useState<string | null>(null);
+  const [dashboardStats, setDashboardStats] = useState<{total: number, ready: number, in_use: number, maintenance: number} | null>(null);
 
   // Asset Form State
   const [assetFormData, setAssetFormData] = useState<Partial<Asset>>({
@@ -615,9 +616,21 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch conference subrental tickets:", err));
   };
 
+  const fetchDashboardStats = () => {
+    apiFetch(`${API_BASE}/api/asset-stats/`)
+      .then(async res => {
+        if (res.ok) {
+          const data = await res.json();
+          setDashboardStats(data);
+        }
+      })
+      .catch(err => console.error("Failed to fetch dashboard stats:", err));
+  };
+
   // Fetch data on load
   React.useEffect(() => {
     fetchAssets();
+    fetchDashboardStats();
     fetchEmployees();
     fetchSubrentalCompanies();
   }, []);
@@ -754,6 +767,7 @@ const App: React.FC = () => {
   React.useEffect(() => {
     const interval = setInterval(() => {
       fetchAssets(); // Always poll assets for live lock-checking
+      fetchDashboardStats();
       if (conferenceView !== 'Form') {
         fetchConferences();
       }
@@ -1459,12 +1473,20 @@ const App: React.FC = () => {
 
   // Stats derived from total assets (summing quantities)
   const stats = useMemo(() => {
+    if (dashboardStats) {
+      return { 
+        total: dashboardStats.total || 0, 
+        inUse: dashboardStats.in_use || 0, 
+        available: dashboardStats.ready || 0, 
+        damaged: dashboardStats.maintenance || 0 
+      };
+    }
     const total = assets.reduce((sum, a) => sum + Number(a.quantity || 1), 0);
     const inUse = assets.filter(a => a.status === AssetStatus.IN_USE || a.status === AssetStatus.CROSSCHECK).reduce((sum, a) => sum + Number(a.quantity || 1), 0);
     const available = assets.filter(a => a.status === AssetStatus.AVAILABLE).reduce((sum, a) => sum + Number(a.quantity || 1), 0);
     const damaged = assets.filter(a => a.status === AssetStatus.DAMAGED).reduce((sum, a) => sum + Number(a.quantity || 1), 0);
     return { total, inUse, available, damaged };
-  }, [assets]);
+  }, [assets, dashboardStats]);
 
   // Bar Graph Data: Status Situation
   const statusData = useMemo(() => [
