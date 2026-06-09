@@ -8,17 +8,20 @@ interface ScannerProps {
 
 export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const isScanning = useRef(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [permissionError, setPermissionError] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isSuccessFlash, setIsSuccessFlash] = useState(false);
   const lastScanned = useRef<string>("");
   const lastScannedTime = useRef<number>(0);
 
   const handleClose = async () => {
-    if (scannerRef.current) {
+    if (scannerRef.current && isScanning.current) {
       try {
         await scannerRef.current.stop();
         scannerRef.current.clear();
+        isScanning.current = false;
       } catch (e) {
         console.warn("Cleanup error on close:", e);
       }
@@ -40,10 +43,11 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         if (!isMounted) return;
 
         // Ensure cleanup of any old instance before starting
-        if (scannerRef.current) {
+        if (scannerRef.current && isScanning.current) {
           try {
             await scannerRef.current.stop();
             scannerRef.current.clear();
+            isScanning.current = false;
           } catch (e) {
             console.warn("Cleanup error during restart:", e);
           }
@@ -87,12 +91,18 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           }
         );
 
+        isScanning.current = true;
         if (isMounted) setIsReady(true);
 
       } catch (err: any) {
         console.error("Camera error:", err);
         if (isMounted) {
-          setCameraError(err?.message || "Camera access denied. Please enable camera permissions.");
+          const errMsg = err?.message || "";
+          if (errMsg.includes("NotAllowedError") || errMsg.includes("Permission denied")) {
+            setPermissionError(true);
+          } else {
+            setCameraError(errMsg || "Camera access denied. Please enable camera permissions.");
+          }
         }
       }
     };
@@ -101,9 +111,10 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
 
     return () => {
       isMounted = false;
-      if (scannerRef.current) {
+      if (scannerRef.current && isScanning.current) {
         // Robust cleanup to prevent "hanging"
         const currentRef = scannerRef.current;
+        isScanning.current = false;
         currentRef.stop().then(() => {
           try {
             currentRef.clear();
@@ -138,7 +149,15 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           <p className="text-[8px] font-bold text-sky-400 uppercase tracking-widest mt-0.5 animate-pulse">Continuous Workflow</p>
         </div>
 
-        {cameraError ? (
+        {permissionError ? (
+          <div className="h-full flex flex-col items-center justify-center p-6 sm:p-12 text-center text-white bg-slate-950">
+            <div className="p-4 bg-red-50 text-red-700 rounded-lg text-center">
+              <strong>Camera Access Blocked</strong><br/>
+              Please ensure you are using a secure connection (HTTPS) and that you have granted camera permissions in your phone's browser settings.
+            </div>
+            <button onClick={handleClose} className="mt-8 px-8 py-4 bg-slate-800 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-700 transition">Go Back</button>
+          </div>
+        ) : cameraError ? (
           <div className="h-full flex flex-col items-center justify-center p-12 text-center text-white bg-slate-950">
             <i className="fa-solid fa-camera-slash text-4xl text-red-500 mb-6" />
             <h4 className="text-xl font-black uppercase tracking-tight">Access Denied</h4>
