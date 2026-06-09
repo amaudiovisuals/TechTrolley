@@ -1990,6 +1990,30 @@ const App: React.FC = () => {
             setQuickRemoveInput('');
             return;
           }
+
+          if (user?.role !== 'technician') {
+            const reqIds = (conferenceFormData.requirements || []).map(String);
+            
+            if (!reqIds.includes(strId)) {
+               const matchingReqId = reqIds.find((reqId: string) => {
+                  const reqAsset = assets.find((a: any) => String(a.id) === reqId);
+                  return reqAsset && reqAsset.aliasName === asset.aliasName;
+               });
+               
+               if (matchingReqId) {
+                 setConferenceFormData((prev: any) => ({
+                    ...prev,
+                    requirements: (prev.requirements || []).filter((id: any) => String(id) !== matchingReqId)
+                 }));
+                 showScanToast(`🔄 Smart Swap: Substituted requested item with scanned SKU`, 'success');
+               } else {
+                 showScanToast(`❌ This item does not match any pending requirements.`, 'error');
+                 setQuickAddInput('');
+                 setQuickRemoveInput('');
+                 return;
+               }
+            }
+          }
         } else if (scanAction === 'remove') {
           if ((conferenceFormData.crosscheck_assets || []).some((id: any) => String(id) === strId)) {
             alert("This specific item has already been scanned/added!");
