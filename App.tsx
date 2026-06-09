@@ -855,7 +855,16 @@ const App: React.FC = () => {
   const [editingConference, setEditingConference] = useState<Booking | null>(null);
   const [expandedConferenceId, setExpandedConferenceId] = useState<string | number | null>(null);
   const [assetTab, setAssetTab] = useState<'available' | 'assigned' | 'packup' | 'crosscheck'>('available');
-  const [conferenceFormData, setConferenceFormData] = useState<any>({
+  const loadCachedArray = (key: string) => {
+    try {
+      const cached = localStorage.getItem(key);
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  const [conferenceFormData, setConferenceFormData] = useState<any>(() => ({
     name: '',
     association_name: '',
     billing_address: '',
@@ -869,11 +878,34 @@ const App: React.FC = () => {
     start_date: '',
     end_date: '',
     conference_type: 'Medical Conference',
-    requirements: [],
-    staged_assets: [],
+    requirements: loadCachedArray('techtrolley_requirements'),
+    staged_assets: loadCachedArray('techtrolley_staged'),
+    crosscheck_assets: loadCachedArray('techtrolley_crosscheck'),
+    assets: loadCachedArray('techtrolley_assets'),
     assigned_employees: [],
     pdf_document: null
-  });
+  }));
+
+  // Session Lifeline for Scanner Arrays
+  useEffect(() => {
+    if (conferenceFormData.requirements) {
+      localStorage.setItem('techtrolley_requirements', JSON.stringify(conferenceFormData.requirements));
+    }
+    if (conferenceFormData.staged_assets) {
+      localStorage.setItem('techtrolley_staged', JSON.stringify(conferenceFormData.staged_assets));
+    }
+    if (conferenceFormData.crosscheck_assets) {
+      localStorage.setItem('techtrolley_crosscheck', JSON.stringify(conferenceFormData.crosscheck_assets));
+    }
+    if (conferenceFormData.assets) {
+      localStorage.setItem('techtrolley_assets', JSON.stringify(conferenceFormData.assets));
+    }
+  }, [
+    conferenceFormData.requirements, 
+    conferenceFormData.staged_assets, 
+    conferenceFormData.crosscheck_assets, 
+    conferenceFormData.assets
+  ]);
 
   const fetchConferences = () => {
     return apiFetch(`${API_BASE}/api/conferences/?_t=${Date.now()}`)

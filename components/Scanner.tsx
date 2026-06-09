@@ -14,6 +14,18 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
   const lastScanned = useRef<string>("");
   const lastScannedTime = useRef<number>(0);
 
+  const handleClose = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current.clear();
+      } catch (e) {
+        console.warn("Cleanup error on close:", e);
+      }
+    }
+    onClose();
+  };
+
   useEffect(() => {
     let isMounted = true;
     const scannerId = "qr-reader";
@@ -40,9 +52,9 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         scannerRef.current = new Html5Qrcode(scannerId);
 
         await scannerRef.current.start(
-          { facingMode: "environment" },
+          { facingMode: "environment", width: { ideal: 720 } },
           {
-            fps: 25,
+            fps: 10,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
               const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
               const qrboxSize = Math.floor(minEdgeSize * 0.75);
@@ -114,7 +126,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
 
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-6 left-6 z-[110] w-12 h-12 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all border border-white/10 shadow-xl"
         >
           <i className="fa-solid fa-xmark text-xl" />
@@ -131,7 +143,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
             <i className="fa-solid fa-camera-slash text-4xl text-red-500 mb-6" />
             <h4 className="text-xl font-black uppercase tracking-tight">Access Denied</h4>
             <p className="text-sm text-slate-400 mt-2 max-w-[200px]">{cameraError}</p>
-            <button onClick={onClose} className="mt-8 px-8 py-4 bg-slate-800 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-700 transition">Go Back</button>
+            <button onClick={handleClose} className="mt-8 px-8 py-4 bg-slate-800 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-700 transition">Go Back</button>
           </div>
         ) : (
           <div className="relative w-full h-full aspect-[3/4] sm:aspect-square bg-black flex items-center justify-center pt-20 sm:pt-0">
