@@ -519,15 +519,18 @@ def bulk_upload_assets(request):
                     'subrental_company_id':   subrental_company_id
                 }
 
-                # UPDATE OR CREATE asset based on serial number
-                asset, created = Asset.objects.update_or_create(
-                    serial_number=serial,
-                    defaults=defaults
-                )
-                if created:
-                    created_count += 1
+                # SAFELY UPDATE OR CREATE asset(s) based on serial number
+                # Bulk items (like cables) often share the same generic SKU/Serial.
+                # update_or_create() crashes with MultipleObjectsReturned if multiple exist.
+                matching_assets = Asset.objects.filter(serial_number=serial)
+                
+                if matching_assets.exists():
+                    # Bulk update all matching instances (defaults dictionary excludes operational fields like 'status')
+                    count = matching_assets.update(**defaults)
+                    updated_count += count
                 else:
-                    updated_count += 1
+                    Asset.objects.create(**defaults)
+                    created_count += 1
 
 
             except Exception as e:
