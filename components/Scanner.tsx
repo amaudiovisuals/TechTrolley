@@ -56,7 +56,7 @@ export const Scanner: React.FC<ScannerProps> = ({ onScan, onClose }) => {
         scannerRef.current = new Html5Qrcode(scannerId);
 
         await scannerRef.current.start(
-          { facingMode: "environment", width: { ideal: 720 } },
+          { facingMode: "environment" },
           {
             fps: 10,
             qrbox: (viewfinderWidth, viewfinderHeight) => {
