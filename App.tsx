@@ -346,6 +346,7 @@ const App: React.FC = () => {
   const [challanViewMode, setChallanViewMode] = useState<'List' | 'Detail'>('List');
   const [quickAddInput, setQuickAddInput] = useState('');
   const [quickRemoveInput, setQuickRemoveInput] = useState('');
+  const [uploadFeedback, setUploadFeedback] = useState<{type: 'loading' | 'success' | 'error', text: string} | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
 
   // Refs for scanner focus
@@ -1977,6 +1978,8 @@ const App: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setUploadFeedback({ type: 'loading', text: 'Uploading and processing data...' });
+
     const formData = new FormData();
     formData.append('file', file);
     if (companyId) {
@@ -1991,6 +1994,8 @@ const App: React.FC = () => {
         const data = await res.json();
         if (res.ok || data.created !== undefined) {
           setUploadResult({ created: data.created ?? 0, skipped: data.skipped ?? 0, errors: data.errors ?? [] });
+          setUploadFeedback({ type: 'success', text: 'Success: Inventory updated perfectly!' });
+          setTimeout(() => setUploadFeedback(null), 5000);
           if (companyId) {
             fetchSubrentalAssets(companyId);
           } else {
@@ -1998,9 +2003,13 @@ const App: React.FC = () => {
           }
         } else {
           setUploadResult({ created: 0, skipped: 0, errors: [data.error || 'Upload failed'] });
+          setUploadFeedback({ type: 'error', text: 'Error: Failed to upload file.' });
         }
       })
-      .catch(() => setUploadResult({ created: 0, skipped: 0, errors: ['Could not connect to server'] }));
+      .catch(() => {
+        setUploadResult({ created: 0, skipped: 0, errors: ['Could not connect to server'] });
+        setUploadFeedback({ type: 'error', text: 'Error: Failed to upload file.' });
+      });
 
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -3272,6 +3281,14 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      {uploadFeedback && (
+        <div className="w-full text-right text-xs">
+          {uploadFeedback.type === 'loading' && <div className="text-blue-600 animate-pulse font-medium">{uploadFeedback.text}</div>}
+          {uploadFeedback.type === 'success' && <div className="p-3 bg-green-50 text-green-700 border border-green-200 rounded font-semibold">{uploadFeedback.text}</div>}
+          {uploadFeedback.type === 'error' && <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded font-semibold">{uploadFeedback.text}</div>}
+        </div>
+      )}
+
       {/* Upload Result Banner */}
       {uploadResult && (
         <div className={`rounded-2xl border p-5 flex items-start gap-4 ${uploadResult.errors.length > 0 && uploadResult.created === 0
@@ -4061,6 +4078,14 @@ const App: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {uploadFeedback && (
+        <div className="w-full text-right text-xs">
+          {uploadFeedback.type === 'loading' && <div className="text-blue-600 animate-pulse font-medium">{uploadFeedback.text}</div>}
+          {uploadFeedback.type === 'success' && <div className="p-3 bg-green-50 text-green-700 border border-green-200 rounded font-semibold">{uploadFeedback.text}</div>}
+          {uploadFeedback.type === 'error' && <div className="p-3 bg-red-50 text-red-700 border border-red-200 rounded font-semibold">{uploadFeedback.text}</div>}
+        </div>
+      )}
 
       <div className="flex flex-col md:flex-row gap-4 items-center mb-8">
         <div className="relative flex-1">
