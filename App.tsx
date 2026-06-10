@@ -434,13 +434,17 @@ const App: React.FC = () => {
 
 
   const fetchAssets = (search: string = '') => {
-    return apiFetch(`${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`)
+    const url = `${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`;
+    return apiFetch(url)
       .then(async res => {
         const data = await res.json();
-        const results = data.results || data;
+        const results = data.results !== undefined ? data.results : data;
         
-        if (data.next !== undefined) {
+        if (!search && data.next !== undefined) {
           setNextPageUrl(data.next);
+        } else if (search) {
+          // Fresh search: always reset pagination anchor
+          setNextPageUrl(data.next ?? null);
         }
 
         if (Array.isArray(results)) {
@@ -474,6 +478,7 @@ const App: React.FC = () => {
             current_conference_name: asset.current_conference_name,
             sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
           }));
+          // Always overwrite atomically — no blank flash
           setAssets(mappedAssets);
         } else if (res.status !== 401) {
           console.error("Failed to fetch assets: Invalid data format", data);
@@ -817,13 +822,9 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setInventoryPage(1);
-      setNextPageUrl(null);
-      setAssets([]);
-      fetchAssets(debouncedSearchQuery);
-    }, 0);
-    return () => clearTimeout(timer);
+    setInventoryPage(1);
+    setNextPageUrl(null);
+    fetchAssets(debouncedSearchQuery);
   }, [debouncedSearchQuery]);
 
   useEffect(() => {
