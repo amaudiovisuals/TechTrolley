@@ -1786,7 +1786,7 @@ const App: React.FC = () => {
           // Technician adds to REQUIREMENTS
           setConferenceFormData((prev: any) => ({
             ...prev,
-            requirements: [...(prev.requirements || []), ...Array(qty).fill(assetIdStr)]
+            requirements: Array.from(new Set([...(prev.requirements || []), ...Array(qty).fill(assetIdStr)]))
           }));
           showScanToast(`📋 Requirement Added: ${qty}x "${asset.aliasName || asset.sku}"`, 'success');
         } else {
@@ -1797,7 +1797,7 @@ const App: React.FC = () => {
             // Let's make it stage by default for consistency during packing.
             return {
               ...prev,
-              staged_assets: [...(prev.staged_assets || []), assetIdStr],
+              staged_assets: Array.from(new Set([...(prev.staged_assets || []), assetIdStr])),
               requirements: updatedRequirements
             };
           });
@@ -1819,7 +1819,7 @@ const App: React.FC = () => {
         setConferenceFormData((prev: any) => ({
           ...prev,
           assets: prev.assets.filter((id: any) => id.toString() !== assetIdStr),
-          crosscheck_assets: [...(prev.crosscheck_assets || []), assetIdStr]
+          crosscheck_assets: Array.from(new Set([...(prev.crosscheck_assets || []), assetIdStr]))
         }));
         showScanToast(`✅ Moved to Godown Crosscheck: "${asset.aliasName || asset.sku}"`, 'success');
       }
@@ -6353,7 +6353,8 @@ const App: React.FC = () => {
 
                       {assetTab === 'packup' && (() => {
                         // J-46: Cart view for packup tab
-                        const packupList = assets.filter(a =>
+                        const packPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                        const packupList = packPool.filter(a =>
                           new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))
                         ).filter(a => {
                           const q = quickRemoveInput.toLowerCase();
@@ -6478,7 +6479,8 @@ const App: React.FC = () => {
                             </div>
                           ) : (() => {
                              // F-3: Cart view for crosscheck tab
-                             const crosscheckList = assets.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id)));
+                             const crossPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                             const crosscheckList = crossPool.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id)));
                              const groups = crosscheckList.reduce((acc: Record<string, Asset[]>, a) => {
                                const key = a.aliasName || a.sku || 'Unknown';
                                if (!acc[key]) acc[key] = [];
