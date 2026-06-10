@@ -780,14 +780,16 @@ const App: React.FC = () => {
   // it causes a race condition that can overwrite unsaved staged asset state.
   React.useEffect(() => {
     const interval = setInterval(() => {
-      fetchAssets(); // Always poll assets for live lock-checking
+      if (nextPageUrl === null) {
+        fetchAssets(); // Always poll assets for live lock-checking
+      }
       fetchDashboardStats();
       if (conferenceView !== 'Form') {
         fetchConferences();
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [conferenceView]);
+  }, [conferenceView, nextPageUrl]);
 
 
   // Performance optimizations: Debounced Search & Pagination
