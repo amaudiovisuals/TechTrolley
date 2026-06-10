@@ -51,20 +51,12 @@ def nuke_ghosts(request):
     Asset.objects.filter(status__in=['In Use', 'Dispatched']).update(status='Available')
     
     today = date.today()
-    try:
-        ended_conf_ids = list(Conference.objects.filter(end_date__lt=today).values_list('id', flat=True))
-    except utils.OperationalError:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM core_conference WHERE end_date < %s", [today])
-            ended_conf_ids = [row[0] for row in cursor.fetchall()]
-            
-    for conf_id in ended_conf_ids:
-        with connection.cursor() as cursor:
-            try: cursor.execute("DELETE FROM core_conference_staged_assets WHERE conference_id = %s", [conf_id])
-            except utils.OperationalError: pass
-            
-            try: cursor.execute("DELETE FROM core_conference_crosscheck_assets WHERE conference_id = %s", [conf_id])
-            except utils.OperationalError: pass
+    ended_confs = Conference.objects.filter(end_date__lt=today)
+    
+    for conf in ended_confs:
+        if hasattr(conf, 'staged_assets'): conf.staged_assets.clear()
+        if hasattr(conf, 'crosscheck_assets'): conf.crosscheck_assets.clear()
+        if hasattr(conf, 'assets'): conf.assets.clear()
 
     return Response({"message": "Database cleaned! All assets forced to Available."})
 
