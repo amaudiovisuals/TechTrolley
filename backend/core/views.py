@@ -42,8 +42,11 @@ def asset_stats(request):
 
 from datetime import date
 from django.db import connection, utils
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 
 @api_view(['GET'])
+@permission_classes([AllowAny])
 def nuke_ghosts(request):
     Asset.objects.filter(status__in=['In Use', 'Dispatched']).update(status='Available')
     
