@@ -43,7 +43,7 @@ def asset_stats(request):
 
 @api_view(['GET'])
 def unique_aliases(request):
-    data = Asset.objects.values('alias_name', 'category', 'type').distinct()
+    data = Asset.objects.values('alias_name', 'type').distinct()
     return Response(list(data))
 
 from datetime import date
@@ -125,7 +125,8 @@ def asset_list(request):
             assets = assets.filter(
                 Q(alias_name__icontains=search_query) | 
                 Q(sku__icontains=search_query) | 
-                Q(category__icontains=search_query)
+                Q(type__icontains=search_query) |
+                Q(description__icontains=search_query)
             )
         
         from rest_framework.pagination import PageNumberPagination

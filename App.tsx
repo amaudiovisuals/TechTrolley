@@ -4962,7 +4962,7 @@ const App: React.FC = () => {
               const selectedAlias = e.target.value;
               const matchedItem = aliasDictionary.find(a => a.alias_name === selectedAlias);
               if (matchedItem) {
-                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, category: matchedItem.category, type: matchedItem.type }));
+                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, type: matchedItem.type }));
               } else {
                 setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias }));
               }
