@@ -78,6 +78,12 @@ def snipe_91(request):
     except Conference.DoesNotExist:
         return Response({"message": "Target 91 not found."})
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def global_status_reset(request):
+    count = Asset.objects.all().update(status='Available')
+    return Response({"message": f"Global wipe complete! {count} assets are now Available."})
+
 @api_view(['GET', 'POST'])
 def asset_list(request):
     if request.method == 'GET':
