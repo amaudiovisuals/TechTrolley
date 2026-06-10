@@ -485,7 +485,8 @@ const App: React.FC = () => {
 
   const loadMoreAssets = () => {
     if (!nextPageUrl) return;
-    return apiFetch(nextPageUrl)
+    const secureUrl = nextPageUrl.replace('http://', 'https://');
+    return apiFetch(secureUrl)
       .then(async res => {
         const data = await res.json();
         const results = data.results || data;
