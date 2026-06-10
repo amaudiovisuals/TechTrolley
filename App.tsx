@@ -2172,10 +2172,10 @@ const App: React.FC = () => {
                  }));
                  showScanToast(`🔄 Smart Swap: Substituted requested item with scanned SKU`, 'success');
                } else {
-                 showScanToast(`❌ This item does not match any pending requirements.`, 'error');
+                 showScanToast(`📦 Free-Add: Packing unrequested item`, 'success');
                  setQuickAddInput('');
                  setQuickRemoveInput('');
-                 return;
+                 // Fall through to triggerAssetConferenceAction
                }
             }
           }
