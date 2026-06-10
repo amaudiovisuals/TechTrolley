@@ -4534,7 +4534,8 @@ const App: React.FC = () => {
     }
     // Store locally to persist exact current state across the new tab boundary
     localStorage.setItem('print_conf_data', JSON.stringify(conf));
-    const relevantAssets = assets.filter(a => {
+    const challanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    const relevantAssets = challanPool.filter(a => {
       const historicalList = (conf.challanAssets && conf.challanAssets.length > 0) 
                              ? conf.challanAssets 
                              : [...(conf.assets || []), ...(conf.staged_assets || [])];
@@ -6076,7 +6077,7 @@ const App: React.FC = () => {
                                                    {items.map(asset => (
                                                      <div key={asset.id} className="flex items-center gap-3 px-4 py-2.5">
                                                        <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
-                                                       <span className="shrink-0 px-2 py-0.5 bg-orange-400 text-white text-[8px] font-black rounded-full">PENDING</span>
+                                                       <span className="shrink-0 px-1.5 py-0.5 bg-orange-400 text-white text-[8px] font-black rounded-full">PENDING</span>
                                                      </div>
                                                    ))}
                                                  </div>
@@ -6153,6 +6154,18 @@ const App: React.FC = () => {
                                   <div className="flex items-center justify-between px-1 border-t border-slate-200 pt-8">
                                     <div className="flex items-center gap-3">
                                       <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Staged / Packed Items</h4>
+                                      {(() => {
+                                        // Semantic dispatch lock: true once Finalize Dispatch has been clicked
+                                        // (staged_assets cleared, items moved to assets, challan saved)
+                                        const isDispatched = (conferenceFormData.assets || []).length > 0 &&
+                                          (conferenceFormData.staged_assets || []).length === 0 &&
+                                          (conferenceFormData.challanAssets || []).length > 0;
+                                        return isDispatched ? (
+                                          <span className="text-[9px] font-black text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                            <i className="fa-solid fa-lock mr-1"></i>Dispatched — Read Only
+                                          </span>
+                                        ) : null;
+                                      })()}
                                     </div>
                                     <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{(conferenceFormData.assets || []).length + (conferenceFormData.staged_assets || []).length} READY</span>
                                   </div>
@@ -6161,6 +6174,10 @@ const App: React.FC = () => {
                                    <div className="space-y-2">
                                      {(() => {
                                        const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
+                                       // Semantic dispatch lock — no dates, purely state-driven
+                                       const isConferenceEnded = (conferenceFormData.assets || []).length > 0 &&
+                                          (conferenceFormData.staged_assets || []).length === 0 &&
+                                          (conferenceFormData.challanAssets || []).length > 0;
                                        const gPool2 = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
                                        const packedList = gPool2.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)));
                                        const stagedList = gPool2.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
@@ -6199,9 +6216,11 @@ const App: React.FC = () => {
                                                      <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
                                                        {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : 'PACKED'}
                                                      </span>
-                                                     <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
-                                                       <i className="fa-solid fa-xmark text-[9px]"></i>
-                                                     </button>
+                                                     {!isConferenceEnded && (
+                                                       <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
+                                                         <i className="fa-solid fa-xmark text-[9px]"></i>
+                                                       </button>
+                                                     )}
                                                    </div>
                                                  ))}
                                                </div>
@@ -6584,7 +6603,7 @@ const App: React.FC = () => {
                   <ChallanView
                     booking={selectedBookingForChallan}
                     client={MOCK_CLIENTS[0]}
-                    assets={assets.filter(a => {
+                    assets={(allAssetsRef.current.length > 0 ? allAssetsRef.current : assets).filter(a => {
                       const historicalList = selectedBookingForChallan.challanAssets && selectedBookingForChallan.challanAssets.length > 0 
                                              ? selectedBookingForChallan.challanAssets 
                                              : [...(selectedBookingForChallan.assets || []), ...(selectedBookingForChallan.staged_assets || [])];
