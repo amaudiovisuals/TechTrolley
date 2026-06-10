@@ -3561,6 +3561,7 @@ const App: React.FC = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
+                  setDebouncedSearchQuery(searchQuery); // Instantly bypass the 300ms timer
                   const code = searchQuery.trim();
                   if (code && code !== lastScannedCode.current) {
                     handleScan(code);
