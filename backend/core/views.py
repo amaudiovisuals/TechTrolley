@@ -129,6 +129,11 @@ def asset_list(request):
             )
         
         from rest_framework.pagination import PageNumberPagination
+
+        if request.GET.get('all') == 'true':
+            serializer = AssetSerializer(assets, many=True)
+            return Response(serializer.data)
+
         paginator = PageNumberPagination()
         paginator.page_size = 50
         paginated_assets = paginator.paginate_queryset(assets, request)

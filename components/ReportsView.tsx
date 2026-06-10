@@ -41,21 +41,36 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
         setLoading(true);
         try {
             const [assetsRes, confRes, empRes, usersRes] = await Promise.all([
-                apiFetch('/api/assets/'),
+                apiFetch('/api/assets/?all=true'),
                 apiFetch('/api/conferences/'),
                 apiFetch('/api/employees/'),
                 apiFetch('/api/system-users/')
             ]);
             
-            let loadedAssets: Asset[] = assetsRes.ok ? await assetsRes.json() : [];
-            let loadedConferences: Booking[] = confRes.ok ? await confRes.json() : [];
-            let loadedEmployees: Employee[] = empRes.ok ? await empRes.json() : [];
+            let rawAssets: any[] = [];
+            if (assetsRes.ok) {
+                const assetsData = await assetsRes.json();
+                // Handle both paginated { results: [] } and flat [] responses
+                rawAssets = Array.isArray(assetsData) ? assetsData : (assetsData?.results ?? []);
+            }
+
+            let rawConferences: any[] = [];
+            if (confRes.ok) {
+                const confData = await confRes.json();
+                rawConferences = Array.isArray(confData) ? confData : (confData?.results ?? []);
+            }
+
+            let loadedEmployees: Employee[] = [];
+            if (empRes.ok) {
+                const empData = await empRes.json();
+                loadedEmployees = Array.isArray(empData) ? empData : (empData?.results ?? []);
+            }
             
             // Bridge System Users to Employees for Assignment
             if (usersRes.ok) {
                 const systemUsers = await usersRes.json();
                 const existingEmails = new Set(loadedEmployees.map(e => (e.email || '').toLowerCase()));
-                systemUsers.forEach((u: any) => {
+                (Array.isArray(systemUsers) ? systemUsers : (systemUsers?.results ?? [])).forEach((u: any) => {
                     if (u.email && !existingEmails.has(u.email.toLowerCase())) {
                         loadedEmployees.push({
                             id: `u-${u.id}`,
@@ -85,8 +100,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                 returnDate: a.return_date || a.returnDate
             });
 
-            setAssets(loadedAssets.map(mapAsset));
-            setConferences(loadedConferences);
+            setAssets(rawAssets.map(mapAsset));
+            setConferences(rawConferences);
             setEmployees(loadedEmployees);
             
         } catch (err) {
