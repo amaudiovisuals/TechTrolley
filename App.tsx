@@ -4954,12 +4954,12 @@ const App: React.FC = () => {
             const uniqueAliasNames = Array.from(new Set(aliasDictionary.map(a => a.alias_name).filter(Boolean)));
             
             const handleAliasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-              const val = e.target.value;
-              const match = aliasDictionary.find(a => a.alias_name === val);
-              if (match) {
-                setAssetFormData({ ...assetFormData, aliasName: val, type: match.type });
+              const selectedAlias = e.target.value;
+              const matchedItem = aliasDictionary.find(a => a.alias_name === selectedAlias);
+              if (matchedItem) {
+                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, category: matchedItem.category, type: matchedItem.type }));
               } else {
-                setAssetFormData({ ...assetFormData, aliasName: val });
+                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias }));
               }
             };
 
@@ -4989,8 +4989,10 @@ const App: React.FC = () => {
                 {editingAsset ? 'Edit' : (assetFormData.type === AssetCategory.CONSUMABLES ? 'Register Consumable' : 'Register Asset')}
               </h2>
               <form onSubmit={handleSaveAsset} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8">
-                <datalist id="alias-names">
-                  {uniqueAliasNames.map(alias => <option key={alias || 'unknown'} value={alias} />)}
+                <datalist id="alias-dictionary-list">
+                  {aliasDictionary?.map((item, index) => (
+                    <option key={index} value={item.alias_name} />
+                  ))}
                 </datalist>
                 {formErrors.non_field_errors && (
                   <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-xs font-bold uppercase">
@@ -5004,7 +5006,7 @@ const App: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                       <div className="md:col-span-2">
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Item Name (Alias)</label>
-                        <input list="alias-names" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" placeholder="e.g. Batteries AAA" required />
+                        <input list="alias-dictionary-list" autoComplete="off" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" placeholder="e.g. Batteries AAA" required />
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Unit Rate / Price</label>
@@ -5064,7 +5066,7 @@ const App: React.FC = () => {
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
-                        <input list="alias-names" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" />
+                        <input list="alias-dictionary-list" autoComplete="off" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" />
                       </div>
                     </div>
 
