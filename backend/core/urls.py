@@ -37,6 +37,7 @@ urlpatterns = [
     path('system-recovery/', views.system_recovery, name='system_recovery'),
     path('ad-hoc-cleanup/', views.ad_hoc_cleanup, name='ad_hoc_cleanup'),
     path('nuke-ghosts/', views.nuke_ghosts, name='nuke_ghosts'),
+    path('snipe-91/', views.snipe_91, name='snipe_91'),
     
     path('subrental-companies/', subrental_views.subrental_company_list, name='subrental_company_list'),
     path('subrental-companies/<int:pk>/', subrental_views.subrental_company_detail, name='subrental_company_detail'),

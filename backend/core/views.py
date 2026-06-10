@@ -65,6 +65,18 @@ def nuke_ghosts(request):
 
     return Response({"message": "Database cleaned! All assets forced to Available."})
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def snipe_91(request):
+    try:
+        conf = Conference.objects.get(id=91)
+        if hasattr(conf, 'staged_assets'): conf.staged_assets.clear()
+        if hasattr(conf, 'crosscheck_assets'): conf.crosscheck_assets.clear()
+        if hasattr(conf, 'assets'): conf.assets.clear()
+        return Response({"message": "Target 91 neutralized!"})
+    except Conference.DoesNotExist:
+        return Response({"message": "Target 91 not found."})
+
 @api_view(['GET', 'POST'])
 def asset_list(request):
     if request.method == 'GET':
