@@ -649,13 +649,60 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch aliases:", err));
   };
 
+  // Build the complete scan-index (all assets) silently into a ref.
+  // Does NOT call setAssets — zero UI re-renders.
+  const fetchAllAssetsForScan = () => {
+    apiFetch(`${API_BASE}/api/assets/?all=true`)
+      .then(async res => {
+        if (!res.ok) return;
+        const data = await res.json();
+        const results: any[] = Array.isArray(data) ? data : (data.results ?? []);
+        allAssetsRef.current = results.map((asset: any) => ({
+          ...asset,
+          id: asset.id.toString(),
+          aliasName: asset.alias_name,
+          macAddress: asset.mac_address,
+          imeiNumber1: asset.imei_number_1,
+          imeiNumber2: asset.imei_number_2,
+          serialNumber: asset.serial_number,
+          isBarcodeAdded: asset.is_barcode_added,
+          quantity: parseInt(asset.quantity, 10) || 1,
+          itemPrice: parseFloat(asset.item_price),
+          depreciationPercentage: parseFloat(asset.depreciation_percentage),
+          purchasedDate: asset.purchased_date,
+          availableFrom: asset.available_from,
+          availableTill: asset.available_till,
+          createdAt: asset.created_at,
+          barcode: asset.barcode,
+          barcodeType: asset.barcode_type,
+          qrCode: asset.qr_code,
+          lastMaintained: asset.last_maintained,
+          isTemporary: asset.is_temporary,
+          returnDate: asset.return_date,
+          flag: asset.flag || AssetFlag.NONE,
+          currentVenue: asset.current_venue,
+          assigned_to: asset.assigned_to,
+          assigned_to_name: asset.assigned_to_name,
+          parent_asset: asset.parent_asset,
+          current_conference_name: asset.current_conference_name,
+          sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+        }));
+      })
+      .catch(err => console.error('Scan index refresh failed:', err));
+  };
+
   // Fetch data on load
   React.useEffect(() => {
     fetchAssets();
+    fetchAllAssetsForScan(); // Build complete scan-index on mount
     fetchDashboardStats();
     fetchAliases();
     fetchEmployees();
     fetchSubrentalCompanies();
+
+    // Refresh scan-index every 2 minutes silently in background
+    const scanRefreshInterval = setInterval(fetchAllAssetsForScan, 120000);
+    return () => clearInterval(scanRefreshInterval);
   }, []);
 
   const handleCreateSubrentalTicket = async () => {
@@ -911,6 +958,11 @@ const App: React.FC = () => {
   // Dedicated refs for deduplication (to prevent double-processing on hardware scanners)
   const lastScannedCode = useRef('');
   const lastScannedTime = useRef(0);
+
+  // SCAN INDEX: Complete asset list kept in a ref (no re-renders).
+  // Used exclusively by findAssetFromScan so scanning works on ALL pages
+  // regardless of which 50-item page is currently displayed in the inventory.
+  const allAssetsRef = useRef<Asset[]>([]);
 
   // Diagnostic Logs
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
@@ -1623,8 +1675,13 @@ const App: React.FC = () => {
     const scanned = (decodedText || '').trim();
     if (!scanned) return null;
 
+    // Always search the COMPLETE scan-index (allAssetsRef) first — this contains
+    // ALL assets regardless of which page is displayed in the inventory UI.
+    // Fall back to the paginated `assets` state only if the index hasn't loaded yet.
+    const searchPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+
     // A. FIRST: Check full string exact match (highest priority)
-    const exactMatch = assets.find(a =>
+    const exactMatch = searchPool.find(a =>
       (a.sku && a.sku === scanned) ||
       (a.barcode && a.barcode === scanned) ||
       (a.qrCode && a.qrCode === scanned) ||
@@ -1635,7 +1692,7 @@ const App: React.FC = () => {
 
     // B. SECOND: Check normalized full string
     const normScanned = normalizeId(scanned);
-    const normMatch = assets.find(a =>
+    const normMatch = searchPool.find(a =>
       normalizeId(a.sku) === normScanned ||
       normalizeId(a.barcode) === normScanned ||
       (a.qrCode && normalizeId(a.qrCode) === normScanned) ||
@@ -1648,7 +1705,7 @@ const App: React.FC = () => {
     const scanParts = scanned.split(/[ ,;]+/).map(p => p.trim()).filter(Boolean);
     const normalizedParts = scanParts.map(p => normalizeId(p));
 
-    const asset = assets.find(a => {
+    const asset = searchPool.find(a => {
       const aSkuNorm = normalizeId(a.sku);
       const aBarcodeNorm = normalizeId(a.barcode);
       const aQrCodeNorm = a.qrCode ? normalizeId(a.qrCode) : '';
@@ -3566,31 +3623,8 @@ const App: React.FC = () => {
                   e.preventDefault();
                   const code = searchQuery.trim();
                   if (!code) return;
-
-                  // FAST PATH: Item already in loaded assets — scan immediately
-                  const existing = findAssetFromScan(code);
-                  if (existing) {
-                    handleScan(code);
-                    return;
-                  }
-
-                  // SLOW PATH: Item not in current page — fetch from server first,
-                  // then do the lookup in freshly returned data (bypasses stale React state)
-                  setDebouncedSearchQuery(code);
-                  fetchAssets(code).then((fetchedAssets) => {
-                    const norm = (v: any) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-                    const normCode = norm(code);
-                    const found = fetchedAssets.find(a =>
-                      a.sku === code || a.barcode === code || a.qrCode === code ||
-                      a.serialNumber === code || String(a.id) === code ||
-                      norm(a.sku) === normCode ||
-                      norm(a.barcode) === normCode ||
-                      norm(a.serialNumber) === normCode
-                    );
-                    // Use the matched asset's SKU so handleScan can resolve it
-                    // from the now-updated assets state
-                    handleScan(found?.sku || code);
-                  });
+                  // allAssetsRef always has the full dataset — instant lookup, no fetch needed
+                  handleScan(code);
                 }
               }}
               placeholder="SEARCH OR SCAN EQUIPMENT..."
