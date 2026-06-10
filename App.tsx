@@ -433,7 +433,7 @@ const App: React.FC = () => {
   });
 
 
-  const fetchAssets = (search: string = '') => {
+  const fetchAssets = (search: string = ''): Promise<Asset[]> => {
     const url = `${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`;
     return apiFetch(url)
       .then(async res => {
@@ -480,12 +480,15 @@ const App: React.FC = () => {
           }));
           // Always overwrite atomically — no blank flash
           setAssets(mappedAssets);
+          return mappedAssets; // Return so callers can use fresh data immediately
         } else if (res.status !== 401) {
           console.error("Failed to fetch assets: Invalid data format", data);
         }
+        return [];
       })
       .catch(err => {
         console.error("Failed to fetch assets:", err);
+        return [];
       });
   };
 
@@ -3561,11 +3564,33 @@ const App: React.FC = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  setDebouncedSearchQuery(searchQuery); // Instantly bypass the 300ms timer
                   const code = searchQuery.trim();
-                  if (code && code !== lastScannedCode.current) {
+                  if (!code) return;
+
+                  // FAST PATH: Item already in loaded assets — scan immediately
+                  const existing = findAssetFromScan(code);
+                  if (existing) {
                     handleScan(code);
+                    return;
                   }
+
+                  // SLOW PATH: Item not in current page — fetch from server first,
+                  // then do the lookup in freshly returned data (bypasses stale React state)
+                  setDebouncedSearchQuery(code);
+                  fetchAssets(code).then((fetchedAssets) => {
+                    const norm = (v: any) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    const normCode = norm(code);
+                    const found = fetchedAssets.find(a =>
+                      a.sku === code || a.barcode === code || a.qrCode === code ||
+                      a.serialNumber === code || String(a.id) === code ||
+                      norm(a.sku) === normCode ||
+                      norm(a.barcode) === normCode ||
+                      norm(a.serialNumber) === normCode
+                    );
+                    // Use the matched asset's SKU so handleScan can resolve it
+                    // from the now-updated assets state
+                    handleScan(found?.sku || code);
+                  });
                 }
               }}
               placeholder="SEARCH OR SCAN EQUIPMENT..."
