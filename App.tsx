@@ -5701,7 +5701,8 @@ const App: React.FC = () => {
                                 (conferenceFormData.assets || []).length > 0 && (() => {
                                   const q = quickAddInput.toLowerCase();
                                   const qNorm = normalizeSearch(q);
-                                  const filteredAllocated = assets.filter(a => {
+                                  const techPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                                  const filteredAllocated = techPool.filter(a => {
                                     if (!new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))) return false;
                                     if (!q) return true;
                                     return (a.sku && a.sku.toLowerCase().includes(q)) || 
@@ -5748,7 +5749,7 @@ const App: React.FC = () => {
                                       <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{conferenceFormData.assets.length} ITEMS</span>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      {assets.filter(a => new Set(conferenceFormData.assets.map(String)).has(String(a.id))).map(asset => (
+                                      {(allAssetsRef.current.length > 0 ? allAssetsRef.current : assets).filter(a => new Set(conferenceFormData.assets.map(String)).has(String(a.id))).map(asset => (
                                         <div key={asset.id} className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 flex items-center gap-4 transition-all hover:bg-emerald-50/30">
                                           <div className="w-10 h-10 bg-white border border-emerald-100 text-emerald-500 rounded-xl flex items-center justify-center text-lg shadow-sm">
                                             <i className="fa-solid fa-check-double"></i>
