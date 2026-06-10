@@ -394,6 +394,7 @@ const App: React.FC = () => {
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
   const [nextPageUrl, setNextPageUrl] = useState<string | null>(null);
   const [dashboardStats, setDashboardStats] = useState<{total: number, ready: number, in_use: number, maintenance: number} | null>(null);
+  const [aliasDictionary, setAliasDictionary] = useState<any[]>([]);
 
   // Asset Form State
   const [assetFormData, setAssetFormData] = useState<Partial<Asset>>({
@@ -628,10 +629,22 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch dashboard stats:", err));
   };
 
+  const fetchAliases = () => {
+    apiFetch(`${API_BASE}/api/aliases/`)
+      .then(async res => {
+        if (res.ok) {
+          const data = await res.json();
+          setAliasDictionary(data);
+        }
+      })
+      .catch(err => console.error("Failed to fetch aliases:", err));
+  };
+
   // Fetch data on load
   React.useEffect(() => {
     fetchAssets();
     fetchDashboardStats();
+    fetchAliases();
     fetchEmployees();
     fetchSubrentalCompanies();
   }, []);
@@ -4937,11 +4950,11 @@ const App: React.FC = () => {
 
 
           {currentPage === 'Assets' && assetView === 'Form' && (() => {
-            const uniqueAliasNames = Array.from(new Set(assets.map(a => a.aliasName).filter(Boolean)));
+            const uniqueAliasNames = Array.from(new Set(aliasDictionary.map(a => a.alias_name).filter(Boolean)));
             
             const handleAliasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
               const val = e.target.value;
-              const match = assets.find(a => a.aliasName === val);
+              const match = aliasDictionary.find(a => a.alias_name === val);
               if (match) {
                 setAssetFormData({ ...assetFormData, aliasName: val, type: match.type });
               } else {

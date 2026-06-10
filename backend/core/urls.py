@@ -21,6 +21,7 @@ urlpatterns = [
     
     path('dashboard/', views.dashboard, name='dashboard'),
     path('asset-stats/', views.asset_stats, name='asset_stats'),
+    path('aliases/', views.unique_aliases, name='unique_aliases'),
     path('assets/', views.asset_list, name='asset_list'),
     path('assets/<int:pk>/', views.asset_detail, name='asset_detail'),
     path('assets/<int:pk>/sub-assets/', views.asset_sub_assets, name='asset_sub_assets'),

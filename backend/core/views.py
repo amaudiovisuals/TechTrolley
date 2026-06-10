@@ -40,6 +40,11 @@ def asset_stats(request):
         "maintenance": maintenance
     })
 
+@api_view(['GET'])
+def unique_aliases(request):
+    data = Asset.objects.values('alias_name', 'category', 'type').distinct()
+    return Response(list(data))
+
 from datetime import date
 from django.db import connection, utils
 from rest_framework.decorators import api_view, permission_classes
