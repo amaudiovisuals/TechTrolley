@@ -1,6 +1,7 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse
+from django.db.models import Q
 from .models import Asset, Conference, DeliveryChallan, Employee, CompanySettings
 from django.core.files.uploadedfile import UploadedFile
 from .forms import AssetForm, ConferenceForm
@@ -114,7 +115,6 @@ def asset_list(request):
             assets_query = assets_query.filter(subrental_company__isnull=True)
 
         from django.db.models.functions import Coalesce, Lower
-        from django.db.models import Q
         
         assets = assets_query.annotate(
             sort_name=Lower(Coalesce('alias_name', 'sku'))

@@ -782,8 +782,8 @@ const App: React.FC = () => {
   // it causes a race condition that can overwrite unsaved staged asset state.
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (nextPageUrl === null) {
-        fetchAssets(debouncedSearchQuery); // Always poll assets for live lock-checking
+      if (!nextPageUrl && !debouncedSearchQuery) {
+        fetchAssets();
       }
       fetchDashboardStats();
       if (conferenceView !== 'Form') {
@@ -818,11 +818,17 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-      setInventoryPage(1); // Reset page when search changes
+      setInventoryPage(1);
       setNextPageUrl(null);
       setAssets([]);
-      fetchAssets(searchQuery);
+      fetchAssets(debouncedSearchQuery);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [debouncedSearchQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
