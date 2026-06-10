@@ -114,9 +114,19 @@ def asset_list(request):
             assets_query = assets_query.filter(subrental_company__isnull=True)
 
         from django.db.models.functions import Coalesce, Lower
+        from django.db.models import Q
+        
         assets = assets_query.annotate(
             sort_name=Lower(Coalesce('alias_name', 'sku'))
         ).order_by('sort_name')
+        
+        search_query = request.GET.get('search', '').strip()
+        if search_query:
+            assets = assets.filter(
+                Q(alias_name__icontains=search_query) | 
+                Q(sku__icontains=search_query) | 
+                Q(category__icontains=search_query)
+            )
         
         from rest_framework.pagination import PageNumberPagination
         paginator = PageNumberPagination()

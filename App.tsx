@@ -433,8 +433,8 @@ const App: React.FC = () => {
   });
 
 
-  const fetchAssets = () => {
-    return apiFetch(`${API_BASE}/api/assets/?_t=${Date.now()}`)
+  const fetchAssets = (search: string = '') => {
+    return apiFetch(`${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`)
       .then(async res => {
         const data = await res.json();
         const results = data.results || data;
@@ -642,7 +642,6 @@ const App: React.FC = () => {
 
   // Fetch data on load
   React.useEffect(() => {
-    fetchAssets();
     fetchDashboardStats();
     fetchAliases();
     fetchEmployees();
@@ -775,13 +774,16 @@ const App: React.FC = () => {
     }
   }, [selectedBookingForChallan?.id, isPrintMode, printConfId]);
 
+  // Performance optimizations: Debounced Search & Pagination
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
   // Poll every 5 seconds to keep asset statuses in sync (reduced from 30s to prevent scanning conflicts)
   // BUG J-19: Do NOT re-fetch conferences while the user is in the conference form —
   // it causes a race condition that can overwrite unsaved staged asset state.
   React.useEffect(() => {
     const interval = setInterval(() => {
       if (nextPageUrl === null) {
-        fetchAssets(); // Always poll assets for live lock-checking
+        fetchAssets(debouncedSearchQuery); // Always poll assets for live lock-checking
       }
       fetchDashboardStats();
       if (conferenceView !== 'Form') {
@@ -789,11 +791,9 @@ const App: React.FC = () => {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [conferenceView, nextPageUrl]);
+  }, [conferenceView, nextPageUrl, debouncedSearchQuery]);
 
 
-  // Performance optimizations: Debounced Search & Pagination
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
   const [inventoryPage, setInventoryPage] = useState(1);
   const itemsPerPage = 20; 
@@ -820,6 +820,9 @@ const App: React.FC = () => {
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
       setInventoryPage(1); // Reset page when search changes
+      setNextPageUrl(null);
+      setAssets([]);
+      fetchAssets(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
@@ -835,24 +838,14 @@ const App: React.FC = () => {
         if (assetUICat !== inventoryCategoryFilter) return false;
       }
       
-      const q = normalizeSearch(searchQuery);
-      if (!q) return true;
-
-      // Search Filter
-      return !q ||
-        normalizeSearch(asset.aliasName || '').includes(q) ||
-        normalizeSearch(asset.name || '').includes(q) ||
-        normalizeSearch(asset.description || '').includes(q) ||
-        normalizeSearch(asset.serialNumber || '').includes(q) ||
-        normalizeSearch(asset.sku || '').includes(q) ||
-        normalizeSearch(asset.barcode || '').includes(q);
+      return true;
     });
     return filtered.sort((a, b) => {
       const nameA = (a.aliasName || a.sku || '').toLowerCase();
       const nameB = (b.aliasName || b.sku || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [assets, searchQuery, inventoryCategoryFilter]);
+  }, [assets, inventoryCategoryFilter]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     
