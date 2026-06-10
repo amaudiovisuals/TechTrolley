@@ -639,7 +639,8 @@ const App: React.FC = () => {
       .then(async res => {
         if (res.ok) {
           const data = await res.json();
-          setAliasDictionary(data);
+          const dictData = data.results !== undefined ? data.results : data;
+          setAliasDictionary(Array.isArray(dictData) ? dictData : []);
         }
       })
       .catch(err => console.error("Failed to fetch aliases:", err));
@@ -647,6 +648,7 @@ const App: React.FC = () => {
 
   // Fetch data on load
   React.useEffect(() => {
+    fetchAssets();
     fetchDashboardStats();
     fetchAliases();
     fetchEmployees();
@@ -821,18 +823,20 @@ const App: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    setInventoryPage(1);
-    setNextPageUrl(null);
-    fetchAssets(debouncedSearchQuery);
-  }, [debouncedSearchQuery]);
-
+  // Debounce: update debouncedSearchQuery 300ms after user stops typing
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Trigger server-side fetch whenever debounced query settles
+  useEffect(() => {
+    setInventoryPage(1);
+    setNextPageUrl(null);
+    fetchAssets(debouncedSearchQuery);
+  }, [debouncedSearchQuery]);
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
     const filtered = assets.filter(asset => {
