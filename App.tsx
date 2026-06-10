@@ -2158,8 +2158,10 @@ const App: React.FC = () => {
             const reqIds = (conferenceFormData.requirements || []).map(String);
             
             if (!reqIds.includes(strId)) {
+               // Use allAssetsRef (complete DB) for Smart Swap alias matching
+               const scanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
                const matchingReqId = reqIds.find((reqId: string) => {
-                  const reqAsset = assets.find((a: any) => String(a.id) === reqId);
+                  const reqAsset = scanPool.find((a: any) => String(a.id) === reqId);
                   return reqAsset && reqAsset.aliasName === asset.aliasName;
                });
                
@@ -2383,7 +2385,10 @@ const App: React.FC = () => {
   };
 
 
-  const getAssetsForBooking = (ids: string[]) => assets.filter(a => ids.includes(a.id));
+  const getAssetsForBooking = (ids: string[]) => {
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    return pool.filter(a => ids.includes(a.id));
+  };
   const getClientById = (id?: string) => id ? clients.find(c => c.id === id) : undefined;
 
   const generateChallan = (booking: Booking) => {
@@ -5781,7 +5786,9 @@ const App: React.FC = () => {
                             const q = quickAddInput.toLowerCase();
                             const qNorm = normalizeSearch(q);
 
-                            const availableFiltered = assets.filter(a => {
+                            // Use allAssetsRef (full DB) so search shows all assets, not just current 50
+                            const searchPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                            const availableFiltered = searchPool.filter(a => {
                               const matchesSearch = !q || 
                                 normalizeSearch(a.sku || '').includes(qNorm) || 
                                 normalizeSearch(a.aliasName || '').includes(qNorm) || 
@@ -5932,7 +5939,7 @@ const App: React.FC = () => {
                                      const q = quickAddInput.toLowerCase();
                                      const qNorm = normalizeSearch(q);
                                      const fullReqsList = conferenceFormData.requirements
-                                       .map((id: any) => assets.find(a => String(a.id) === String(id)))
+                                       .map((id: any) => (allAssetsRef.current.length > 0 ? allAssetsRef.current : assets).find(a => String(a.id) === String(id)))
                                        .filter(Boolean) as Asset[];
 
                                      const filteredReqs = fullReqsList.filter(a => {
@@ -5981,7 +5988,8 @@ const App: React.FC = () => {
                                                       onClick={(e) => { 
                                                         e.stopPropagation();
                                                         const targetName = name;
-                                                        const availableAsset = assets.find(a => 
+                                                        const gPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                                                        const availableAsset = gPool.find(a => 
                                                           (a.aliasName || a.sku || 'Unknown') === targetName && 
                                                           !conferenceFormData.requirements.some((id: any) => String(id) === String(a.id)) &&
                                                           !conferenceFormData.assets.some((id: any) => String(id) === String(a.id)) &&
@@ -6039,7 +6047,7 @@ const App: React.FC = () => {
                                      ]);
                                      const pendingAssets = (conferenceFormData.requirements || [])
                                        .filter((id: any) => !isAssignedSet.has(String(id)))
-                                       .map((id: any) => assets.find(a => String(a.id) === String(id)))
+                                       .map((id: any) => (allAssetsRef.current.length > 0 ? allAssetsRef.current : assets).find(a => String(a.id) === String(id)))
                                        .filter(Boolean) as Asset[];
                                      const groups = pendingAssets.reduce((acc: Record<string, Asset[]>, a) => {
                                        const key = a.aliasName || a.sku || 'Unknown';
@@ -6107,7 +6115,8 @@ const App: React.FC = () => {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                       {(() => {
                                          const q = quickAddInput.toLowerCase();
-                                         const avail = assets.filter(a => {
+                                         const gPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                                         const avail = gPool.filter(a => {
                                            const matches = !q || 
                                              (a.sku && a.sku.toLowerCase() === q) ||
                                              (a.serialNumber && a.serialNumber.toLowerCase() === q) ||
@@ -6151,8 +6160,9 @@ const App: React.FC = () => {
                                    <div className="space-y-2">
                                      {(() => {
                                        const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
-                                       const packedList = assets.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)));
-                                       const stagedList = assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
+                                       const gPool2 = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                                       const packedList = gPool2.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)));
+                                       const stagedList = gPool2.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
                                        const allItems = [
                                          ...packedList.map(a => ({ asset: a, type: requirementIds.has(String(a.id)) ? 'fulfilled' : 'extra' })),
                                          ...stagedList.map(a => ({ asset: a, type: 'staged' }))
@@ -6274,9 +6284,10 @@ const App: React.FC = () => {
                                 <>
                                   {/* F-3: Cart view — Admin: Staged + Pending + Assigned grouped by alias */}
                                   {(() => {
-                                    const stagedList = assets.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
-                                    const pendingList = assets.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id)));
-                                    const assignedList = assets.filter(a => assignedIds.has(String(a.id)));
+                                    const aPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+                                    const stagedList = aPool.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
+                                    const pendingList = aPool.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id)));
+                                    const assignedList = aPool.filter(a => assignedIds.has(String(a.id)));
                                     type CartEntry = { asset: Asset; type: 'staged' | 'pending' | 'extra' | 'assigned' };
                                     const allItems: CartEntry[] = [
                                       ...stagedList.map(a => ({ asset: a, type: 'staged' as const })),
