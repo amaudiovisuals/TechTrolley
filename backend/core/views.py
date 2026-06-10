@@ -40,6 +40,31 @@ def asset_stats(request):
         "maintenance": maintenance
     })
 
+from datetime import date
+from django.db import connection, utils
+
+@api_view(['GET'])
+def nuke_ghosts(request):
+    Asset.objects.filter(status__in=['In Use', 'Dispatched']).update(status='Available')
+    
+    today = date.today()
+    try:
+        ended_conf_ids = list(Conference.objects.filter(end_date__lt=today).values_list('id', flat=True))
+    except utils.OperationalError:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM core_conference WHERE end_date < %s", [today])
+            ended_conf_ids = [row[0] for row in cursor.fetchall()]
+            
+    for conf_id in ended_conf_ids:
+        with connection.cursor() as cursor:
+            try: cursor.execute("DELETE FROM core_conference_staged_assets WHERE conference_id = %s", [conf_id])
+            except utils.OperationalError: pass
+            
+            try: cursor.execute("DELETE FROM core_conference_crosscheck_assets WHERE conference_id = %s", [conf_id])
+            except utils.OperationalError: pass
+
+    return Response({"message": "Database cleaned! All assets forced to Available."})
+
 @api_view(['GET', 'POST'])
 def asset_list(request):
     if request.method == 'GET':
