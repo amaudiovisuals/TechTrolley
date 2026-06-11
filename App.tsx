@@ -6167,7 +6167,7 @@ const App: React.FC = () => {
                                         ) : null;
                                       })()}
                                     </div>
-                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{Array.from(new Set([...(conferenceFormData.assets || []).map(String), ...(conferenceFormData.staged_assets || []).map(String)])).length} READY</span>
+                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{(conferenceFormData.assets || []).length + (conferenceFormData.staged_assets || []).length} READY</span>
                                   </div>
                                   
                                    {/* F-3: Cart view for godown staged/assigned items */}
@@ -6181,23 +6181,20 @@ const App: React.FC = () => {
                                        const gPool2 = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
                                        const packedList = gPool2.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)));
                                        const stagedList = gPool2.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
-                                       // Flat dedup by asset ID — avoids wrapper {asset,type} shape mismatches.
-                                       // Badge type is derived at render time from stagedList / requirementIds.
-                                       const rawItems = [...packedList, ...stagedList];
-                                       const allItems = Array.from(new Map(rawItems.map(item => [String(item.id), item])).values());
-                                       const groups = allItems.reduce((acc: Record<string, Asset[]>, item) => {
-                                         const key = item.aliasName || item.sku || 'Unknown';
+                                       const allItems = [
+                                         ...packedList.map(a => ({ asset: a, type: requirementIds.has(String(a.id)) ? 'fulfilled' : 'extra' })),
+                                         ...stagedList.map(a => ({ asset: a, type: 'staged' }))
+                                       ];
+                                       const groups = allItems.reduce((acc: Record<string, {asset: Asset, type: string}[]>, item) => {
+                                         const key = item.asset.aliasName || item.asset.sku || 'Unknown';
                                          if (!acc[key]) acc[key] = [];
                                          acc[key].push(item);
                                          return acc;
-                                       }, {} as Record<string, Asset[]>);
-                                       const getStagedType = (a: Asset) =>
-                                         stagedList.some(s => String(s.id) === String(a.id)) ? 'staged'
-                                         : requirementIds.has(String(a.id)) ? 'fulfilled' : 'extra';
-                                       return Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                                       }, {} as Record<string, {asset: Asset, type: string}[]>);
+                                       return Object.entries(groups).map(([name, items]: [string, {asset: Asset, type: string}[]]) => {
                                          const gKey = `godown-staged-${name}`;
                                          const isOpen = !!expandedGroups[gKey];
-                                         const dominantType = getStagedType(items[0]);
+                                         const dominantType = items[0]?.type;
                                          const colors = dominantType === 'extra' ? { border: 'border-amber-200', bg: 'bg-amber-50/10', iconBg: 'bg-amber-100 text-amber-600 border-amber-200', badge: 'bg-amber-500', icon: 'fa-layer-group' }
                                            : dominantType === 'staged' ? { border: 'border-sky-200', bg: 'bg-sky-50/20', iconBg: 'bg-sky-100 text-sky-600 border-sky-300', badge: 'bg-sky-500', icon: 'fa-box' }
                                            : { border: 'border-emerald-100', bg: 'bg-emerald-50/10', iconBg: 'bg-emerald-100 text-emerald-600 border-emerald-200', badge: 'bg-emerald-500', icon: 'fa-check-double' };
@@ -6213,22 +6210,19 @@ const App: React.FC = () => {
                                              </button>
                                              {isOpen && (
                                                <div className={`border-t ${colors.border} divide-y divide-slate-100/50`}>
-                                                 {items.map((asset) => {
-                                                   const itemType = getStagedType(asset);
-                                                   return (
-                                                     <div key={`${itemType}-${asset.id}`} className="flex items-center gap-3 px-4 py-2.5">
-                                                       <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
-                                                       <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
-                                                         {itemType === 'staged' ? 'STAGED' : itemType === 'extra' ? 'EXTRA' : 'PACKED'}
-                                                       </span>
-                                                       {!isConferenceEnded && (
-                                                         <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
-                                                           <i className="fa-solid fa-xmark text-[9px]"></i>
-                                                         </button>
-                                                       )}
-                                                     </div>
-                                                   );
-                                                 })}
+                                                 {items.map(({ asset, type }) => (
+                                                   <div key={`${type}-${asset.id}`} className="flex items-center gap-3 px-4 py-2.5">
+                                                     <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                     <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
+                                                       {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : 'PACKED'}
+                                                     </span>
+                                                     {!isConferenceEnded && (
+                                                       <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
+                                                         <i className="fa-solid fa-xmark text-[9px]"></i>
+                                                       </button>
+                                                     )}
+                                                   </div>
+                                                 ))}
                                                </div>
                                              )}
                                            </div>
