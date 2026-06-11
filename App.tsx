@@ -5071,7 +5071,10 @@ const App: React.FC = () => {
 
 
           {currentPage === 'Assets' && assetView === 'Form' && (() => {
-            const uniqueAliasNames = Array.from(new Set(aliasDictionary.map(a => a.alias_name).filter(Boolean)));
+            // J-95: Use the full shadow DB for alias suggestions — avoids pagination blindness.
+            // Falls back to `assets` only if the ref hasn't loaded yet (app just mounted).
+            const aliasPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+            const uniqueAliasNames = Array.from(new Set(aliasPool.map(a => a.aliasName).filter(Boolean)));
             
             const handleAliasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
               const selectedAlias = e.target.value;
@@ -5122,8 +5125,8 @@ const App: React.FC = () => {
               </h2>
               <form onSubmit={handleSaveAsset} className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8">
                 <datalist id="alias-dictionary-list">
-                  {aliasDictionary?.map((item, index) => (
-                    <option key={index} value={item.alias_name} />
+                  {uniqueAliasNames.map((name, index) => (
+                    <option key={index} value={name} />
                   ))}
                 </datalist>
                 {formErrors.non_field_errors && (
