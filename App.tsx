@@ -6167,7 +6167,7 @@ const App: React.FC = () => {
                                         ) : null;
                                       })()}
                                     </div>
-                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{(conferenceFormData.assets || []).length + (conferenceFormData.staged_assets || []).length} READY</span>
+                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{Array.from(new Set([...(conferenceFormData.assets || []).map(String), ...(conferenceFormData.staged_assets || []).map(String)])).length} READY</span>
                                   </div>
                                   
                                    {/* F-3: Cart view for godown staged/assigned items */}
@@ -6181,10 +6181,16 @@ const App: React.FC = () => {
                                        const gPool2 = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
                                        const packedList = gPool2.filter(a => new Set((conferenceFormData.assets || []).map(String)).has(String(a.id)));
                                        const stagedList = gPool2.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
-                                       const allItems = [
-                                         ...packedList.map(a => ({ asset: a, type: requirementIds.has(String(a.id)) ? 'fulfilled' : 'extra' })),
-                                         ...stagedList.map(a => ({ asset: a, type: 'staged' }))
-                                       ];
+                                       // Build display list via Map keyed by asset ID to prevent duplicates when
+                                       // an ID exists in both assets + staged_assets (state desync). 'staged' wins.
+                                       const itemMap = new Map<string, {asset: Asset, type: string}>();
+                                       packedList.forEach(a => {
+                                         itemMap.set(String(a.id), { asset: a, type: requirementIds.has(String(a.id)) ? 'fulfilled' : 'extra' });
+                                       });
+                                       stagedList.forEach(a => {
+                                         itemMap.set(String(a.id), { asset: a, type: 'staged' }); // staged overwrites packed if duplicate
+                                       });
+                                       const allItems = Array.from(itemMap.values());
                                        const groups = allItems.reduce((acc: Record<string, {asset: Asset, type: string}[]>, item) => {
                                          const key = item.asset.aliasName || item.asset.sku || 'Unknown';
                                          if (!acc[key]) acc[key] = [];
