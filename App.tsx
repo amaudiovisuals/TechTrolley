@@ -5035,19 +5035,31 @@ const App: React.FC = () => {
             };
 
             const isEditing = !!editingAsset;
-            const skuExists = !!(assetFormData.sku && assets.some(a => a.sku?.toLowerCase() === assetFormData.sku.toLowerCase() && (!isEditing || a.id !== editingAsset.id)));
-            
+
+            // J-93: Use the full shadow DB for SKU checks — avoids stale paginated buffer.
+            // Falls back to `assets` only if the ref hasn't loaded yet (app just mounted).
+            const skuPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+
+            // True while the shadow DB is still populating — prevents premature submit
+            // with a stale suggestion. Once allAssetsRef is loaded, this is always false.
+            const skuCalculating = assets.length > 0 && allAssetsRef.current.length === 0;
+
+            const skuExists = !!(assetFormData.sku && skuPool.some(
+              a => a.sku?.toLowerCase() === assetFormData.sku.toLowerCase() &&
+                   (!isEditing || a.id !== editingAsset.id)
+            ));
+
             let suggestedSku = '';
             if (!isEditing && assetFormData.aliasName) {
               const base = assetFormData.aliasName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-              const matches = assets.filter(a => a.sku?.toLowerCase().startsWith(`${base}_`));
+              const matches = skuPool.filter(a => a.sku?.toLowerCase().startsWith(`${base}_`));
               let max = 0;
               matches.forEach(m => {
                 const numPart = m.sku?.toLowerCase().replace(`${base}_`, '');
                 const num = parseInt(numPart || '0');
                 if (!isNaN(num) && num > max) max = num;
               });
-              if (matches.length > 0 || assets.some(a => a.sku?.toLowerCase() === base)) {
+              if (matches.length > 0 || skuPool.some(a => a.sku?.toLowerCase() === base)) {
                 suggestedSku = `${base}_${max + 1}`;
               } else {
                 suggestedSku = `${base}_1`;
@@ -5125,15 +5137,27 @@ const App: React.FC = () => {
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
                         <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
                         {skuExists && <p className="text-red-500 font-bold text-xs mt-1 uppercase tracking-widest animate-pulse">Warning: This SKU already exists!</p>}
-                        {suggestedSku && !skuExists && (
-                          <p 
+                        {skuCalculating && !skuExists && (
+                          <p className="text-amber-400 font-bold text-[10px] mt-1 uppercase tracking-widest flex items-center gap-1">
+                            <i className="fa-solid fa-spinner fa-spin text-[9px]"></i> Verifying availability…
+                          </p>
+                        )}
+                        {suggestedSku && !skuExists && !skuCalculating && (
+                          <p
                             className="text-sky-400 font-bold text-[10px] mt-1 uppercase tracking-widest cursor-pointer hover:text-sky-300 transition"
                             onClick={() => setAssetFormData({ ...assetFormData, sku: suggestedSku })}
                           >
                             Suggested: {suggestedSku}
                           </p>
                         )}
-                        {formErrors.sku && <p className="text-red-500 text-xs mt-1">{formErrors.sku}</p>}
+                        {formErrors.sku && (
+                          <div className="mt-2 flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                            <i className="fa-solid fa-circle-exclamation text-red-400 text-xs mt-0.5 shrink-0"></i>
+                            <p className="text-red-400 font-bold text-[10px] uppercase tracking-widest">
+                              {Array.isArray(formErrors.sku) ? formErrors.sku.join(' ') : formErrors.sku}
+                            </p>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
@@ -5159,7 +5183,7 @@ const App: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Serial Number</label>
-                        <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
+                        <input value={assetFormData.serialNumber} onChange={e => setAssetFormData({ ...assetFormData, serialNumber: e.target.value })} className="form-input-night" />
                         {formErrors.serial_number && <p className="text-red-500 text-xs mt-1">{formErrors.serial_number}</p>}
                       </div>
                       <div>
@@ -5259,7 +5283,17 @@ const App: React.FC = () => {
 
                 <div className="flex gap-4 pt-4">
                   <button type="button" onClick={() => handleViewChange('Assets', 'List')} className="flex-1 py-6 bg-slate-800 text-white rounded-2xl font-black uppercase hover:bg-slate-700 transition">Cancel</button>
-                  <button type="submit" disabled={skuExists} className={`flex-1 py-6 rounded-2xl font-black uppercase transition ${skuExists ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-sky-500 text-white hover:bg-sky-400'}`}>Save Record</button>
+                  <button
+                    type="submit"
+                    disabled={skuExists || skuCalculating}
+                    className={`flex-1 py-6 rounded-2xl font-black uppercase transition ${
+                      skuExists ? 'bg-red-900/40 text-red-400 cursor-not-allowed' :
+                      skuCalculating ? 'bg-slate-800 text-slate-500 cursor-wait' :
+                      'bg-sky-500 text-white hover:bg-sky-400'
+                    }`}
+                  >
+                    {skuCalculating ? 'Verifying SKU…' : 'Save Record'}
+                  </button>
                 </div>
               </form>
             </div>

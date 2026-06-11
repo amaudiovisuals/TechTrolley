@@ -44,6 +44,8 @@ class AssetSerializer(serializers.ModelSerializer):
         queryset=Asset.objects.all(), allow_null=True, required=False
     )
     deployment_history = serializers.SerializerMethodField()
+    # Serial number is optional — not every asset has one at registration time
+    serial_number = serializers.CharField(required=False, allow_blank=True, allow_null=True, default='')
 
     class Meta:
         model = Asset
@@ -80,6 +82,22 @@ class AssetSerializer(serializers.ModelSerializer):
                     history.append({'name': item.ticket.conference.name, 'date': item.ticket.created_at.isoformat()})
         except: pass
         return sorted(history, key=lambda x: (x['date'] or ''), reverse=True)
+
+    def validate_sku(self, value):
+        """
+        Enforce SKU uniqueness at the serializer layer (no migration required).
+        Allows the same SKU on update (PUT) only if it belongs to the asset being edited.
+        """
+        if not value:
+            return value
+        qs = Asset.objects.filter(sku__iexact=value)
+        # On update, exclude the current instance from the clash check
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("This SKU already exists. Please use a unique SKU.")
+        return value
+
 
 class ConferenceSerializer(serializers.ModelSerializer):
     class Meta:
