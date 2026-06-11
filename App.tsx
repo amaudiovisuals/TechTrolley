@@ -5078,13 +5078,25 @@ const App: React.FC = () => {
             
             const handleAliasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
               const selectedAlias = e.target.value;
-              const matchedItem = aliasDictionary.find(a => a.alias_name === selectedAlias);
-              if (matchedItem) {
-                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, type: matchedItem.type }));
+
+              // J-96: Search the full shadow DB first so newly registered aliases
+              // get their type auto-filled without requiring a page refresh.
+              const searchPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+              const matchedAsset = searchPool.find(a => a.aliasName === selectedAlias);
+
+              if (matchedAsset) {
+                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, type: matchedAsset.type }));
               } else {
-                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias }));
+                // Secondary fallback: curated aliasDictionary (e.g. for pre-seeded type mappings)
+                const matchedItem = aliasDictionary.find(a => a.alias_name === selectedAlias);
+                if (matchedItem) {
+                  setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, type: matchedItem.type }));
+                } else {
+                  setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias }));
+                }
               }
             };
+
 
             const isEditing = !!editingAsset;
 
