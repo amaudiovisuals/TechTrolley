@@ -2452,6 +2452,54 @@ const App: React.FC = () => {
     })
       .then(async res => {
         if (res.ok) {
+          // J-94: Read the created/updated asset from the response and immediately
+          // inject it into the shadow DB so the SKU auto-suggest is up-to-date
+          // for the NEXT item without requiring a page refresh.
+          const savedData = await res.json();
+
+          // Mirror the exact mapping used in fetchAllAssetsForScan
+          const mappedAsset: Asset = {
+            ...savedData,
+            id: savedData.id.toString(),
+            aliasName: savedData.alias_name,
+            macAddress: savedData.mac_address,
+            imeiNumber1: savedData.imei_number_1,
+            imeiNumber2: savedData.imei_number_2,
+            serialNumber: savedData.serial_number,
+            isBarcodeAdded: savedData.is_barcode_added,
+            quantity: parseInt(savedData.quantity, 10) || 1,
+            itemPrice: parseFloat(savedData.item_price),
+            depreciationPercentage: parseFloat(savedData.depreciation_percentage),
+            purchasedDate: savedData.purchased_date,
+            availableFrom: savedData.available_from,
+            availableTill: savedData.available_till,
+            createdAt: savedData.created_at,
+            barcode: savedData.barcode,
+            barcodeType: savedData.barcode_type,
+            qrCode: savedData.qr_code,
+            lastMaintained: savedData.last_maintained,
+            isTemporary: savedData.is_temporary,
+            returnDate: savedData.return_date,
+            flag: savedData.flag || AssetFlag.NONE,
+            currentVenue: savedData.current_venue,
+            assigned_to: savedData.assigned_to,
+            assigned_to_name: savedData.assigned_to_name,
+            parent_asset: savedData.parent_asset,
+            current_conference_name: savedData.current_conference_name,
+            sub_assets: savedData.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+          };
+
+          if (isNew) {
+            // CREATE — prepend to both shadow DB and paginated state
+            allAssetsRef.current = [mappedAsset, ...allAssetsRef.current];
+            setAssets(prev => [mappedAsset, ...prev]);
+          } else {
+            // UPDATE — replace the stale entry in place
+            allAssetsRef.current = allAssetsRef.current.map(a => a.id === mappedAsset.id ? mappedAsset : a);
+            setAssets(prev => prev.map(a => a.id === mappedAsset.id ? mappedAsset : a));
+          }
+
+          // Background refetch keeps pagination counts accurate
           fetchAssets();
           handleViewChange('Assets', 'List');
           if ( (isNew || assetFormData.generateQR) && finalSku) {
@@ -2472,6 +2520,7 @@ const App: React.FC = () => {
       })
       .catch(() => alert('Failed to connect to server.'));
   };
+
 
   const handleDeleteAsset = (id: string) => {
     if (!confirm("Are you sure you want to delete this asset?")) return;
