@@ -59,9 +59,9 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           table  { table-layout: fixed; width: 100mm; height: 25mm;
                    border: 0; border-collapse: collapse; }
           .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding: 0; }
-          /* J-99: quiet-zone guard — left QR cell gets left padding, right gets right padding */
-          .qr-td-left  { width: 22mm; text-align: center; vertical-align: middle; padding-left: 1.5mm; }
-          .qr-td-right { width: 22mm; text-align: center; vertical-align: middle; padding-right: 1.5mm; }
+          /* J-100: quiet-zone guard — reversed direction, doubled to 3mm */
+          .qr-td-left  { width: 22mm; text-align: center; vertical-align: middle; padding-right: 3.0mm; }
+          .qr-td-right { width: 22mm; text-align: center; vertical-align: middle; padding-left: 3.0mm; }
           .mid-td { width: 56mm; text-align: center; vertical-align: middle;
                     padding: 0 2mm; overflow: hidden; }
           .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
@@ -107,8 +107,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                  color: black !important; font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
           table  { table-layout: fixed; width: 100mm; height: 20mm;
                    border: 0; border-collapse: collapse; }
-          /* J-99: quiet-zone guard — 1.5mm left padding keeps QR clear of the sticker edge */
-          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding-left: 1.5mm; }
+          /* J-100: quiet-zone guard — reversed direction, doubled to 3mm; absorbed within 22mm col */
+          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding-right: 3.0mm; }
           .txt-td { width: 78mm; vertical-align: middle; padding: 1mm 2mm 1mm 3mm;
                     overflow: hidden; }
           .company { font-size: 10pt; font-weight: 900; text-transform: uppercase;
