@@ -59,6 +59,9 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           table  { table-layout: fixed; width: 100mm; height: 25mm;
                    border: 0; border-collapse: collapse; }
           .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding: 0; }
+          /* J-99: quiet-zone guard — left QR cell gets left padding, right gets right padding */
+          .qr-td-left  { width: 22mm; text-align: center; vertical-align: middle; padding-left: 1.5mm; }
+          .qr-td-right { width: 22mm; text-align: center; vertical-align: middle; padding-right: 1.5mm; }
           .mid-td { width: 56mm; text-align: center; vertical-align: middle;
                     padding: 0 2mm; overflow: hidden; }
           .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
@@ -76,7 +79,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
               <col style="width:22mm">
             </colgroup>
             <tr>
-              <td class="qr-td">
+              <td class="qr-td-left">
                 <img src="${qrDataUrl}" width="80" height="80"
                      style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
               </td>
@@ -85,7 +88,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                 <div class="phone">${companySettings?.phone || '9845204137'}</div>
                 <div class="sku">${sku}</div>
               </td>
-              <td class="qr-td" style="transform:scaleX(-1)">
+              <td class="qr-td-right" style="transform:scaleX(-1)">
                 <img src="${qrDataUrl}" width="80" height="80"
                      style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
               </td>
@@ -104,7 +107,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                  color: black !important; font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
           table  { table-layout: fixed; width: 100mm; height: 20mm;
                    border: 0; border-collapse: collapse; }
-          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding: 0; }
+          /* J-99: quiet-zone guard — 1.5mm left padding keeps QR clear of the sticker edge */
+          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding-left: 1.5mm; }
           .txt-td { width: 78mm; vertical-align: middle; padding: 1mm 2mm 1mm 3mm;
                     overflow: hidden; }
           .company { font-size: 10pt; font-weight: 900; text-transform: uppercase;
