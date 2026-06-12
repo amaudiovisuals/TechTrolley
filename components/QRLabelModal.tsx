@@ -6,12 +6,14 @@ interface QRLabelModalProps {
   assetId?: string;
   sku: string;
   assetName: string;
+  assetType?: string;    // J-97: used for future layout variants
+  twoSideQr?: boolean;   // J-97: true → dual-QR cable label
   onClose: () => void;
   onPrint?: (assetId: string, sku: string) => void;
   companySettings: CompanySettings;
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, onClose, onPrint, companySettings }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, twoSideQr, onClose, onPrint, companySettings }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Fallback defaults if settings are missing or zero
@@ -35,15 +37,92 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
     try {
       // 1. Generate QR data URL
       const qrDataUrl = await QRCode.toDataURL(sku, {
-        width: 250, // Higher resolution for professional print
+        width: 250,
         margin: 1,
-        color: {
-          dark: '#000000',
-          light: '#ffffff',
-        },
+        color: { dark: '#000000', light: '#ffffff' },
       });
 
-      // 2. Open print window (more reliable across browsers for this layout)
+      // 2. Build layout HTML — branch on twoSideQr
+      let bodyHtml: string;
+      let pageStyle: string;
+
+      if (twoSideQr) {
+        // ── J-97: DUAL-QR CABLE LABEL ─────────────────────────────────────────
+        // 100mm × 20mm landscape: QR | centre text | QR (mirrored)
+        pageStyle = `
+          @page { size: 100mm 20mm landscape; margin: 0; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body { margin: 0; padding: 0; width: 100mm; height: 20mm; background: white;
+                 font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
+          .wrap { display: flex; width: 100mm; height: 20mm; align-items: center; }
+          .qr-block { width: 20mm; display: flex; flex-direction: column;
+                      align-items: center; justify-content: center; flex-shrink: 0; }
+          .qr-img { width: 18mm; height: 18mm; display: block; }
+          .qr-label { font-size: 4pt; font-weight: 800; text-transform: uppercase;
+                      text-align: center; margin-top: 1px; width: 18mm;
+                      white-space: nowrap; overflow: hidden; }
+          .centre { flex: 1; display: flex; flex-direction: column;
+                    align-items: center; justify-content: center; text-align: center;
+                    padding: 0 2mm; }
+          .company { font-size: 8pt; font-weight: 900; text-transform: uppercase; line-height: 1; }
+          .phone   { font-size: 7pt; font-weight: 700; line-height: 1; margin: 1mm 0; }
+          .sku     { font-size: 11pt; font-weight: 900; letter-spacing: 0.5px; line-height: 1; }
+          .qr-block.mirror { transform: scaleX(-1); }
+        `;
+        bodyHtml = `
+          <div class="wrap">
+            <div class="qr-block">
+              <img src="${qrDataUrl}" class="qr-img" />
+              <div class="qr-label">${assetName}</div>
+            </div>
+            <div class="centre">
+              <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+              <div class="phone">${companySettings?.phone || '9845204137'}</div>
+              <div class="sku">${sku}</div>
+            </div>
+            <div class="qr-block mirror">
+              <img src="${qrDataUrl}" class="qr-img" />
+              <div class="qr-label">${assetName}</div>
+            </div>
+          </div>
+        `;
+      } else {
+        // ── STANDARD SINGLE-QR LABEL ────────────────────────────────────────────
+        pageStyle = `
+          @page { size: 100mm 20mm landscape; margin: 0; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body { margin: 0; padding: 0; width: 100mm; height: 20mm; background: white;
+                 color: black !important; font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
+          .label-table { width: 100mm; height: 20mm; border: 0; border-collapse: collapse; }
+          .qr-cell { width: 25mm; text-align: center; vertical-align: middle; padding: 0; }
+          .qr-img  { width: 18mm; height: 18mm; display: block; margin: 0 auto; }
+          .asset-name { font-size: 5pt; font-weight: 800; white-space: nowrap; overflow: hidden;
+                        width: 24mm; margin: 0 auto; text-align: center; margin-top: -1px;
+                        text-transform: uppercase; }
+          .text-cell { padding-left: 2mm; padding-top: 1mm; vertical-align: top; text-align: left; }
+          .company { font-size: 9pt; font-weight: 900; margin-bottom: 0px;
+                     text-transform: uppercase; line-height: 1; }
+          .phone   { font-size: 8pt; font-weight: 700; margin-bottom: 2mm; line-height: 1; }
+          .sku     { font-size: 14pt; font-weight: 900; letter-spacing: 0.5px; line-height: 1; margin: 0; }
+        `;
+        bodyHtml = `
+          <table class="label-table">
+            <tr>
+              <td class="qr-cell">
+                <img src="${qrDataUrl}" class="qr-img" />
+                <div class="asset-name">${assetName}</div>
+              </td>
+              <td class="text-cell">
+                <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+                <div class="phone">${companySettings?.phone || '9845204137'}</div>
+                <div class="sku">${sku}</div>
+              </td>
+            </tr>
+          </table>
+        `;
+      }
+
+      // 3. Open print window
       const printWindow = window.open('', '_blank', 'width=800,height=400');
       if (!printWindow) return;
 
@@ -52,111 +131,21 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         <html>
           <head>
             <title>&nbsp;</title>
-            <style>
-              @page {
-                size: 100mm 20mm landscape;
-                margin: 0;
-              }
-              * {
-                box-sizing: border-box;
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-                width: 100mm;
-                height: 20mm;
-                background: white;
-                color: black !important;
-                font-family: 'Inter', Arial, sans-serif;
-                overflow: hidden;
-              }
-              .label-table {
-                width: 100mm;
-                height: 20mm;
-                border: 0;
-                border-collapse: collapse;
-              }
-              .qr-cell {
-                width: 25mm;
-                text-align: center;
-                vertical-align: middle;
-                padding: 0;
-              }
-              .qr-img {
-                width: 18mm;
-                height: 18mm;
-                display: block;
-                margin: 0 auto;
-              }
-              .asset-name {
-                font-size: 5pt;
-                font-weight: 800;
-                white-space: nowrap;
-                overflow: hidden;
-                width: 24mm;
-                margin: 0 auto;
-                text-align: center;
-                margin-top: -1px;
-                text-transform: uppercase;
-              }
-              .text-cell {
-                padding-left: 2mm;
-                padding-top: 1mm;
-                vertical-align: top;
-                text-align: left;
-              }
-              .company {
-                font-size: 9pt;
-                font-weight: 900;
-                margin-bottom: 0px;
-                text-transform: uppercase;
-                line-height: 1;
-              }
-              .phone {
-                font-size: 8pt;
-                font-weight: 700;
-                margin-bottom: 2mm;
-                line-height: 1;
-              }
-              .sku {
-                font-size: 14pt;
-                font-weight: 900;
-                letter-spacing: 0.5px;
-                line-height: 1;
-                margin: 0;
-              }
-            </style>
+            <style>${pageStyle}</style>
           </head>
           <body>
-            <table class="label-table">
-              <tr>
-                <td class="qr-cell">
-                  <img src="${qrDataUrl}" class="qr-img" />
-                  <div class="asset-name">${assetName}</div>
-                </td>
-                <td class="text-cell">
-                  <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
-                  <div class="phone">${companySettings?.phone || '9845204137'}</div>
-                  <div class="sku">${sku}</div>
-                </td>
-              </tr>
-            </table>
+            ${bodyHtml}
             <script>
-              window.onload = () => { 
-                setTimeout(() => {
-                  window.print();
-                  window.close();
-                }, 750);
+              window.onload = () => {
+                setTimeout(() => { window.print(); window.close(); }, 750);
               };
-            </script>
+            <\/script>
           </body>
         </html>
       `);
       printWindow.document.close();
-      
-      // 3. Mark as assigned in backend if onPrint provided
+
+      // 4. Mark as assigned in backend if onPrint provided
       if (assetId && onPrint) {
         onPrint(assetId, sku);
       }

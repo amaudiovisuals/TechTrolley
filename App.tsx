@@ -944,8 +944,9 @@ const App: React.FC = () => {
   const [scanToast, setScanToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
 
   // QR Label modal state
-  // QR Label modal state
-  const [qrTarget, setQrTarget] = useState<{ id?: string; sku: string; name: string } | null>(null);
+  // J-97: twoSideQr flag travels with qrTarget so QRLabelModal can pick the layout branch
+  const [isTwoSideQr, setIsTwoSideQr] = useState<boolean>(false);
+  const [qrTarget, setQrTarget] = useState<{ id?: string; sku: string; name: string; twoSideQr?: boolean; assetType?: string } | null>(null);
 
   // Unrecognized Scan Linking state
   const [unrecognizedScan, setUnrecognizedScan] = useState<string | null>(null);
@@ -2503,8 +2504,9 @@ const App: React.FC = () => {
           fetchAssets();
           handleViewChange('Assets', 'List');
           if ( (isNew || assetFormData.generateQR) && finalSku) {
-            setQrTarget({ sku: finalSku as string, name: assetFormData.aliasName || finalSku as string });
+            setQrTarget({ sku: finalSku as string, name: assetFormData.aliasName || finalSku as string, twoSideQr: isTwoSideQr, assetType: assetFormData.type });
           }
+          setIsTwoSideQr(false);
           setEditingAsset(null);
           setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', available_till: '', status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined, subrental_company: undefined, generateQR: false });
           
@@ -2554,6 +2556,8 @@ const App: React.FC = () => {
   const openEditAssetForm = (asset: Asset) => {
     if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
     setEditingAsset(asset);
+    // J-97: Pre-seed isTwoSideQr based on the asset being edited
+    setIsTwoSideQr(asset.type === AssetCategory.CABLE);
     setAssetFormData({
       sku: asset.sku,
       aliasName: asset.aliasName,
@@ -2586,6 +2590,7 @@ const App: React.FC = () => {
   const openNewAssetForm = () => {
     if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
     setEditingAsset(null);
+    setIsTwoSideQr(false); // J-97: reset on new form
     setAssetFormData({
       sku: '',
       aliasName: '',
@@ -3265,7 +3270,7 @@ const App: React.FC = () => {
             )}
             <div className="pt-8 flex flex-col sm:flex-row gap-4 border-t border-slate-800/50">
               <button
-                onClick={() => viewingAsset.sku && setQrTarget({ sku: viewingAsset.sku, name: viewingAsset.aliasName || viewingAsset.sku })}
+                onClick={() => viewingAsset.sku && setQrTarget({ sku: viewingAsset.sku, name: viewingAsset.aliasName || viewingAsset.sku, twoSideQr: viewingAsset.type === AssetCategory.CABLE, assetType: viewingAsset.type })}
                 className="flex-1 py-5 bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-xl font-black uppercase text-xs hover:bg-violet-500 hover:text-white transition flex items-center justify-center gap-2"
               >
                 <i className="fa-solid fa-qrcode" /> Print QR
@@ -4498,7 +4503,7 @@ const App: React.FC = () => {
                            setAssetView('Form');
                            setCurrentPage('Assets');
                          }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
-                         <button onClick={() => setQrTarget({ sku: asset.sku, name: asset.aliasName || asset.sku })} className="text-emerald-400">
+                         <button onClick={() => setQrTarget({ sku: asset.sku, name: asset.aliasName || asset.sku, twoSideQr: asset.type === AssetCategory.CABLE, assetType: asset.type })} className="text-emerald-400">
                            <i className="fa-solid fa-qrcode"></i>
                          </button>
                       </td>
@@ -5254,7 +5259,12 @@ const App: React.FC = () => {
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Type / Category</label>
                         <select
                           value={getUICategory(assetFormData.type)}
-                          onChange={(e) => setAssetFormData({ ...assetFormData, type: mapUIToDBType(e.target.value) })}
+                          onChange={(e) => {
+                            const newType = mapUIToDBType(e.target.value);
+                            setAssetFormData({ ...assetFormData, type: newType });
+                            // J-97: Auto-enable 2 Side QR for Cable; disable for everything else
+                            setIsTwoSideQr(newType === AssetCategory.CABLE);
+                          }}
                           className="w-full bg-slate-900 border border-slate-800 p-5 rounded-2xl text-white font-bold outline-none focus:border-sky-500"
                         >
                           {Object.values(UICategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -5262,6 +5272,28 @@ const App: React.FC = () => {
                         {formErrors.type && <p className="text-red-500 text-xs mt-1">{formErrors.type}</p>}
                       </div>
                     </div>
+
+                    {/* J-97: Cable-only 2 Side QR toggle */}
+                    {assetFormData.type === AssetCategory.CABLE && (
+                      <div className="flex items-center gap-4 bg-sky-500/5 border border-sky-500/20 p-5 rounded-[1.5rem] animate-in fade-in zoom-in-95 duration-300">
+                        <div className="w-8 h-8 bg-sky-500/10 text-sky-400 rounded-xl flex items-center justify-center shrink-0 border border-sky-500/20">
+                          <i className="fa-solid fa-rotate" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest">2 Side QR Layout</p>
+                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Print QR code on both ends of the cable label</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsTwoSideQr(prev => !prev)}
+                          className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${
+                            isTwoSideQr ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                          }`}
+                        >
+                          {isTwoSideQr ? 'Enabled' : 'Disabled'}
+                        </button>
+                      </div>
+                    )}
 
                     <div>
                       <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Description</label>
@@ -6763,6 +6795,8 @@ const App: React.FC = () => {
           assetId={qrTarget.id}
           sku={qrTarget.sku}
           assetName={qrTarget.name}
+          assetType={qrTarget.assetType}
+          twoSideQr={qrTarget.twoSideQr}
           onPrint={handlePrintAsset}
           onClose={() => setQrTarget(null)}
           companySettings={companySettings}
