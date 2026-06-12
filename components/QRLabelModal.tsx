@@ -47,72 +47,85 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
       let pageStyle: string;
 
       if (twoSideQr) {
-        // ── J-97: DUAL-QR CABLE LABEL ─────────────────────────────────────────
-        // 100mm × 20mm landscape: QR | centre text | QR (mirrored)
+        // ── J-98: DUAL-QR CABLE LABEL ──────────────────────────────────────────
+        // 100mm × 25mm landscape: [QR 22mm] | [text 56mm] | [QR 22mm]
+        // table-layout: fixed + explicit col widths lock each cell — long SKUs
+        // wrap inside the centre column without touching the QR columns.
         pageStyle = `
-          @page { size: 100mm 20mm landscape; margin: 0; }
+          @page { size: 100mm 25mm landscape; margin: 0; }
           * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          body { margin: 0; padding: 0; width: 100mm; height: 20mm; background: white;
+          body { margin: 0; padding: 0; width: 100mm; height: 25mm; background: white;
                  font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
-          .wrap { display: flex; width: 100mm; height: 20mm; align-items: center; }
-          .qr-block { width: 20mm; display: flex; flex-direction: column;
-                      align-items: center; justify-content: center; flex-shrink: 0; }
-          .qr-img { width: 18mm; height: 18mm; display: block; }
-          .qr-label { font-size: 4pt; font-weight: 800; text-transform: uppercase;
-                      text-align: center; margin-top: 1px; width: 18mm;
-                      white-space: nowrap; overflow: hidden; }
-          .centre { flex: 1; display: flex; flex-direction: column;
-                    align-items: center; justify-content: center; text-align: center;
-                    padding: 0 2mm; }
-          .company { font-size: 8pt; font-weight: 900; text-transform: uppercase; line-height: 1; }
-          .phone   { font-size: 7pt; font-weight: 700; line-height: 1; margin: 1mm 0; }
-          .sku     { font-size: 11pt; font-weight: 900; letter-spacing: 0.5px; line-height: 1; }
-          .qr-block.mirror { transform: scaleX(-1); }
+          table  { table-layout: fixed; width: 100mm; height: 25mm;
+                   border: 0; border-collapse: collapse; }
+          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding: 0; }
+          .mid-td { width: 56mm; text-align: center; vertical-align: middle;
+                    padding: 0 2mm; overflow: hidden; }
+          .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
+                     line-height: 1.1; margin: 0; }
+          .phone   { font-size: 7pt; font-weight: 700; line-height: 1.1;
+                     margin: 1mm 0; }
+          .sku     { font-size: 11pt; font-weight: 900; line-height: 1.2;
+                     word-break: break-all; margin: 0; }
         `;
         bodyHtml = `
-          <div class="wrap">
-            <div class="qr-block">
-              <img src="${qrDataUrl}" class="qr-img" />
-              <div class="qr-label">${assetName}</div>
-            </div>
-            <div class="centre">
-              <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
-              <div class="phone">${companySettings?.phone || '9845204137'}</div>
-              <div class="sku">${sku}</div>
-            </div>
-            <div class="qr-block mirror">
-              <img src="${qrDataUrl}" class="qr-img" />
-              <div class="qr-label">${assetName}</div>
-            </div>
-          </div>
+          <table>
+            <colgroup>
+              <col style="width:22mm">
+              <col style="width:56mm">
+              <col style="width:22mm">
+            </colgroup>
+            <tr>
+              <td class="qr-td">
+                <img src="${qrDataUrl}" width="80" height="80"
+                     style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
+              </td>
+              <td class="mid-td">
+                <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+                <div class="phone">${companySettings?.phone || '9845204137'}</div>
+                <div class="sku">${sku}</div>
+              </td>
+              <td class="qr-td" style="transform:scaleX(-1)">
+                <img src="${qrDataUrl}" width="80" height="80"
+                     style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
+              </td>
+            </tr>
+          </table>
         `;
       } else {
-        // ── STANDARD SINGLE-QR LABEL ────────────────────────────────────────────
+        // ── J-98: STANDARD SINGLE-QR LABEL ─────────────────────────────────────
+        // 100mm × 20mm landscape: [QR 22mm] | [text 78mm]
+        // table-layout: fixed + explicit col widths guarantee the QR cell
+        // never shrinks regardless of SKU length. Long SKUs wrap in the text cell.
         pageStyle = `
           @page { size: 100mm 20mm landscape; margin: 0; }
           * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           body { margin: 0; padding: 0; width: 100mm; height: 20mm; background: white;
                  color: black !important; font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
-          .label-table { width: 100mm; height: 20mm; border: 0; border-collapse: collapse; }
-          .qr-cell { width: 25mm; text-align: center; vertical-align: middle; padding: 0; }
-          .qr-img  { width: 18mm; height: 18mm; display: block; margin: 0 auto; }
-          .asset-name { font-size: 5pt; font-weight: 800; white-space: nowrap; overflow: hidden;
-                        width: 24mm; margin: 0 auto; text-align: center; margin-top: -1px;
-                        text-transform: uppercase; }
-          .text-cell { padding-left: 2mm; padding-top: 1mm; vertical-align: top; text-align: left; }
-          .company { font-size: 9pt; font-weight: 900; margin-bottom: 0px;
-                     text-transform: uppercase; line-height: 1; }
-          .phone   { font-size: 8pt; font-weight: 700; margin-bottom: 2mm; line-height: 1; }
-          .sku     { font-size: 14pt; font-weight: 900; letter-spacing: 0.5px; line-height: 1; margin: 0; }
+          table  { table-layout: fixed; width: 100mm; height: 20mm;
+                   border: 0; border-collapse: collapse; }
+          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding: 0; }
+          .txt-td { width: 78mm; vertical-align: middle; padding: 1mm 2mm 1mm 3mm;
+                    overflow: hidden; }
+          .company { font-size: 10pt; font-weight: 900; text-transform: uppercase;
+                     line-height: 1.1; margin: 0 0 0.5mm 0; }
+          .phone   { font-size: 10pt; font-weight: 700; line-height: 1.1;
+                     margin: 0 0 1.5mm 0; }
+          .sku     { font-size: 14pt; font-weight: 900; line-height: 1.2;
+                     word-break: break-all; margin: 0; }
         `;
         bodyHtml = `
-          <table class="label-table">
+          <table>
+            <colgroup>
+              <col style="width:22mm">
+              <col style="width:78mm">
+            </colgroup>
             <tr>
-              <td class="qr-cell">
-                <img src="${qrDataUrl}" class="qr-img" />
-                <div class="asset-name">${assetName}</div>
+              <td class="qr-td">
+                <img src="${qrDataUrl}" width="80" height="80"
+                     style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
               </td>
-              <td class="text-cell">
+              <td class="txt-td">
                 <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
                 <div class="phone">${companySettings?.phone || '9845204137'}</div>
                 <div class="sku">${sku}</div>
