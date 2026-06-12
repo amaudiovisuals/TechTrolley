@@ -96,6 +96,58 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
             </tr>
           </table>
         `;
+      } else if (labelLayout === 'double') {
+        // ── J-103: DOUBLE / MICRO TAG LABEL ────────────────────────────────────
+        // 100mm × 20mm landscape: [QR 22mm | Text 28mm | QR 22mm | Text 28mm]
+        // = 22+28+22+28 = 100mm exactly.
+        //
+        // Scissor gutter math (dead-centre at 50mm):
+        //   Left  text-cell padding-right: 4mm  →  blank from 46mm → 50mm
+        //   Right QR-cell  padding-left:   2mm  →  blank from 50mm → 52mm
+        //   Combined white gutter = 4mm + 2mm = 6mm centred on the 50mm mark.
+        //
+        // Workable text width per half = 28mm − 4mm (right pad) = 24mm.
+        pageStyle = `
+          @page { size: 100mm 20mm landscape; margin: 0; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body { margin: 0; padding: 0; width: 100mm; height: 20mm; background: white;
+                 color: black !important; font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
+          table  { table-layout: fixed; width: 100mm; height: 20mm;
+                   border: 0; border-collapse: collapse; }
+          /* J-101 drift protection: symmetric 2mm+2mm, 22-4=18mm image */
+          .qr-td  { width: 22mm; text-align: center; vertical-align: middle;
+                    padding-left: 2mm; padding-right: 2mm; }
+          /* 4mm right pad creates the 6mm scissor gutter with next cell's 2mm left pad */
+          .txt-td { width: 28mm; vertical-align: middle;
+                    padding: 1mm 4mm 1mm 0; overflow: hidden; }
+          .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
+                     line-height: 1.1; margin: 0; }
+          .phone   { font-size: 8pt; font-weight: 700; line-height: 1.1; margin: 0.5mm 0; }
+          .sku     { font-size: 10pt; font-weight: 900; line-height: 1.1;
+                     word-break: break-all; margin: 0; }
+        `;
+        const half = `
+          <td class="qr-td">
+            <img src="${qrDataUrl}" width="68" height="68"
+                 style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
+          </td>
+          <td class="txt-td">
+            <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+            <div class="phone">${companySettings?.phone || '9845204137'}</div>
+            <div class="sku">${sku}</div>
+          </td>
+        `;
+        bodyHtml = `
+          <table>
+            <colgroup>
+              <col style="width:22mm">
+              <col style="width:28mm">
+              <col style="width:22mm">
+              <col style="width:28mm">
+            </colgroup>
+            <tr>${half}${half}</tr>
+          </table>
+        `;
       } else {
         // ── J-98: STANDARD SINGLE-QR LABEL ─────────────────────────────────────
         // 100mm × 20mm landscape: [QR 22mm] | [text 78mm]
@@ -139,6 +191,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           </table>
         `;
       }
+
 
       // 3. Open print window
       const printWindow = window.open('', '_blank', 'width=800,height=400');
