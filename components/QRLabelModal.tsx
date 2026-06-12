@@ -59,9 +59,9 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           table  { table-layout: fixed; width: 100mm; height: 25mm;
                    border: 0; border-collapse: collapse; }
           .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding: 0; }
-          /* J-100: quiet-zone guard — reversed direction, doubled to 3mm */
-          .qr-td-left  { width: 22mm; text-align: center; vertical-align: middle; padding-right: 3.0mm; }
-          .qr-td-right { width: 22mm; text-align: center; vertical-align: middle; padding-left: 3.0mm; }
+          /* J-101: drift protection — symmetric 2mm+2mm padding, 22-4=18mm exact image fit */
+          .qr-td-left  { width: 22mm; text-align: center; vertical-align: middle; padding-left: 2mm; padding-right: 2mm; }
+          .qr-td-right { width: 22mm; text-align: center; vertical-align: middle; padding-left: 2mm; padding-right: 2mm; }
           .mid-td { width: 56mm; text-align: center; vertical-align: middle;
                     padding: 0 2mm; overflow: hidden; }
           .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
@@ -80,8 +80,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
             </colgroup>
             <tr>
               <td class="qr-td-left">
-                <img src="${qrDataUrl}" width="80" height="80"
-                     style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
+                <img src="${qrDataUrl}" width="68" height="68"
+                     style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
               </td>
               <td class="mid-td">
                 <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
@@ -89,8 +89,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                 <div class="sku">${sku}</div>
               </td>
               <td class="qr-td-right" style="transform:scaleX(-1)">
-                <img src="${qrDataUrl}" width="80" height="80"
-                     style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
+                <img src="${qrDataUrl}" width="68" height="68"
+                     style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
               </td>
             </tr>
           </table>
@@ -107,8 +107,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                  color: black !important; font-family: 'Inter', Arial, sans-serif; overflow: hidden; }
           table  { table-layout: fixed; width: 100mm; height: 20mm;
                    border: 0; border-collapse: collapse; }
-          /* J-100: quiet-zone guard — reversed direction, doubled to 3mm; absorbed within 22mm col */
-          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding-right: 3.0mm; }
+          /* J-101: drift protection — symmetric 2mm+2mm padding, 22-4=18mm exact image fit */
+          .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding-left: 2mm; padding-right: 2mm; }
           .txt-td { width: 78mm; vertical-align: middle; padding: 1mm 2mm 1mm 3mm;
                     overflow: hidden; }
           .company { font-size: 10pt; font-weight: 900; text-transform: uppercase;
@@ -126,8 +126,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
             </colgroup>
             <tr>
               <td class="qr-td">
-                <img src="${qrDataUrl}" width="80" height="80"
-                     style="display:block;margin:0 auto;width:80px;height:80px;flex-shrink:0" />
+                <img src="${qrDataUrl}" width="68" height="68"
+                     style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
               </td>
               <td class="txt-td">
                 <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
