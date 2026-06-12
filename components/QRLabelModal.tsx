@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CompanySettings } from '../types';
 import QRCode from 'qrcode';
 
@@ -6,16 +6,19 @@ interface QRLabelModalProps {
   assetId?: string;
   sku: string;
   assetName: string;
-  assetType?: string;    // J-97: used for future layout variants
-  twoSideQr?: boolean;   // J-97: true → dual-QR cable label
-  labelLayout?: string;  // J-102: 'single' | 'double' (default 'double')
+  assetType?: string;   // J-105: drives conditional print settings UI
   onClose: () => void;
   onPrint?: (assetId: string, sku: string) => void;
   companySettings: CompanySettings;
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, twoSideQr, labelLayout = 'double', onClose, onPrint, companySettings }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, onClose, onPrint, companySettings }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // J-105: Print settings live here, not in the form
+  const isCable = assetType === 'Cable';
+  const [isTwoSideQr, setIsTwoSideQr] = useState<boolean>(true);   // cable default: both ends
+  const [labelLayout, setLabelLayout] = useState<string>('double'); // non-cable default: micro tag
 
   // Fallback defaults if settings are missing or zero
   const labelWidth = companySettings?.print_label_width || 50;
@@ -61,7 +64,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
       let bodyHtml: string;
       let pageStyle: string;
 
-      if (twoSideQr) {
+      if (isTwoSideQr && isCable) {
         // ── J-98: DUAL-QR CABLE LABEL ──────────────────────────────────────────
         // 100mm × 25mm landscape: [QR 22mm] | [text 56mm] | [QR 22mm]
         // table-layout: fixed + explicit col widths lock each cell — long SKUs
@@ -262,11 +265,61 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           <canvas ref={canvasRef} />
         </div>
 
-        {/* SKU Label */}
-        <div className="text-center">
+        {/* SKU Label — overflow-safe */}
+        <div className="text-center w-full overflow-hidden px-1">
           <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">SKU / QR Value</p>
-          <p className="text-xl font-black text-sky-400 font-mono tracking-widest">{sku}</p>
+          <p className="text-xl font-black text-sky-400 font-mono leading-tight break-all whitespace-normal w-full">{sku}</p>
         </div>
+
+        {/* J-105: Print Settings — conditional on asset category */}
+        {isCable ? (
+          // Cable: 2-Side QR toggle
+          <div className="flex items-center gap-4 bg-sky-500/5 border border-sky-500/20 p-4 rounded-2xl w-full">
+            <div className="w-7 h-7 bg-sky-500/10 text-sky-400 rounded-lg flex items-center justify-center shrink-0 border border-sky-500/20">
+              <i className="fa-solid fa-rotate text-xs" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-black text-sky-400 uppercase tracking-widest">2 Side QR Layout</p>
+              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Print QR on both ends of cable</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTwoSideQr(prev => !prev)}
+              className={`px-5 py-1.5 rounded-lg font-black text-[10px] uppercase tracking-widest transition shrink-0 ${
+                isTwoSideQr ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {isTwoSideQr ? 'On' : 'Off'}
+            </button>
+          </div>
+        ) : (
+          // Non-cable: Layout 1 / Layout 2 radio
+          <div className="bg-violet-500/5 border border-violet-500/20 p-4 rounded-2xl w-full">
+            <p className="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-3">Label Layout</p>
+            <div className="flex gap-2">
+              {[
+                { value: 'single', label: 'Layout 1', sub: 'Single · 100mm' },
+                { value: 'double', label: 'Layout 2', sub: 'Micro Tag · 2×50mm' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setLabelLayout(opt.value)}
+                  className={`flex-1 py-2.5 px-3 rounded-xl border font-black text-[10px] uppercase tracking-widest transition flex flex-col items-center gap-0.5 ${
+                    labelLayout === opt.value
+                      ? 'bg-violet-500 text-white border-violet-500 shadow-lg shadow-violet-500/20'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-violet-500/40'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  <span className={`text-[8px] font-bold normal-case ${
+                    labelLayout === opt.value ? 'text-violet-200' : 'text-slate-600'
+                  }`}>{opt.sub}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex gap-3 w-full">
