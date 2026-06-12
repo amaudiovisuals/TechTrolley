@@ -34,6 +34,20 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
     }
   }, [sku]);
 
+  // J-104: Adaptive font sizing — prevents long SKUs from overflowing the 20mm height
+  const getSkuFontSize = (skuText: string, isMicroTag: boolean): string => {
+    const len = skuText.length;
+    if (isMicroTag) {
+      if (len > 24) return '7pt';
+      if (len > 16) return '8pt';
+      return '9.5pt';
+    }
+    // Standard layout has more horizontal room
+    if (len > 30) return '10pt';
+    if (len > 20) return '12pt';
+    return '14pt';
+  };
+
   const handlePrint = async () => {
     try {
       // 1. Generate QR data URL
@@ -123,7 +137,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
                      line-height: 1.1; margin: 0; }
           .phone   { font-size: 8pt; font-weight: 700; line-height: 1.1; margin: 0.5mm 0; }
-          .sku     { font-size: 10pt; font-weight: 900; line-height: 1.1;
+          .sku     { font-size: ${getSkuFontSize(sku, true)}; font-weight: 900; line-height: 1.1;
                      word-break: break-all; margin: 0; }
         `;
         const half = `
@@ -168,7 +182,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                      line-height: 1.1; margin: 0 0 0.5mm 0; }
           .phone   { font-size: 10pt; font-weight: 700; line-height: 1.1;
                      margin: 0 0 1.5mm 0; }
-          .sku     { font-size: 14pt; font-weight: 900; line-height: 1.2;
+          .sku     { font-size: ${getSkuFontSize(sku, false)}; font-weight: 900; line-height: 1.2;
                      word-break: break-all; margin: 0; }
         `;
         bodyHtml = `
