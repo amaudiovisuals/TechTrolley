@@ -8,12 +8,13 @@ interface QRLabelModalProps {
   assetName: string;
   assetType?: string;    // J-97: used for future layout variants
   twoSideQr?: boolean;   // J-97: true → dual-QR cable label
+  labelLayout?: string;  // J-102: 'single' | 'double' (default 'double')
   onClose: () => void;
   onPrint?: (assetId: string, sku: string) => void;
   companySettings: CompanySettings;
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, twoSideQr, onClose, onPrint, companySettings }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, twoSideQr, labelLayout = 'double', onClose, onPrint, companySettings }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Fallback defaults if settings are missing or zero
