@@ -135,8 +135,8 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           .qr-td  { width: 22mm; text-align: center; vertical-align: middle;
                     padding-left: 2mm; padding-right: 2mm; }
           /* 4mm right pad creates the 6mm scissor gutter with next cell's 2mm left pad */
-          .txt-td { width: 28mm; vertical-align: middle;
-                    padding: 1mm 4mm 1mm 0; overflow: hidden; }
+          .txt-td { width: 28mm; vertical-align: top;
+                     padding: 1mm 4mm 3mm 0; overflow: hidden; }
           .company { font-size: 8pt; font-weight: 900; text-transform: uppercase;
                      line-height: 1.1; margin: 0; }
           .phone   { font-size: 8pt; font-weight: 700; line-height: 1.1; margin: 0.5mm 0; }
@@ -179,7 +179,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                    border: 0; border-collapse: collapse; }
           /* J-101: drift protection — symmetric 2mm+2mm padding, 22-4=18mm exact image fit */
           .qr-td { width: 22mm; text-align: center; vertical-align: middle; padding-left: 2mm; padding-right: 2mm; }
-          .txt-td { width: 78mm; vertical-align: middle; padding: 1mm 2mm 1mm 3mm;
+          .txt-td { width: 78mm; vertical-align: top; padding: 1mm 2mm 3mm 3mm;
                     overflow: hidden; }
           .company { font-size: 10pt; font-weight: 900; text-transform: uppercase;
                      line-height: 1.1; margin: 0 0 0.5mm 0; }
