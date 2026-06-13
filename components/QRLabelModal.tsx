@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CompanySettings } from '../types';
+import { CompanySettings, SubrentalCompany } from '../types';
 import QRCode from 'qrcode';
 
 interface QRLabelModalProps {
@@ -10,15 +10,24 @@ interface QRLabelModalProps {
   onClose: () => void;
   onPrint?: (assetId: string, sku: string) => void;
   companySettings: CompanySettings;
+  subrentalCompanies?: SubrentalCompany[]; // J-108: subrental company name options
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, onClose, onPrint, companySettings }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, onClose, onPrint, companySettings, subrentalCompanies = [] }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // J-105: Print settings live here, not in the form
   const isCable = assetType === 'Cable';
   const [isTwoSideQr, setIsTwoSideQr] = useState<boolean>(true);   // cable default: both ends
   const [labelLayout, setLabelLayout] = useState<string>('double'); // non-cable default: micro tag
+
+  // J-108: Dynamic company name selector — main company first, then unique subrental names
+  const mainCompanyName = companySettings?.name || 'AM Audiovisuals';
+  const companyNameOptions = [
+    mainCompanyName,
+    ...new Set(subrentalCompanies.map(s => s.name).filter(Boolean)),
+  ];
+  const [selectedCompanyName, setSelectedCompanyName] = useState<string>(mainCompanyName);
 
   // Fallback defaults if settings are missing or zero
   const labelWidth = companySettings?.print_label_width || 50;
@@ -105,7 +114,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                      style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
               </td>
               <td class="mid-td">
-                <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+                <div class="company">${selectedCompanyName}</div>
                 <div class="phone">${companySettings?.phone || '9845204137'}</div>
                 <div class="sku">${sku}</div>
               </td>
@@ -152,7 +161,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                  style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
           </td>
           <td class="txt-td">
-            <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+            <div class="company">${selectedCompanyName}</div>
             <div class="phone">${companySettings?.phone || '9845204137'}</div>
             <div class="sku">${sku}</div>
           </td>
@@ -203,7 +212,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
                      style="display:block;margin:0 auto;width:18mm;height:18mm;flex-shrink:0" />
               </td>
               <td class="txt-td">
-                <div class="company">${companySettings?.name || 'AM Audiovisuals'}</div>
+                <div class="company">${selectedCompanyName}</div>
                 <div class="phone">${companySettings?.phone || '9845204137'}</div>
                 <div class="sku">${sku}</div>
               </td>
@@ -272,6 +281,20 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         <div className="text-center w-full overflow-hidden px-1">
           <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">SKU / QR Value</p>
           <p className="text-xl font-black text-sky-400 font-mono leading-tight break-all whitespace-normal w-full">{sku}</p>
+        </div>
+
+        {/* J-108: Company Name Selector */}
+        <div className="bg-slate-800/60 border border-slate-700 p-4 rounded-2xl w-full">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Company Name on Label</p>
+          <select
+            value={selectedCompanyName}
+            onChange={e => setSelectedCompanyName(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold text-xs focus:outline-none focus:border-sky-500 transition"
+          >
+            {companyNameOptions.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
         </div>
 
         {/* J-105: Print Settings — conditional on asset category */}

@@ -6771,6 +6771,7 @@ const App: React.FC = () => {
           onPrint={handlePrintAsset}
           onClose={() => setQrTarget(null)}
           companySettings={companySettings}
+          subrentalCompanies={subrentalCompanies}
         />
       )}
 
