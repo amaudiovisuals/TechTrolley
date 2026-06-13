@@ -38,9 +38,12 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
   }, [sku]);
 
   // J-104: Adaptive font sizing — prevents long SKUs from overflowing the 20mm height
+  // J-107: Extreme breakpoints — forces 40+ char SKUs to max 3 lines on Micro Tag
   const getSkuFontSize = (skuText: string, isMicroTag: boolean): string => {
     const len = skuText.length;
     if (isMicroTag) {
+      if (len > 40) return '5.5pt'; // Extreme compression for 40+ chars
+      if (len > 32) return '6pt';   // Heavy compression for 32–40 chars
       if (len > 24) return '7pt';
       if (len > 16) return '8pt';
       return '9.5pt';
