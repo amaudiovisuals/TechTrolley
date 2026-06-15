@@ -216,6 +216,8 @@ class Conference(models.Model):
     staged_assets = models.ManyToManyField(Asset, blank=True, related_name='staged_conferences')
     approximate_value = models.DecimalField(max_digits=20, decimal_places=2, default=0, null=True, blank=True)
     flag_log = models.JSONField(default=list, blank=True, help_text="Log of assets flagged during this conference: [{'asset_id': 1, 'flag': 'Missing', 'stage': 'Packup', 'timestamp': '...'}]")
+    # J-109: Audit Mode — when True, assets in this conference do not lock other live events
+    is_audit = models.BooleanField(default=False, help_text="If True, this conference is a non-blocking audit list. Its assets will not lock availability for other conferences.")
 
     def __str__(self):
         return self.name
