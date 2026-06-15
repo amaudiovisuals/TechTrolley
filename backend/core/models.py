@@ -310,11 +310,24 @@ def update_asset_status_on_assets_change(sender, instance, action, pk_set, **kwa
         return
 
     if action == 'post_add':
-        # Intentional bypass of Asset.save() flag logic for bulk performance
-        Asset.objects.filter(pk__in=pk_set).update(status='In Use')
+        # J-110: Audit conferences are non-blocking — do NOT stamp assets as 'In Use'
+        # when the holding conference is an audit list. This prevents the phantom lock
+        # where asset.status === 'In Use' short-circuits LOCK 3 in the frontend even
+        # though the .isAudit bypass would have cleared it.
+        if not instance.is_audit:
+            # Intentional bypass of Asset.save() flag logic for bulk performance
+            Asset.objects.filter(pk__in=pk_set).update(status='In Use')
     elif action in ('post_remove', 'pre_clear'):
         # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
-        others_using = set(Conference.objects.exclude(pk=instance.pk).filter(assets__in=pk_set).values_list('assets__id', flat=True))
+        # J-110: Exclude audit conferences from the 'others_using' check so that
+        # removing an asset from a real conference isn't blocked by an audit holder.
+        others_using = set(
+            Conference.objects
+            .exclude(pk=instance.pk)
+            .exclude(is_audit=True)  # J-110: audit conferences don't count as real holders
+            .filter(assets__in=pk_set)
+            .values_list('assets__id', flat=True)
+        )
         crosscheck_using = set(Conference.objects.filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
         
         to_revert = [aid for aid in pk_set if aid not in others_using and aid not in crosscheck_using]

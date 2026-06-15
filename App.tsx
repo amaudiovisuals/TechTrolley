@@ -1745,10 +1745,25 @@ const App: React.FC = () => {
         return;
       }
 
+      // J-110: Defensive audit-aware guard for the raw status checks in LOCK 2 & 3.
+      // The backend m2m signal now skips stamping 'In Use' for audit conferences (the root fix),
+      // but this guard handles any stale status or edge cases where the asset was already
+      // in an audit conference before the backend fix was deployed.
+      const auditConfIds = new Set(
+        backendConferences.filter(c => c.isAudit).map(c => String(c.id))
+      );
+      const nonAuditConfsHoldingAsset = backendConferences.filter(
+        c => String(c.id) !== currentConfId && !c.isAudit &&
+             ((c.assets || []).some(id => String(id) === assetIdStr) ||
+              (c.crosscheckAssets || []).some(id => String(id) === assetIdStr))
+      );
+      const isHeldOnlyByAuditConfs = nonAuditConfsHoldingAsset.length === 0;
+
       // LOCK 2: Asset is in Godown Crosscheck (returning from a conference, not yet verified)
       // Check BOTH local status AND backendConferences crosscheck data for reliability
       // J-109: Audit conferences are non-blocking — excluded from cross-conference lock checks
-      const isInCrosscheck = asset.status === AssetStatus.CROSSCHECK ||
+      const isInCrosscheck =
+        (asset.status === AssetStatus.CROSSCHECK && !isHeldOnlyByAuditConfs) ||
         backendConferences.some(c => String(c.id) !== currentConfId && !c.isAudit && (c.crosscheckAssets || []).some(id => String(id) === assetIdStr));
       if (isInCrosscheck) {
         const confName = asset.current_conference_name ? ` (from ${asset.current_conference_name})` : '';
@@ -1758,7 +1773,9 @@ const App: React.FC = () => {
 
       // LOCK 3: Asset is In Use — check BOTH local status AND backendConferences assets data
       // J-109: Audit conferences are non-blocking — skip them in the cross-conference check
-      const isInUseElsewhere = asset.status === AssetStatus.IN_USE ||
+      // J-110: Also guard the raw status check — if only audit confs hold this asset, bypass it
+      const isInUseElsewhere =
+        (asset.status === AssetStatus.IN_USE && !isHeldOnlyByAuditConfs) ||
         backendConferences.some(c => String(c.id) !== currentConfId && !c.isAudit && (c.assets || []).some(id => String(id) === assetIdStr));
       if (isInUseElsewhere) {
         const confName = asset.current_conference_name ? ` — locked by: ${asset.current_conference_name}` : '';
