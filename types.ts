@@ -194,6 +194,7 @@ export interface Booking {
   assigned_employees?: number[];
   pdf_document?: string | null;
   approximate_value?: number;
+  isAudit?: boolean; // J-109: When true, assets in this conference do not lock other events
 }
 
 export interface DeliveryChallanRecord {

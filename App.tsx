@@ -1032,7 +1032,8 @@ const App: React.FC = () => {
     crosscheck_assets: loadCachedArray('techtrolley_crosscheck'),
     assets: loadCachedArray('techtrolley_assets'),
     assigned_employees: [],
-    pdf_document: null
+    pdf_document: null,
+    is_audit: false  // J-109: Audit Mode — non-blocking by default
   }));
 
   // Session Lifeline for Scanner Arrays
@@ -1087,7 +1088,8 @@ const App: React.FC = () => {
             crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
             challanAssets: (c.challan_assets || []).map((id: any) => id.toString()),
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
-            pdf_document: c.pdf_document
+            pdf_document: c.pdf_document,
+            isAudit: c.is_audit || false  // J-109: propagate audit flag into backendConferences
           }));
           setBackendConferences(mapped);
           
@@ -1538,7 +1540,8 @@ const App: React.FC = () => {
       staged_assets: conf.staged_assets || [],
       crosscheck_assets: conf.crosscheckAssets || [],
       assigned_employees: conf.assigned_employees || [],
-      pdf_document: conf.pdf_document
+      pdf_document: conf.pdf_document,
+      is_audit: conf.isAudit || false  // J-109: restore audit flag when editing
     });
 
     setConferenceView('Form');
@@ -1744,8 +1747,9 @@ const App: React.FC = () => {
 
       // LOCK 2: Asset is in Godown Crosscheck (returning from a conference, not yet verified)
       // Check BOTH local status AND backendConferences crosscheck data for reliability
+      // J-109: Audit conferences are non-blocking — excluded from cross-conference lock checks
       const isInCrosscheck = asset.status === AssetStatus.CROSSCHECK ||
-        backendConferences.some(c => String(c.id) !== currentConfId && (c.crosscheckAssets || []).some(id => String(id) === assetIdStr));
+        backendConferences.some(c => String(c.id) !== currentConfId && !c.isAudit && (c.crosscheckAssets || []).some(id => String(id) === assetIdStr));
       if (isInCrosscheck) {
         const confName = asset.current_conference_name ? ` (from ${asset.current_conference_name})` : '';
         showScanToast(`🔒 Locked — Crosscheck Pending: "${asset.aliasName || asset.sku}"${confName}. Godown Incharge must verify first.`, 'error');
@@ -1753,8 +1757,9 @@ const App: React.FC = () => {
       }
 
       // LOCK 3: Asset is In Use — check BOTH local status AND backendConferences assets data
+      // J-109: Audit conferences are non-blocking — skip them in the cross-conference check
       const isInUseElsewhere = asset.status === AssetStatus.IN_USE ||
-        backendConferences.some(c => String(c.id) !== currentConfId && (c.assets || []).some(id => String(id) === assetIdStr));
+        backendConferences.some(c => String(c.id) !== currentConfId && !c.isAudit && (c.assets || []).some(id => String(id) === assetIdStr));
       if (isInUseElsewhere) {
         const confName = asset.current_conference_name ? ` — locked by: ${asset.current_conference_name}` : '';
         showScanToast(`🔒 In Use: "${asset.aliasName || asset.sku}"${confName}. Cannot assign until released.`, 'error');
@@ -4743,6 +4748,11 @@ const App: React.FC = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <h4 className="text-lg font-black text-white uppercase leading-tight">{conf.conferenceName || conf.name}</h4>
+                  {conf.isAudit && (
+                    <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                      <i className="fa-solid fa-eye text-[7px]" /> Audit Mode
+                    </span>
+                  )}
                   <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{conf.association}</p>
                   {conf.pdf_document && (
                     <a
@@ -4820,6 +4830,11 @@ const App: React.FC = () => {
                   <td className="px-10 py-6 min-w-0">
                     <p className="font-black text-white text-base uppercase truncate max-w-xs">{conf.conferenceName || conf.name}</p>
                     <div className="flex items-center gap-3 mt-1">
+                      {conf.isAudit && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                          <i className="fa-solid fa-eye text-[7px]" /> Audit Mode
+                        </span>
+                      )}
                       <p className="text-[9px] text-slate-500 font-black uppercase">ID: {conf.id}</p>
                       {conf.pdf_document && (
                         <a
@@ -5419,6 +5434,11 @@ const App: React.FC = () => {
                     <h2 className="text-5xl md:text-7xl font-black text-orange-500 uppercase tracking-tighter leading-none">
                       {conferenceFormData.name || "UNNAMED CONFERENCE"}
                     </h2>
+                    {conferenceFormData.is_audit && (
+                      <span className="inline-flex items-center gap-2 mt-3 px-4 py-1.5 rounded-full text-[10px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/30">
+                        <i className="fa-solid fa-eye" /> Audit Mode — Non-Blocking
+                      </span>
+                    )}
                     <p className="text-sm md:text-lg font-bold text-slate-500 uppercase tracking-wide">
                       {conferenceFormData.association_name || "Association Not Specified"}
                     </p>
@@ -5503,6 +5523,23 @@ const App: React.FC = () => {
                           <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">End Date <span className="text-red-500">*</span></label>
                           <input type="date" value={conferenceFormData.end_date} onChange={e => setConferenceFormData({ ...conferenceFormData, end_date: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" required />
                         </div>
+                      </div>
+
+                      {/* J-109: Audit Mode toggle */}
+                      <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                        <input
+                          type="checkbox"
+                          id="audit_mode"
+                          checked={!!conferenceFormData.is_audit}
+                          onChange={e => setConferenceFormData({ ...conferenceFormData, is_audit: e.target.checked })}
+                          className="mt-0.5 w-4 h-4 accent-amber-500 shrink-0 cursor-pointer"
+                        />
+                        <label htmlFor="audit_mode" className="text-[10px] font-black text-amber-700 uppercase tracking-widest cursor-pointer leading-relaxed">
+                          Audit Mode (Non-Blocking List)
+                          <span className="block text-[9px] font-bold normal-case text-amber-600 mt-0.5 tracking-normal">
+                            Assets in this conference will NOT lock or block other live events.
+                          </span>
+                        </label>
                       </div>
                     </div>
 
