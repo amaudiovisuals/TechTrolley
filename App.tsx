@@ -551,7 +551,63 @@ const App: React.FC = () => {
       });
   };
 
+  const silentPollUpdates = (search: string = '') => {
+    const url = `${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`;
+    return apiFetch(url)
+      .then(async res => {
+        const data = await res.json();
+        const results = data.results !== undefined ? data.results : data;
 
+        if (Array.isArray(results)) {
+          const mappedAssets: Asset[] = results.map((asset: any) => ({
+            ...asset,
+            id: asset.id.toString(),
+            aliasName: asset.alias_name,
+            macAddress: asset.mac_address,
+            imeiNumber1: asset.imei_number_1,
+            imeiNumber2: asset.imei_number_2,
+            serialNumber: asset.serial_number,
+            isBarcodeAdded: asset.is_barcode_added,
+            quantity: parseInt(asset.quantity, 10) || 1,
+            itemPrice: parseFloat(asset.item_price),
+            depreciationPercentage: parseFloat(asset.depreciation_percentage),
+            purchasedDate: asset.purchased_date,
+            availableFrom: asset.available_from,
+            availableTill: asset.available_till,
+            createdAt: asset.created_at,
+            barcode: asset.barcode,
+            barcodeType: asset.barcode_type,
+            qrCode: asset.qr_code,
+            lastMaintained: asset.last_maintained,
+            isTemporary: asset.is_temporary,
+            returnDate: asset.return_date,
+            flag: asset.flag || AssetFlag.NONE,
+            currentVenue: asset.current_venue,
+            assigned_to: asset.assigned_to,
+            assigned_to_name: asset.assigned_to_name,
+            parent_asset: asset.parent_asset,
+            current_conference_name: asset.current_conference_name,
+            sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+          }));
+          
+          setAssets(prev => {
+            const newAssets = [...prev];
+            mappedAssets.forEach(incomingAsset => {
+              const existingIdx = newAssets.findIndex(a => a.id === incomingAsset.id);
+              if (existingIdx !== -1) {
+                newAssets[existingIdx] = incomingAsset; // Update existing
+              } else {
+                newAssets.unshift(incomingAsset); // Add new to top
+              }
+            });
+            return newAssets;
+          });
+        }
+      })
+      .catch(err => {
+        console.error("Silent poll failed:", err);
+      });
+  };
 
   const fetchEmployees = () => {
     apiFetch(`${API_BASE}/api/employees/`)
@@ -848,7 +904,7 @@ const App: React.FC = () => {
   React.useEffect(() => {
     const interval = setInterval(() => {
       if (!isBackgroundSyncing && !debouncedSearchQuery) {
-        fetchAssets();
+        silentPollUpdates();
       }
       fetchDashboardStats();
       if (conferenceView !== 'Form') {
