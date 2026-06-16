@@ -392,7 +392,7 @@ const App: React.FC = () => {
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
-  const [nextPageUrl, setNextPageUrl] = useState<string | null>(null);
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
   const [dashboardStats, setDashboardStats] = useState<{total: number, ready: number, in_use: number, maintenance: number} | null>(null);
   const [aliasDictionary, setAliasDictionary] = useState<any[]>([]);
 
@@ -433,19 +433,71 @@ const App: React.FC = () => {
   });
 
 
+  const silentBackgroundFetch = (url: string) => {
+    setIsBackgroundSyncing(true);
+    const secureUrl = url.replace('http://', 'https://');
+    apiFetch(secureUrl)
+      .then(async res => {
+        const data = await res.json();
+        const results = data.results || data;
+
+        if (Array.isArray(results)) {
+          const mappedAssets: Asset[] = results.map((asset: any) => ({
+            ...asset,
+            id: asset.id.toString(),
+            aliasName: asset.alias_name,
+            macAddress: asset.mac_address,
+            imeiNumber1: asset.imei_number_1,
+            imeiNumber2: asset.imei_number_2,
+            serialNumber: asset.serial_number,
+            isBarcodeAdded: asset.is_barcode_added,
+            quantity: parseInt(asset.quantity, 10) || 1,
+            itemPrice: parseFloat(asset.item_price),
+            depreciationPercentage: parseFloat(asset.depreciation_percentage),
+            purchasedDate: asset.purchased_date,
+            availableFrom: asset.available_from,
+            availableTill: asset.available_till,
+            createdAt: asset.created_at,
+            barcode: asset.barcode,
+            barcodeType: asset.barcode_type,
+            qrCode: asset.qr_code,
+            lastMaintained: asset.last_maintained,
+            isTemporary: asset.is_temporary,
+            returnDate: asset.return_date,
+            flag: asset.flag || AssetFlag.NONE,
+            currentVenue: asset.current_venue,
+            assigned_to: asset.assigned_to,
+            assigned_to_name: asset.assigned_to_name,
+            parent_asset: asset.parent_asset,
+            current_conference_name: asset.current_conference_name,
+            sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+          }));
+          
+          setAssets(prev => {
+            const existingIds = new Set(prev.map(a => a.id));
+            const newAssets = mappedAssets.filter(a => !existingIds.has(a.id));
+            return [...prev, ...newAssets];
+          });
+        }
+        
+        if (data.next) {
+          silentBackgroundFetch(data.next);
+        } else {
+          setIsBackgroundSyncing(false);
+        }
+      })
+      .catch(err => {
+        console.error("Silent background fetch failed:", err);
+        setIsBackgroundSyncing(false);
+      });
+  };
+
   const fetchAssets = (search: string = ''): Promise<Asset[]> => {
     const url = `${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`;
     return apiFetch(url)
       .then(async res => {
         const data = await res.json();
         const results = data.results !== undefined ? data.results : data;
-        
-        if (!search && data.next !== undefined) {
-          setNextPageUrl(data.next);
-        } else if (search) {
-          // Fresh search: always reset pagination anchor
-          setNextPageUrl(data.next ?? null);
-        }
 
         if (Array.isArray(results)) {
           const mappedAssets: Asset[] = results.map((asset: any) => ({
@@ -480,6 +532,13 @@ const App: React.FC = () => {
           }));
           // Always overwrite atomically — no blank flash
           setAssets(mappedAssets);
+          
+          if (data.next) {
+            silentBackgroundFetch(data.next);
+          } else {
+            setIsBackgroundSyncing(false);
+          }
+          
           return mappedAssets; // Return so callers can use fresh data immediately
         } else if (res.status !== 401) {
           console.error("Failed to fetch assets: Invalid data format", data);
@@ -492,58 +551,7 @@ const App: React.FC = () => {
       });
   };
 
-  const loadMoreAssets = () => {
-    if (!nextPageUrl) return;
-    const secureUrl = nextPageUrl.replace('http://', 'https://');
-    return apiFetch(secureUrl)
-      .then(async res => {
-        const data = await res.json();
-        const results = data.results || data;
 
-        if (data.next !== undefined) {
-          setNextPageUrl(data.next);
-        }
-
-        if (Array.isArray(results)) {
-          const mappedAssets: Asset[] = results.map((asset: any) => ({
-            ...asset,
-            id: asset.id.toString(),
-            aliasName: asset.alias_name,
-            macAddress: asset.mac_address,
-            imeiNumber1: asset.imei_number_1,
-            imeiNumber2: asset.imei_number_2,
-            serialNumber: asset.serial_number,
-            isBarcodeAdded: asset.is_barcode_added,
-            quantity: parseInt(asset.quantity, 10) || 1,
-            itemPrice: parseFloat(asset.item_price),
-            depreciationPercentage: parseFloat(asset.depreciation_percentage),
-            purchasedDate: asset.purchased_date,
-            availableFrom: asset.available_from,
-            availableTill: asset.available_till,
-            createdAt: asset.created_at,
-            barcode: asset.barcode,
-            barcodeType: asset.barcode_type,
-            qrCode: asset.qr_code,
-            lastMaintained: asset.last_maintained,
-            isTemporary: asset.is_temporary,
-            returnDate: asset.return_date,
-            flag: asset.flag || AssetFlag.NONE,
-            currentVenue: asset.current_venue,
-            assigned_to: asset.assigned_to,
-            assigned_to_name: asset.assigned_to_name,
-            parent_asset: asset.parent_asset,
-            current_conference_name: asset.current_conference_name,
-            sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
-          }));
-          setAssets(prev => {
-            const existingIds = new Set(prev.map(a => a.id));
-            const newAssets = mappedAssets.filter(a => !existingIds.has(a.id));
-            return [...prev, ...newAssets];
-          });
-        }
-      })
-      .catch(err => console.error("Failed to load more assets:", err));
-  };
 
   const fetchEmployees = () => {
     apiFetch(`${API_BASE}/api/employees/`)
@@ -839,7 +847,7 @@ const App: React.FC = () => {
   // it causes a race condition that can overwrite unsaved staged asset state.
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (!nextPageUrl && !debouncedSearchQuery) {
+      if (!isBackgroundSyncing && !debouncedSearchQuery) {
         fetchAssets();
       }
       fetchDashboardStats();
@@ -848,7 +856,7 @@ const App: React.FC = () => {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [conferenceView, nextPageUrl, debouncedSearchQuery]);
+  }, [conferenceView, isBackgroundSyncing, debouncedSearchQuery]);
 
 
   // J-115: Revert J-114 UI, Restore original filter
@@ -885,7 +893,6 @@ const App: React.FC = () => {
   // Trigger server-side fetch whenever debounced query settles
   useEffect(() => {
     setInventoryPage(1);
-    setNextPageUrl(null);
     fetchAssets(debouncedSearchQuery);
   }, [debouncedSearchQuery]);
   // Compute derived categories
@@ -3895,11 +3902,10 @@ const App: React.FC = () => {
           </div>
         )}
         
-        {nextPageUrl && (
-          <div className="p-6 border-t border-slate-800 bg-slate-950/40 flex items-center justify-center">
-            <button onClick={loadMoreAssets} className="px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-black uppercase text-xs tracking-widest transition flex items-center gap-2">
-              <i className="fa-solid fa-cloud-arrow-down" /> Load More Assets
-            </button>
+        {isBackgroundSyncing && (
+          <div className="p-4 border-t border-slate-800 flex items-center justify-center gap-3 text-slate-500">
+            <i className="fa-solid fa-circle-notch fa-spin text-sky-500 text-lg" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Syncing remaining database in background...</span>
           </div>
         )}
 
