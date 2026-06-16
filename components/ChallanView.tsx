@@ -495,8 +495,43 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       return parseFloat((a as any).current_value);
     }
     const price = a.itemPrice || 0;
-    const dep = a.depreciationPercentage || 0;
-    return price * (1 - dep / 100);
+    const depRate = a.depreciationPercentage || 0;
+    const originDateStr = a.purchasedDate || a.createdAt;
+
+    if (!originDateStr || depRate <= 0) {
+      return price;
+    }
+
+    const originDate = new Date(originDateStr);
+    if (isNaN(originDate.getTime())) {
+      return price;
+    }
+
+    let wdv = price;
+    const now = new Date();
+
+    // Indian Financial Year starts April 1st (month 3)
+    const getFY = (date: Date) => date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+    
+    const startFY = getFY(originDate);
+    const currentFY = getFY(now);
+
+    for (let fy = startFY; fy <= currentFY; fy++) {
+      let appliedRate = depRate;
+      
+      // 180-Day Rule for the first financial year
+      if (fy === startFY) {
+        // Cutoff is Oct 4th of the starting Financial Year
+        const cutoffDate = new Date(startFY, 9, 4); // Month 9 is October
+        if (originDate >= cutoffDate) {
+          appliedRate = depRate / 2;
+        }
+      }
+      
+      wdv -= wdv * (appliedRate / 100);
+    }
+
+    return wdv;
   };
 
   const subrentalTotal = subrentalTickets?.reduce((sum, t) =>
