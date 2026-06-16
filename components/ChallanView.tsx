@@ -102,6 +102,16 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     return booking.challanNumber || null;
   });
   const [isGrouped, setIsGrouped] = React.useState(true);
+  // J-111: Print-only alias overrides — keyed by asset ID (or group key).
+  // These are NEVER persisted to the DB. They only affect what prints on the challan.
+  const [printAliasOverrides, setPrintAliasOverrides] = React.useState<Record<string, string>>({});
+  const [showPrintAliasEditor, setShowPrintAliasEditor] = React.useState(false);
+
+  const setPrintAlias = (assetId: string, value: string) => {
+    setPrintAliasOverrides(prev => ({ ...prev, [assetId]: value }));
+  };
+
+  const resetPrintAliases = () => setPrintAliasOverrides({});
 
   React.useEffect(() => {
     localStorage.setItem('challan_visible_columns', JSON.stringify(visibleColumns));
@@ -288,12 +298,19 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     }
 
     // Alphabetical sort by name (aliasName or sku)
-    return list.sort((a, b) => {
+    const sorted = list.sort((a, b) => {
       const nameA = (a.aliasName || a.sku || '').toLowerCase();
       const nameB = (b.aliasName || b.sku || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [localAssets, isGrouped, isEditMode]);
+
+    // J-111: Inject the print-only alias override as a non-persisted field `printName`.
+    // This is read by renderCell and never flows into onLocalUpdate or saveAllChanges.
+    return sorted.map(a => ({
+      ...a,
+      printName: printAliasOverrides[String(a.id)] ?? (a.aliasName || a.sku || ''),
+    }));
+  }, [localAssets, isGrouped, isEditMode, printAliasOverrides]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -345,6 +362,22 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
                 </button>
               </>
             )}
+            {/* J-111: Print Alias Override toggle — always available, never saves to DB */}
+            <button
+              onClick={() => {
+                setShowPrintAliasEditor(prev => !prev);
+                if (showPrintAliasEditor) resetPrintAliases();
+              }}
+              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                showPrintAliasEditor
+                  ? 'bg-violet-500 text-white shadow-lg shadow-violet-200'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              title={showPrintAliasEditor ? 'Click to clear all print overrides and hide editor' : 'Override item names for this print only — does NOT save to database'}
+            >
+              <i className={`fa-solid fa-print mr-2`}></i>
+              {showPrintAliasEditor ? 'Clear Print Names' : 'Print Name Override'}
+            </button>
           </div>
         </div>
 
@@ -368,6 +401,42 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
           ))}
         </div>
       </div>
+
+      {/* J-111: Print Name Override panel — shown only when showPrintAliasEditor is true */}
+      {showPrintAliasEditor && (
+        <div className="print:hidden bg-violet-50 border border-violet-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center text-violet-600">
+              <i className="fa-solid fa-print text-sm"></i>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-violet-800 uppercase tracking-tighter">Print Name Override</h3>
+              <p className="text-[10px] text-violet-500 font-bold uppercase tracking-widest">
+                Changes below affect the printed challan ONLY — the database is never updated.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {processedAssets.map(asset => (
+              <div key={asset.id} className="flex items-center gap-2 bg-white border border-violet-100 rounded-lg px-3 py-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate max-w-[120px]" title={asset.aliasName || asset.sku}>
+                  {asset.aliasName || asset.sku}
+                </span>
+                <i className="fa-solid fa-arrow-right text-violet-300 text-[9px] shrink-0"></i>
+                <input
+                  type="text"
+                  className="flex-1 bg-violet-50 border border-violet-200 rounded-md px-2 py-1 text-[10px] font-black text-violet-900 uppercase focus:outline-none focus:ring-2 focus:ring-violet-400 min-w-0"
+                  value={(printAliasOverrides[String(asset.id)] !== undefined)
+                    ? printAliasOverrides[String(asset.id)]
+                    : (asset.aliasName || asset.sku || '')}
+                  onChange={e => setPrintAlias(String(asset.id), e.target.value)}
+                  placeholder={asset.aliasName || asset.sku || 'Print name...'}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {copies.map((copy, index) => (
         <div
@@ -543,15 +612,25 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
     switch (col) {
       case 'Seq': return index + 1;
       case 'SKU': return asset.sku;
-      case 'Asset': return (
-        <>
-          <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{asset.aliasName || asset.sku}</span>
-
-          {!visibleColumns.includes('Type') && (
-            <span className="text-[7px] font-bold uppercase tracking-widest print:hidden" style={{ color: accent }}>{asset.type}</span>
-          )}
-        </>
-      );
+      case 'Asset': {
+        // J-111: Use printName (which carries the print-only override) for all on-screen and print rendering.
+        // printName is injected by processedAssets and defaults to aliasName || sku when no override is set.
+        const displayName = (asset as any).printName || asset.aliasName || asset.sku;
+        const isOverridden = (asset as any).printName && (asset as any).printName !== (asset.aliasName || asset.sku);
+        return (
+          <>
+            <span className="font-black text-gray-900 uppercase tracking-tighter mr-2">{displayName}</span>
+            {isOverridden && (
+              <span className="text-[7px] font-black text-violet-500 uppercase tracking-widest print:hidden" title={`Print override active. Original: ${asset.aliasName || asset.sku}`}>
+                ✎ override
+              </span>
+            )}
+            {!visibleColumns.includes('Type') && (
+              <span className="text-[7px] font-bold uppercase tracking-widest print:hidden" style={{ color: accent }}>{asset.type}</span>
+            )}
+          </>
+        );
+      }
       case 'Type': return asset.type;
       case 'Identifiers': return (
         <div className="flex flex-col gap-0.5 max-w-[120px]">
