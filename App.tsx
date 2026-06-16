@@ -851,7 +851,9 @@ const App: React.FC = () => {
   }, [conferenceView, nextPageUrl, debouncedSearchQuery]);
 
 
-  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
+  // J-114: New State Variables
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'}>({key: 'name', direction: 'asc'});
   const [inventoryPage, setInventoryPage] = useState(1);
   const itemsPerPage = 20; 
 
@@ -887,26 +889,52 @@ const App: React.FC = () => {
     setNextPageUrl(null);
     fetchAssets(debouncedSearchQuery);
   }, [debouncedSearchQuery]);
+  // Compute derived categories
+  const derivedCategories = useMemo(() => {
+    return ['All', ...new Set(assets.map(a => (a as any).category || getUICategory(a.type)).filter(Boolean))] as string[];
+  }, [assets]);
+
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
+    // 1. Text Search is handled upstream by debouncedSearchQuery and fetchAssets,
+    //    but the resulting 'assets' array is fed here.
+    
+    // 2. Category Filter
     const filtered = assets.filter(asset => {
       // Don't show ticket-only transient items in main inventory
       if (asset.isTemporary) return false;
 
-      // Grouping Logic: Filter by UI Category
-      if (inventoryCategoryFilter !== 'All') {
-        const assetUICat = getUICategory(asset.type);
-        if (assetUICat !== inventoryCategoryFilter) return false;
+      if (selectedCategory !== 'All') {
+        const assetCat = (asset as any).category || getUICategory(asset.type);
+        if (assetCat !== selectedCategory) return false;
       }
       
       return true;
     });
+
+    // 3. Sorting Pipeline
     return filtered.sort((a, b) => {
-      const nameA = (a.aliasName || a.sku || '').toLowerCase();
-      const nameB = (b.aliasName || b.sku || '').toLowerCase();
-      return nameA.localeCompare(nameB);
+      switch (sortConfig.key) {
+        case 'name': {
+          const nameA = (a.aliasName || a.sku || '').toLowerCase();
+          const nameB = (b.aliasName || b.sku || '').toLowerCase();
+          return sortConfig.direction === 'asc' ? nameA.localeCompare(nameB) : nameB.localeCompare(nameA);
+        }
+        case 'quantity': {
+          const qA = a.quantity || 0;
+          const qB = b.quantity || 0;
+          return sortConfig.direction === 'asc' ? qA - qB : qB - qA;
+        }
+        case 'recent': {
+          const dateA = new Date(a.createdAt || 0).getTime();
+          const dateB = new Date(b.createdAt || 0).getTime();
+          return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
+        }
+        default:
+          return 0;
+      }
     });
-  }, [assets, inventoryCategoryFilter]);
+  }, [assets, selectedCategory, sortConfig]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     
@@ -3679,6 +3707,26 @@ const App: React.FC = () => {
           </button>
         </div>
       )}
+      {/* J-114: Category Pill Buttons */}
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
+        {derivedCategories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => {
+              setSelectedCategory(cat);
+              setInventoryPage(1);
+            }}
+            className={`px-5 py-2 rounded-full text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
+              selectedCategory === cat
+                ? 'bg-sky-500 border-sky-500 text-white shadow-lg shadow-sky-500/20'
+                : 'bg-slate-900/50 border-slate-700/50 text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
       <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
         <div className="p-4 md:p-8 border-b border-slate-800/40 flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative group">
@@ -3717,18 +3765,20 @@ const App: React.FC = () => {
           </div>
           <div className="md:w-64">
             <select
-              value={inventoryCategoryFilter}
+              value={`${sortConfig.key}-${sortConfig.direction}`}
               onChange={(e) => {
-                setInventoryCategoryFilter(e.target.value);
+                const [key, direction] = e.target.value.split('-');
+                setSortConfig({ key, direction: direction as 'asc'|'desc' });
                 setInventoryPage(1);
               }}
               className="w-full h-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 md:py-0 text-white font-black text-xs uppercase outline-none focus:border-sky-500 transition-all cursor-pointer appearance-none"
               style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
             >
-              <option value="All">All Categories</option>
-              {Object.values(UICategory).map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
+              <option value="name-asc">Name (A-Z)</option>
+              <option value="name-desc">Name (Z-A)</option>
+              <option value="quantity-desc">Quantity (High-Low)</option>
+              <option value="quantity-asc">Quantity (Low-High)</option>
+              <option value="recent-desc">Recently Added</option>
             </select>
           </div>
         </div>
