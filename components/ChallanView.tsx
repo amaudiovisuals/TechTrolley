@@ -129,8 +129,6 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   }, [assets, isEditMode]);
 
   const toggleColumn = (key: ColumnKey) => {
-    // BUG J-8: 'Asset' column is LOCKED — it must always appear on a legal document
-    if (key === 'Asset') return;
     setVisibleColumns(prev =>
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
@@ -386,17 +384,13 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             <button
               key={col.key}
               onClick={() => toggleColumn(col.key)}
-              disabled={col.key === 'Asset'} // BUG J-8: Asset column is locked
               className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
-                col.key === 'Asset'
-                  ? 'bg-sky-100 border-sky-300 text-sky-700 cursor-not-allowed opacity-100'
-                  : visibleColumns.includes(col.key)
+                visibleColumns.includes(col.key)
                   ? 'bg-sky-50 border-sky-200 text-sky-600'
                   : 'bg-white border-slate-200 text-slate-400 opacity-60'
-                }`}
-              title={col.key === 'Asset' ? 'Asset column is locked (required on legal documents)' : ''}
+              }`}
             >
-              {col.label}{col.key === 'Asset' ? ' 🔒' : ''}
+              {col.label}
             </button>
           ))}
         </div>
