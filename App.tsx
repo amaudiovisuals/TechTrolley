@@ -917,6 +917,8 @@ const App: React.FC = () => {
 
   // J-115: Revert J-114 UI, Restore original filter
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
+  // J-118: Alias Filter State
+  const [selectedAlias, setSelectedAlias] = useState<string>('All');
   const [inventoryPage, setInventoryPage] = useState(1);
   const itemsPerPage = 20; 
 
@@ -956,6 +958,11 @@ const App: React.FC = () => {
     return ['All', ...new Set(assets.map(a => (a as any).category || getUICategory(a.type)).filter(Boolean))] as string[];
   }, [assets]);
 
+  // J-118: Compute unique aliases
+  const uniqueAliases = useMemo(() => {
+    return ['All', ...Array.from(new Set(assets.map(a => a.aliasName).filter(Boolean))).sort()];
+  }, [assets]);
+
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
     // 1. Text Search is handled upstream by debouncedSearchQuery and fetchAssets,
@@ -965,6 +972,9 @@ const App: React.FC = () => {
     const filtered = assets.filter(asset => {
       // Don't show ticket-only transient items in main inventory
       if (asset.isTemporary) return false;
+
+      // J-118: Alias Filter Condition
+      if (selectedAlias !== 'All' && asset.aliasName !== selectedAlias) return false;
 
       if (inventoryCategoryFilter !== 'All') {
         const assetCat = (asset as any).category || getUICategory(asset.type);
@@ -980,7 +990,7 @@ const App: React.FC = () => {
       const dateB = new Date(b.createdAt || 0).getTime() || 0;
       return dateB - dateA; // Descending
     });
-  }, [assets, inventoryCategoryFilter]);
+  }, [assets, inventoryCategoryFilter, selectedAlias]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     
@@ -3803,6 +3813,21 @@ const App: React.FC = () => {
             >
               {derivedCategories.map(cat => (
                 <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat}</option>
+              ))}
+            </select>
+          </div>
+          <div className="md:w-64">
+            <select
+              value={selectedAlias}
+              onChange={(e) => {
+                setSelectedAlias(e.target.value);
+                setInventoryPage(1);
+              }}
+              className="w-full h-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 md:py-0 text-white font-black text-xs uppercase outline-none focus:border-sky-500 transition-all cursor-pointer appearance-none"
+              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
+            >
+              {uniqueAliases.map(alias => (
+                <option key={alias} value={alias}>{alias === 'All' ? 'All Aliases' : alias}</option>
               ))}
             </select>
           </div>
