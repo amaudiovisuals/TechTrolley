@@ -2248,6 +2248,15 @@ const App: React.FC = () => {
         const scanAction = (isAddingVal === true || user?.role === 'technician' || user?.role === 'godown_incharge') ? 'add' : 'remove';
         
         if (scanAction === 'add') {
+          // J-119 Task 2: Also guard against items already dispatched to Packup (in conferenceFormData.assets)
+          const isAlreadyOnSite = (conferenceFormData.assets || []).some((id: any) => String(id) === strId);
+          if (isAlreadyOnSite) {
+            alert("This item is already submitted to Packup and on-site. Cannot add it again!");
+            setQuickAddInput('');
+            setQuickRemoveInput('');
+            return;
+          }
+
           const isDuplicate = user?.role === 'technician' 
             ? (conferenceFormData.requirements || []).some((id: any) => String(id) === strId)
             : (conferenceFormData.staged_assets || []).some((id: any) => String(id) === strId);
@@ -6656,8 +6665,10 @@ const App: React.FC = () => {
                           );
                         }
 
+                        // J-119 Task 3: Normalize key (trim) so aliasName differences in casing/whitespace
+                        // across batches always collapse into a single group.
                         const groups = packupList.reduce((acc: Record<string, Asset[]>, a) => {
-                          const key = a.aliasName || a.sku || 'Unknown';
+                          const key = (a.aliasName || a.sku || 'Unknown').trim();
                           if (!acc[key]) acc[key] = [];
                           acc[key].push(a);
                           return acc;
@@ -6675,7 +6686,7 @@ const App: React.FC = () => {
                                       <i className="fa-solid fa-check-double"></i>
                                     </div>
                                     <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                    <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                    <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.reduce((sum, i) => sum + (i.quantity || 1), 0)}</span>
                                     <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                   </button>
                                   {isOpen && (
@@ -6705,6 +6716,16 @@ const App: React.FC = () => {
                                                 <i className="fa-solid fa-arrow-right-from-bracket text-[9px]"></i>
                                               </button>
                                             </div>
+                                          )}
+                                          {/* J-119 Task 1: Admin Remove button — hard-removes asset from this conference */}
+                                          {user?.is_staff && (
+                                            <button
+                                              onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                              className="w-7 h-7 bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 rounded-lg flex items-center justify-center transition-all shrink-0"
+                                              title="Admin: Remove from Packup"
+                                            >
+                                              <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                            </button>
                                           )}
                                           {/* Floating Issue Menu */}
                                           {flagMenuAssetId === asset.id && (
