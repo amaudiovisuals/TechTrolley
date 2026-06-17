@@ -3784,9 +3784,8 @@ const App: React.FC = () => {
               onChange={(e) => {
                 const val = e.target.value;
                 setSearchQuery(val);
-                // PDA Auto-trigger: Detect full matches immediately
-                const asset = findAssetFromScan(val);
-                if (asset) handleScan(val);
+                // J-120: Eager auto-submit removed — prefix "s1_pro_1" no longer fires before
+                // scanner finishes typing "s1_pro_10". Submit is now Enter-only (see onKeyDown).
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
