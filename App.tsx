@@ -6248,7 +6248,7 @@ const App: React.FC = () => {
                                                   <div className="w-8 h-8 bg-sky-100 text-sky-600 rounded-xl flex items-center justify-center text-sm border border-sky-200 shrink-0">
                                                     <i className="fa-solid fa-list-check"></i>
                                                   </div>
-                                                  <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                                  <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
                                                   <div className="shrink-0 flex items-center bg-gray-200 rounded-full text-[10px] font-black overflow-hidden mr-2">
                                                     <button 
                                                       onClick={(e) => { e.stopPropagation(); triggerAssetConferenceAction(items[0], 'unassign'); }} 
@@ -6339,7 +6339,7 @@ const App: React.FC = () => {
                                                  <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-sm border border-orange-200 shrink-0">
                                                    <i className="fa-solid fa-hourglass-start"></i>
                                                  </div>
-                                                 <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                                 <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
                                                  <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
                                                  <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                                </button>
@@ -6475,7 +6475,7 @@ const App: React.FC = () => {
                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm border shrink-0 ${colors.iconBg}`}>
                                                  <i className={`fa-solid ${colors.icon}`}></i>
                                                </div>
-                                               <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                               <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
                                                <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {items.length}</span>
                                                <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                              </button>
@@ -6607,7 +6607,7 @@ const App: React.FC = () => {
                                                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm border shrink-0 ${colors.iconBg}`}>
                                                   <i className={`fa-solid ${colors.icon}`}></i>
                                                 </div>
-                                                <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                                <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
                                                 <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {items.length}</span>
                                                 <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                               </button>
@@ -6692,7 +6692,7 @@ const App: React.FC = () => {
                                     <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-sm border border-emerald-200 shrink-0">
                                       <i className="fa-solid fa-check-double"></i>
                                     </div>
-                                    <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                    <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
                                     <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.reduce((sum, i) => sum + (i.quantity || 1), 0)}</span>
                                     <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                   </button>
@@ -6798,7 +6798,7 @@ const App: React.FC = () => {
                                      <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-sm border border-orange-200 shrink-0">
                                        <i className="fa-solid fa-box"></i>
                                      </div>
-                                     <span className="truncate flex-1 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                     <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
                                      <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
                                      <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                    </button>
