@@ -2248,29 +2248,38 @@ const App: React.FC = () => {
         const scanAction = (isAddingVal === true || user?.role === 'technician' || user?.role === 'godown_incharge') ? 'add' : 'remove';
         
         if (scanAction === 'add') {
-          // J-119 Task 2: Also guard against items already dispatched to Packup (in conferenceFormData.assets)
+          // ── GUARD 1 (J-119): Item already dispatched to Packup / on-site ──────
+          // Must fire first: .assets holds fully dispatched items. An item promoted
+          // from staged_assets to assets would NOT be caught by isDuplicate below
+          // (which only checks staged_assets for the Incharge role).
           const isAlreadyOnSite = (conferenceFormData.assets || []).some((id: any) => String(id) === strId);
           if (isAlreadyOnSite) {
-            alert("This item is already submitted to Packup and on-site. Cannot add it again!");
+            showScanToast(`⚠️ Already On-Site: "${asset.aliasName || asset.sku}" is already submitted to Packup.`, 'warning');
             setQuickAddInput('');
             setQuickRemoveInput('');
             return;
           }
 
-          const isDuplicate = user?.role === 'technician' 
+          // ── GUARD 2 (J-122): Item already in requirements / staged ────────────
+          // Hoisted ABOVE Smart Swap so no state mutation can occur before this
+          // check fires. Technician → checks requirements[]. Incharge/Admin → staged_assets[].
+          const isDuplicate = user?.role === 'technician'
             ? (conferenceFormData.requirements || []).some((id: any) => String(id) === strId)
             : (conferenceFormData.staged_assets || []).some((id: any) => String(id) === strId);
-            
+
           if (isDuplicate) {
-            alert("This specific item has already been scanned/added!");
+            showScanToast(`⚠️ Already Scanned: "${asset.aliasName || asset.sku}" is already in the list.`, 'warning');
             setQuickAddInput('');
             setQuickRemoveInput('');
             return;
           }
 
+          // ── SMART SWAP (only reached after both guards pass) ──────────────────
+          // Safe to mutate state here — item is confirmed not on-site and not
+          // already staged/in-requirements.
           if (user?.role !== 'technician') {
             const reqIds = (conferenceFormData.requirements || []).map(String);
-            
+
             if (!reqIds.includes(strId)) {
                // Use allAssetsRef (complete DB) for Smart Swap alias matching
                const scanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
@@ -2278,7 +2287,7 @@ const App: React.FC = () => {
                   const reqAsset = scanPool.find((a: any) => String(a.id) === reqId);
                   return reqAsset && reqAsset.aliasName === asset.aliasName;
                });
-               
+
                if (matchingReqId) {
                  setConferenceFormData((prev: any) => ({
                     ...prev,
@@ -2289,7 +2298,6 @@ const App: React.FC = () => {
                  showScanToast(`📦 Free-Add: Packing unrequested item`, 'success');
                  setQuickAddInput('');
                  setQuickRemoveInput('');
-                 // Fall through to triggerAssetConferenceAction
                }
             }
           }
@@ -2301,7 +2309,7 @@ const App: React.FC = () => {
             return;
           }
         }
-        
+
         triggerAssetConferenceAction(asset, scanAction);
       } else if (assetTab === 'crosscheck') {
         if (user?.role === 'godown_incharge' || user?.is_staff) {
@@ -6294,7 +6302,7 @@ const App: React.FC = () => {
                                </div>
                             </div>
                           ) : user?.role === 'godown_incharge' ? (
-<div className="col-span-2 space-y-12">
+<div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* 1. Pending Requirements (From Tech) */}
                                 <div className="space-y-4">
                                   <div className="flex items-center justify-between px-1">
