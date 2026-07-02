@@ -6442,7 +6442,7 @@ const App: React.FC = () => {
                                   </div>
                                   
                                    {/* F-3: Cart view for godown staged/assigned items */}
-                                   <div className="space-y-2">
+                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                      {(() => {
                                        const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
                                        // Semantic dispatch lock — no dates, purely state-driven
