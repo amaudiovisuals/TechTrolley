@@ -6302,7 +6302,7 @@ const App: React.FC = () => {
                                </div>
                             </div>
                           ) : user?.role === 'godown_incharge' ? (
-<div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+<div className="col-span-2 space-y-12">
                                 {/* 1. Pending Requirements (From Tech) */}
                                 <div className="space-y-4">
                                   <div className="flex items-center justify-between px-1">
@@ -6442,7 +6442,7 @@ const App: React.FC = () => {
                                   </div>
                                   
                                    {/* F-3: Cart view for godown staged/assigned items */}
-                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                   <div className="space-y-2">
                                      {(() => {
                                        const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
                                        // Semantic dispatch lock — no dates, purely state-driven
