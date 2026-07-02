@@ -6421,7 +6421,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* 3. Staged / Assigned Items */}
-                                <div className="space-y-6">
+                                <div className="col-span-2 space-y-6">
                                   <div className="flex items-center justify-between px-1 border-t border-slate-200 pt-8">
                                     <div className="flex items-center gap-3">
                                       <h4 className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Staged / Packed Items</h4>
