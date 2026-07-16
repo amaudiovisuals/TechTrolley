@@ -219,6 +219,44 @@ class Conference(models.Model):
     # J-109: Audit Mode — when True, assets in this conference do not lock other live events
     is_audit = models.BooleanField(default=False, help_text="If True, this conference is a non-blocking audit list. Its assets will not lock availability for other conferences.")
 
+    def recalculate_related_asset_statuses(self):
+        pk_set = set(self.assets.values_list('pk', flat=True))
+        if not pk_set:
+            return
+            
+        if self.is_audit:
+            # Audit mode is now True: release assets if not used in other non-audit conferences
+            others_using = set(
+                Conference.objects
+                .exclude(pk=self.pk)
+                .exclude(is_audit=True)
+                .filter(assets__in=pk_set)
+                .values_list('assets__id', flat=True)
+            )
+            crosscheck_using = set(Conference.objects.filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
+            
+            to_revert = [aid for aid in pk_set if aid not in others_using and aid not in crosscheck_using]
+            if to_revert:
+                Asset.objects.filter(pk__in=to_revert, status='In Use').update(status='Available')
+        else:
+            # Audit mode is now False: lock all assets in this conference
+            Asset.objects.filter(pk__in=pk_set).update(status='In Use')
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_is_audit = False
+        if not is_new:
+            try:
+                old_is_audit = Conference.objects.values_list('is_audit', flat=True).get(pk=self.pk)
+            except Conference.DoesNotExist:
+                pass
+                
+        super().save(*args, **kwargs)
+        
+        # If is_audit was toggled, propagate status recalculation to its assets
+        if not is_new and old_is_audit != self.is_audit:
+            self.recalculate_related_asset_statuses()
+
     def __str__(self):
         return self.name
 
