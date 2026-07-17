@@ -7,7 +7,7 @@ interface ChallanViewProps {
   client: Client;
   assets: Asset[];
   companySettings?: CompanySettings;
-  onUpdateAsset?: (assetId: string, updates: Partial<Asset>) => Promise<void>;
+  onUpdateAsset?: (assetId: string, updates: Partial<Asset>, silent?: boolean) => Promise<void>;
   onAddAdhocItem?: (item: Partial<Asset>) => Promise<string | void>;
   onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
   onRemoveAssets?: (assetIds: string[]) => Promise<void>;
@@ -143,6 +143,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const saveAllChanges = async () => {
+    const errors: string[] = [];
     try {
       // 1. Process removals in batch
       const originalIds = assets.map(a => String(a.id));
@@ -151,7 +152,12 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       if (removedIds.length > 0 && onRemoveAssets) {
         console.log("Removing assets from conference:", removedIds);
-        await onRemoveAssets(removedIds);
+        try {
+          await onRemoveAssets(removedIds);
+        } catch (err) {
+          console.error("Failed to remove assets:", err);
+          errors.push("Failed to remove deleted assets from server");
+        }
       }
 
       const newAdhocIds: string[] = [];
@@ -162,18 +168,23 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         if (isNew) {
           if (onAddAdhocItem) {
             console.log("Saving new ad-hoc item:", asset.sku);
-            // Must map camelCase to snake_case for API
-            const returnedId = await onAddAdhocItem({
-              sku: asset.sku,
-              alias_name: asset.aliasName,
-              quantity: asset.quantity,
-              item_price: asset.itemPrice,
-              depreciation_percentage: asset.depreciationPercentage,
-              serial_number: asset.serialNumber,
-              type: asset.type,
-            } as any);
-            if (returnedId) {
-              newAdhocIds.push(returnedId as string);
+            try {
+              // Must map camelCase to snake_case for API
+              const returnedId = await onAddAdhocItem({
+                sku: asset.sku,
+                alias_name: asset.aliasName,
+                quantity: asset.quantity,
+                item_price: asset.itemPrice,
+                depreciation_percentage: asset.depreciationPercentage,
+                serial_number: asset.serialNumber,
+                type: asset.type,
+              } as any);
+              if (returnedId) {
+                newAdhocIds.push(returnedId as string);
+              }
+            } catch (err) {
+              console.error(`Failed to add ad-hoc item ${asset.sku}:`, err);
+              errors.push(`Failed to add item: ${asset.aliasName || asset.sku}`);
             }
           }
         } else {
@@ -186,7 +197,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               original.itemPrice !== asset.itemPrice ||
               original.serialNumber !== asset.serialNumber
             )) {
-              console.log("Updating existing asset:", asset.id);
+              console.log("Updating existing asset (silent):", asset.id);
               // Backend expects snake_case
               const updates: any = {};
               if (original.aliasName !== asset.aliasName) updates.alias_name = asset.aliasName;
@@ -194,7 +205,12 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               if (original.quantity !== asset.quantity) updates.quantity = asset.quantity;
               if (original.itemPrice !== asset.itemPrice) updates.item_price = asset.itemPrice;
               if (original.serialNumber !== asset.serialNumber) updates.serial_number = asset.serialNumber;
-              await onUpdateAsset(String(asset.id), updates);
+              try {
+                await onUpdateAsset(String(asset.id), updates, true); // silent = true
+              } catch (err) {
+                console.error(`Failed to update asset ${asset.id}:`, err);
+                errors.push(`Failed to update item: ${asset.aliasName || asset.sku}`);
+              }
             }
           }
         }
@@ -205,7 +221,12 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         localStorage.setItem(`cache_total_val_${booking.id}`, totalValueOverride.toString());
         if (onUpdateConferenceValue) {
           console.log("Saving conference value override:", totalValueOverride);
-          await onUpdateConferenceValue(booking.id, totalValueOverride);
+          try {
+            await onUpdateConferenceValue(booking.id, totalValueOverride);
+          } catch (err) {
+            console.error("Failed to update goods value:", err);
+            errors.push("Failed to update goods value");
+          }
         }
       }
 
@@ -214,7 +235,12 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         localStorage.setItem(`cache_challan_no_${booking.id}`, challanNoOverride);
         if (onUpdateChallanNumber) {
           console.log("Saving challan number override:", challanNoOverride);
-          await onUpdateChallanNumber(booking.id, challanNoOverride);
+          try {
+            await onUpdateChallanNumber(booking.id, challanNoOverride);
+          } catch (err) {
+            console.error("Failed to update challan number:", err);
+            errors.push("Failed to update challan number");
+          }
         }
       }
 
@@ -222,12 +248,23 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       if (onSaveFullChallan) {
         console.log("Saving full challan asset list...");
         const finalAssetIds = localAssets
-          .filter(a => !String(a.id).startsWith('new-')) // Exclude new ad-hoc items that haven't been saved to DB yet (they'll be added via onAddAdhocItem)
+          .filter(a => !String(a.id).startsWith('new-')) // Exclude new ad-hoc items that haven't been saved to DB yet
           .map(a => String(a.id));
-        await onSaveFullChallan(booking.id, [...finalAssetIds, ...newAdhocIds]);
+        try {
+          await onSaveFullChallan(booking.id, [...finalAssetIds, ...newAdhocIds]);
+        } catch (err) {
+          console.error("Failed to freeze/save full challan list:", err);
+          errors.push("Failed to freeze/save full challan assets list");
+        }
       }
 
-      showScanToast && showScanToast("✅ All changes saved successfully", "success");
+      if (showScanToast) {
+        if (errors.length > 0) {
+          showScanToast(`⚠️ Saved with ${errors.length} error(s). Check console.`, 'warning');
+        } else {
+          showScanToast("✅ All changes saved successfully", "success");
+        }
+      }
     } catch (err) {
       console.error("Critical error during saveAllChanges:", err);
       alert("Failed to save some changes. Check console for details.");
@@ -314,9 +351,9 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     <div className="flex flex-col gap-4">
       {/* ── Customization Toolbar (Hidden in Print) ── */}
       <div className="print:hidden bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-sky-50 rounded-lg flex items-center justify-center text-sky-600">
+            <div className="w-10 h-10 bg-sky-50 rounded-lg flex items-center justify-center text-sky-600 shrink-0">
               <i className="fa-solid fa-sliders"></i>
             </div>
             <div>
@@ -324,7 +361,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Toggle columns & edit details</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setIsEditMode(!isEditMode)}
               className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isEditMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

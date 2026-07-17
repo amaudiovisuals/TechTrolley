@@ -1228,16 +1228,18 @@ const App: React.FC = () => {
     }
   };
 
-  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset> & { alias_name?: string; item_price?: number; serial_number?: string }) => {
+  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset> & { alias_name?: string; item_price?: number; serial_number?: string }, silent = false) => {
     // Optimistic Update so Challan View updates instantly without flashing old state
-    setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { 
-      ...a, 
-      aliasName: updates.alias_name !== undefined ? updates.alias_name : a.aliasName,
-      sku: updates.sku !== undefined ? updates.sku : a.sku,
-      quantity: updates.quantity !== undefined ? updates.quantity : a.quantity,
-      itemPrice: updates.item_price !== undefined ? updates.item_price : a.itemPrice,
-      serialNumber: updates.serial_number !== undefined ? updates.serial_number : a.serialNumber
-    } : a));
+    if (!silent) {
+      setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { 
+        ...a, 
+        aliasName: updates.alias_name !== undefined ? updates.alias_name : a.aliasName,
+        sku: updates.sku !== undefined ? updates.sku : a.sku,
+        quantity: updates.quantity !== undefined ? updates.quantity : a.quantity,
+        itemPrice: updates.item_price !== undefined ? updates.item_price : a.itemPrice,
+        serialNumber: updates.serial_number !== undefined ? updates.serial_number : a.serialNumber
+      } : a));
+    }
 
     try {
       const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
@@ -1245,19 +1247,29 @@ const App: React.FC = () => {
         body: JSON.stringify(updates)
       });
       if (res.ok) {
-        showScanToast(`✅ Asset Synchronized`, 'success');
-        await fetchAssets();
+        if (!silent) {
+          showScanToast(`✅ Asset Synchronized`, 'success');
+          await fetchAssets();
+        }
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Challan asset update failed with status:", res.status, err);
-        showScanToast(`❌ Asset update failed. See console.`, 'error');
-        // Revert optimistic update
-        await fetchAssets();
+        if (!silent) {
+          showScanToast(`❌ Asset update failed. See console.`, 'error');
+          // Revert optimistic update
+          await fetchAssets();
+        } else {
+          throw new Error(`Asset update failed with status ${res.status}`);
+        }
       }
     } catch (err) {
       console.error("Challan asset update network error", err);
-      showScanToast(`❌ Network error saving asset`, 'error');
-      await fetchAssets(); // Revert
+      if (!silent) {
+        showScanToast(`❌ Network error saving asset`, 'error');
+        await fetchAssets(); // Revert
+      } else {
+        throw err;
+      }
     }
   };
 
@@ -1316,10 +1328,18 @@ const App: React.FC = () => {
       });
       if (res.ok) {
         showScanToast('✅ Challan State Frozen/Saved Successfully', 'success');
-        fetchConferences();
+        await fetchConferences();
+        await fetchAssets();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Failed to save full challan with status:", res.status, err);
+        showScanToast('❌ Failed to save challan on server', 'error');
+        throw new Error(`Failed to save full challan: ${res.status}`);
       }
     } catch (err) {
       console.error("Failed to save full challan", err);
+      showScanToast('❌ Network error saving challan', 'error');
+      throw err;
     }
   };
 
@@ -4759,7 +4779,8 @@ const App: React.FC = () => {
               className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-800 bg-slate-950/40 text-white font-black text-[10px] md:text-xs uppercase"
             />
           </div>
-          <div className="overflow-x-auto custom-scrollbar">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto custom-scrollbar">
             <table className="w-full text-left min-w-[1000px]">
               <thead className="bg-slate-950/40 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">
                 <tr>
@@ -4828,6 +4849,69 @@ const App: React.FC = () => {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4 p-4">
+            {sortedChallans.map((conf) => {
+              const historicalCount = (conf.challanAssets && conf.challanAssets.length > 0) 
+                ? conf.challanAssets.length 
+                : ((conf.assets?.length || 0) + (conf.staged_assets?.length || 0));
+              const hasAssets = historicalCount > 0;
+
+              return (
+                <div key={conf.id} className="bg-slate-900/60 border border-slate-800/60 p-5 rounded-2xl space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Challan #</p>
+                      <p className="font-black text-white text-lg">#{conf.challanNumber}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${hasAssets ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                      {hasAssets ? 'Generated' : 'Draft'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Conference</p>
+                    <p className="font-bold text-white text-xs uppercase break-words">{conf.conferenceName}</p>
+                    <p className="text-[10px] text-slate-400 uppercase mt-0.5">{conf.associationName}</p>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t border-slate-800/40">
+                    <div>
+                      <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">Items</p>
+                      <p className="text-[11px] font-black text-emerald-400 uppercase">{historicalCount} Items</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setSelectedBookingForChallan(conf); setChallanViewMode('Detail'); }}
+                        className="px-3 py-2 bg-sky-500/10 text-sky-400 hover:bg-sky-50 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                      >
+                        <i className="fa-solid fa-eye"></i>
+                      </button>
+                      <button
+                        onClick={() => handlePrintChallan(conf)}
+                        className="px-3 py-2 bg-violet-500/10 text-violet-400 hover:bg-violet-50 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                      >
+                        <i className="fa-solid fa-print"></i>
+                      </button>
+                      {(user?.is_staff || user?.role === 'admin') && (
+                        <button
+                          onClick={() => handleDeleteChallan(conf.id)}
+                          className="px-3 py-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg text-[9px] font-black uppercase tracking-wider transition-all"
+                          title="Delete Challan"
+                        >
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {sortedChallans.length === 0 && (
+              <p className="text-center py-6 text-slate-500 text-xs uppercase font-black tracking-widest">No challans found</p>
+            )}
           </div>
         </div>
       </div>
@@ -5120,9 +5204,7 @@ const App: React.FC = () => {
                 { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
               ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
-              ...(user?.role !== 'godown_incharge' ? [
-                { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
-              ] : []),
+              { id: 'Billing', icon: 'fa-receipt', label: 'Challans' },
               ...(user?.is_staff || user?.role !== 'technician' ? [
                 { id: 'Reports', icon: 'fa-chart-pie', label: 'Reports' }
               ] : []),
