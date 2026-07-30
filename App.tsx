@@ -506,11 +506,15 @@ const App: React.FC = () => {
   };
 
   const fetchAssets = (search: string = ''): Promise<Asset[]> => {
-    const url = `${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`;
+    // Use ?all=true so every asset is returned in a single response.
+    // The backend already supports this (skips pagination when all=true).
+    // This eliminates the blinking / batch-loading flicker and loads everything
+    // in one network round-trip.
+    const url = `${API_BASE}/api/assets/?all=true&search=${encodeURIComponent(search)}&_t=${Date.now()}`;
     return apiFetch(url)
       .then(async res => {
         const data = await res.json();
-        const results = data.results !== undefined ? data.results : data;
+        const results = Array.isArray(data) ? data : (data.results ?? data);
 
         if (Array.isArray(results)) {
           const mappedAssets: Asset[] = results.map((asset: any) => ({
@@ -543,16 +547,12 @@ const App: React.FC = () => {
             current_conference_name: asset.current_conference_name,
             sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
           }));
-          // Always overwrite atomically — no blank flash
+          // Atomic overwrite — no partial state, no blinking
           setAssets(mappedAssets);
-          
-          if (data.next) {
-            silentBackgroundFetch(data.next);
-          } else {
-            setIsBackgroundSyncing(false);
-          }
-          
-          return mappedAssets; // Return so callers can use fresh data immediately
+          // Also keep the scan-index in sync (no extra network request needed)
+          allAssetsRef.current = mappedAssets;
+          setIsBackgroundSyncing(false);
+          return mappedAssets;
         } else if (res.status !== 401) {
           console.error("Failed to fetch assets: Invalid data format", data);
         }
@@ -973,18 +973,18 @@ const App: React.FC = () => {
 
   // J-118: Compute unique aliases with count badges and laptop OS sub-grouping
   const uniqueAliases = useMemo(() => {
-    // Use the full shadow database for accurate counts across all pages
-    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    // NOTE: We use `assets` (not allAssetsRef) — allAssetsRef is declared later in the
+    // function body and would be in TDZ here, causing a crash.
     const BAD_STATUSES = new Set(['Damaged', 'On Service', 'Missing', 'Expired']);
     const countMap: Record<string, number> = {};
 
-    pool.forEach(a => {
+    assets.forEach(a => {
       if (a.isTemporary) return;
       // Compute the display-level alias (sub-group for laptops, raw alias for everything else)
       const displayAlias = getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName;
       if (!displayAlias) return;
       // Exclude damaged / flagged assets from the count
-      const isDamagedOrFlagged = BAD_STATUSES.has(a.status) || (a.flag && a.flag !== '');
+      const isDamagedOrFlagged = BAD_STATUSES.has(a.status) || !!(a.flag && a.flag !== '');
       if (!isDamagedOrFlagged) {
         countMap[displayAlias] = (countMap[displayAlias] || 0) + 1;
       }
