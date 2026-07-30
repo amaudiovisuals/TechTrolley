@@ -2144,8 +2144,95 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateRequestedConsumable = (assetId: string, delta: number) => {
+    const assetIdStr = String(assetId);
+    const currentData = { ...(conferenceFormData.consumable_data || {}) };
+    const existing = currentData[assetIdStr] || { requested: 0, returned: 0, consumed: 0 };
+    const newRequested = Math.max(0, (existing.requested || 0) + delta);
+
+    if (newRequested === 0) {
+      delete currentData[assetIdStr];
+    } else {
+      currentData[assetIdStr] = { ...existing, requested: newRequested, returned: newRequested };
+    }
+
+    setConferenceFormData((prev: any) => ({
+      ...prev,
+      consumable_data: currentData
+    }));
+
+    if (conferenceFormData.id) {
+      apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ consumable_data: currentData })
+      }).then(res => {
+        if (res.ok) fetchConferences();
+      });
+    }
+  };
+
+  const handleUpdateReturnedConsumable = (assetId: string, newReturnedQty: number) => {
+    const assetIdStr = String(assetId);
+    const currentData = { ...(conferenceFormData.consumable_data || {}) };
+    const existing = currentData[assetIdStr] || { requested: 0, returned: 0, consumed: 0 };
+    const dispatched = Number(existing.requested || 0);
+    const validReturned = Math.min(dispatched, Math.max(0, newReturnedQty));
+
+    currentData[assetIdStr] = {
+      ...existing,
+      returned: validReturned,
+      consumed: dispatched - validReturned
+    };
+
+    setConferenceFormData((prev: any) => ({
+      ...prev,
+      consumable_data: currentData
+    }));
+
+    if (conferenceFormData.id) {
+      apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ consumable_data: currentData })
+      }).then(res => {
+        if (res.ok) fetchConferences();
+      });
+    }
+  };
+
   const submitQuantityAssignment = () => {
     if (!quantityAsset || !conferenceFormData.id) return;
+
+    if (quantityAsset.type === AssetCategory.CONSUMABLES) {
+      const assetIdStr = quantityAsset.id.toString();
+      const currentData = { ...(conferenceFormData.consumable_data || {}) };
+      const existing = currentData[assetIdStr] || { requested: 0, returned: 0, consumed: 0 };
+      const newRequested = (existing.requested || 0) + selectedQuantity;
+
+      currentData[assetIdStr] = {
+        requested: newRequested,
+        returned: newRequested,
+        consumed: 0,
+        status: 'requested'
+      };
+
+      setConferenceFormData((prev: any) => ({
+        ...prev,
+        consumable_data: currentData
+      }));
+
+      showScanToast(`✅ Added ${selectedQuantity} unit(s) of "${quantityAsset.aliasName || quantityAsset.sku}" to Consumables`, 'success');
+      setShowQuantityModal(false);
+
+      if (conferenceFormData.id) {
+        apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/`, {
+          method: 'PATCH',
+          body: JSON.stringify({ consumable_data: currentData })
+        }).then(res => {
+          if (res.ok) fetchConferences();
+        });
+      }
+      return;
+    }
 
     apiFetch(`${API_BASE}/api/assets/${quantityAsset.id}/assign-quantity/`, {
       method: 'POST',
@@ -6891,6 +6978,177 @@ const App: React.FC = () => {
                                       <p className="text-center text-[10px] text-slate-400 font-bold uppercase mt-4 tracking-widest italic animate-pulse">Finalize items to clear current packing station</p>
                                     </div>
                                   )}
+                                  {(() => {
+                                    const consumableEntries = Object.entries(conferenceFormData.consumable_data || {})
+                                      .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0);
+
+                                    if (consumableEntries.length === 0) return null;
+
+                                    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+
+                                    return (
+                                      <div className="space-y-4 mt-6 pt-6 border-t border-amber-200/50">
+                                        <div className="flex items-center justify-between px-1">
+                                          <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-2">
+                                            <i className="fa-solid fa-cubes"></i> Consumables Requirements
+                                          </h4>
+                                          <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                                            {consumableEntries.length} ITEMS
+                                          </span>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          {consumableEntries.map(([assetId, data]: [string, any]) => {
+                                            const asset = pool.find(a => String(a.id) === String(assetId));
+                                            const aliasName = asset?.aliasName || asset?.sku || `Consumable #${assetId}`;
+                                            const requestedQty = Number(data.requested || 0);
+                                            const maxAvailable = asset?.quantity || 999;
+
+                                            return (
+                                              <div key={`c-req-${assetId}`} className="rounded-2xl border border-amber-200 bg-amber-50/20 p-4 flex items-center justify-between shadow-sm">
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                  <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-xs font-black shrink-0 shadow-sm">
+                                                    <i className="fa-solid fa-cubes"></i>
+                                                  </div>
+                                                  <div className="min-w-0 flex-1">
+                                                    <p className="font-black uppercase text-xs text-slate-800 truncate">{aliasName}</p>
+                                                    <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mt-0.5">
+                                                      Consumable • Stock: {asset?.quantity ?? 'N/A'}
+                                                    </p>
+                                                  </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-3 shrink-0">
+                                                  <div className="flex items-center bg-white border border-amber-300 rounded-full font-black text-xs overflow-hidden shadow-sm">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleUpdateRequestedConsumable(assetId, -1)}
+                                                      className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                                                      title="Decrease quantity"
+                                                    >
+                                                      <i className="fa-solid fa-minus text-[9px]"></i>
+                                                    </button>
+                                                    <span className="px-2.5 text-slate-800 font-extrabold min-w-[2rem] text-center text-xs">
+                                                      {requestedQty}
+                                                    </span>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        if (requestedQty >= maxAvailable) {
+                                                          showScanToast(`⚠️ Capped at max available stock (${maxAvailable})`, 'warning');
+                                                          return;
+                                                        }
+                                                        handleUpdateRequestedConsumable(assetId, 1);
+                                                      }}
+                                                      className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                                                      title="Increase quantity"
+                                                    >
+                                                      <i className="fa-solid fa-plus text-[9px]"></i>
+                                                    </button>
+                                                  </div>
+
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleUpdateRequestedConsumable(assetId, -requestedQty)}
+                                                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0"
+                                                    title="Remove consumable requirement"
+                                                  >
+                                                    <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {(() => {
+                                    const consumableEntries = Object.entries(conferenceFormData.consumable_data || {})
+                                      .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0);
+
+                                    if (consumableEntries.length === 0) return null;
+
+                                    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+
+                                    return (
+                                      <div className="space-y-4 mt-6 pt-6 border-t border-amber-200/50">
+                                        <div className="flex items-center justify-between px-1">
+                                          <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-2">
+                                            <i className="fa-solid fa-cubes"></i> Consumables Requirements
+                                          </h4>
+                                          <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                                            {consumableEntries.length} ITEMS
+                                          </span>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          {consumableEntries.map(([assetId, data]: [string, any]) => {
+                                            const asset = pool.find(a => String(a.id) === String(assetId));
+                                            const aliasName = asset?.aliasName || asset?.sku || `Consumable #${assetId}`;
+                                            const requestedQty = Number(data.requested || 0);
+                                            const maxAvailable = asset?.quantity || 999;
+
+                                            return (
+                                              <div key={`c-req-${assetId}`} className="rounded-2xl border border-amber-200 bg-amber-50/20 p-4 flex items-center justify-between shadow-sm">
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                  <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-xs font-black shrink-0 shadow-sm">
+                                                    <i className="fa-solid fa-cubes"></i>
+                                                  </div>
+                                                  <div className="min-w-0 flex-1">
+                                                    <p className="font-black uppercase text-xs text-slate-800 truncate">{aliasName}</p>
+                                                    <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mt-0.5">
+                                                      Consumable • Stock: {asset?.quantity ?? 'N/A'}
+                                                    </p>
+                                                  </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-3 shrink-0">
+                                                  <div className="flex items-center bg-white border border-amber-300 rounded-full font-black text-xs overflow-hidden shadow-sm">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleUpdateRequestedConsumable(assetId, -1)}
+                                                      className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                                                      title="Decrease quantity"
+                                                    >
+                                                      <i className="fa-solid fa-minus text-[9px]"></i>
+                                                    </button>
+                                                    <span className="px-2.5 text-slate-800 font-extrabold min-w-[2rem] text-center text-xs">
+                                                      {requestedQty}
+                                                    </span>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        if (requestedQty >= maxAvailable) {
+                                                          showScanToast(`⚠️ Capped at max available stock (${maxAvailable})`, 'warning');
+                                                          return;
+                                                        }
+                                                        handleUpdateRequestedConsumable(assetId, 1);
+                                                      }}
+                                                      className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                                                      title="Increase quantity"
+                                                    >
+                                                      <i className="fa-solid fa-plus text-[9px]"></i>
+                                                    </button>
+                                                  </div>
+
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleUpdateRequestedConsumable(assetId, -requestedQty)}
+                                                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0"
+                                                    title="Remove consumable requirement"
+                                                  >
+                                                    <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                              </div>
                           ) : (
@@ -7196,6 +7454,86 @@ const App: React.FC = () => {
                              });
                            })()}
                           
+                          {(() => {
+                            const consumableEntries = Object.entries(conferenceFormData.consumable_data || {})
+                              .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0);
+
+                            if (consumableEntries.length === 0) return null;
+
+                            const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+
+                            return (
+                              <div className="col-span-2 space-y-4 mt-6 pt-6 border-t border-amber-200">
+                                <div className="flex items-center justify-between px-1">
+                                  <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-2">
+                                    <i className="fa-solid fa-cubes"></i> Consumables Return & Inventory Settlement
+                                  </h4>
+                                  <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                                    DIRECT RETURN
+                                  </span>
+                                </div>
+
+                                <div className="space-y-3">
+                                  {consumableEntries.map(([assetId, data]: [string, any]) => {
+                                    const asset = pool.find(a => String(a.id) === String(assetId));
+                                    const aliasName = asset?.aliasName || asset?.sku || `Consumable #${assetId}`;
+                                    const dispatchedQty = Number(data.requested || 0);
+                                    const returnedQty = Number(data.returned ?? dispatchedQty);
+                                    const consumedQty = Math.max(0, dispatchedQty - returnedQty);
+
+                                    return (
+                                      <div key={`c-cross-${assetId}`} className="rounded-2xl border border-amber-200 bg-amber-50/20 p-4 space-y-3 shadow-sm">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-xs font-black shrink-0">
+                                              <i className="fa-solid fa-cubes"></i>
+                                            </div>
+                                            <span className="font-black uppercase text-xs text-slate-900 truncate">{aliasName}</span>
+                                          </div>
+                                          <span className="px-3 py-1 bg-sky-100 text-sky-700 text-[10px] font-black rounded-full uppercase">
+                                            Dispatched: {dispatchedQty} Units
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center justify-between gap-4 pt-2 border-t border-amber-100/60 text-xs">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase">Quantity Returned:</span>
+                                            <div className="flex items-center bg-white border border-amber-300 rounded-full font-black text-xs overflow-hidden shadow-sm">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleUpdateReturnedConsumable(assetId, Math.max(0, returnedQty - 1))}
+                                                className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 transition-colors"
+                                              >
+                                                <i className="fa-solid fa-minus text-[9px]"></i>
+                                              </button>
+                                              <span className="px-3 text-slate-800 font-extrabold min-w-[2rem] text-center text-xs">
+                                                {returnedQty}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleUpdateReturnedConsumable(assetId, Math.min(dispatchedQty, returnedQty + 1))}
+                                                className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 transition-colors"
+                                              >
+                                                <i className="fa-solid fa-plus text-[9px]"></i>
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          <div className="text-right">
+                                            <span className="text-[10px] font-black text-amber-700 uppercase block">
+                                              Consumed / Used: <span className="text-red-600 font-extrabold text-sm">{consumedQty}</span>
+                                            </span>
+                                            <span className="text-[8px] font-bold text-slate-400 uppercase">Deducted from stock on submit</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {(user?.role === 'godown_incharge' || user?.is_staff) && (
                             <div className="col-span-2 pt-10 border-t border-slate-100 mt-6">
                               <button 
