@@ -4,13 +4,50 @@ import { Logo } from './Logo';
 
 /**
  * Returns 'MacBook' or 'Windows Laptop' for Laptop-type assets.
- * Rule: alias starting with 'M' (case-insensitive) → MacBook, else → Windows Laptop.
  * Returns null for non-laptop assets so they are completely unaffected.
  */
-function getLaptopSubGroup(aliasName: string, type: string): string | null {
-  if (type !== 'Laptops') return null;
-  const trimmed = (aliasName || '').trim();
-  if (/^M/i.test(trimmed)) return 'MacBook';
+function getLaptopSubGroup(
+  arg1?: Asset | string | null,
+  type?: string,
+  sku?: string,
+  description?: string
+): string | null {
+  let an = '';
+  let t = '';
+  let s = '';
+  let d = '';
+
+  if (typeof arg1 === 'string') {
+    an = arg1.trim();
+    t = (type || '').trim();
+    s = (sku || '').trim();
+    d = (description || '').trim();
+  } else if (arg1 && typeof arg1 === 'object') {
+    an = (arg1.aliasName || (arg1 as any).alias_name || '').trim();
+    t = (arg1.type || '').trim();
+    s = (arg1.sku || '').trim();
+    d = (arg1.description || '').trim();
+  }
+
+  // Direct aliasName check for exact matches in database
+  if (an === 'Apple MacBook' || an === 'MacBook') return 'MacBook';
+  if (an === 'Windows Laptop') return 'Windows Laptop';
+
+  // Check if asset is a laptop by type, aliasName, sku, or description
+  const itTypes = ['laptops', 'it & networking', 'computers & servers'];
+  const nameCombo = `${an} ${s} ${d}`.toLowerCase();
+  
+  const isLaptopType = itTypes.includes(t.toLowerCase());
+  const isLaptopName = nameCombo.includes('laptop') || nameCombo.includes('macbook') || nameCombo.includes('vivobook') || nameCombo.includes('thinkpad');
+
+  if (!isLaptopType && !isLaptopName) return null;
+
+  // Classify MacBook vs Windows Laptop
+  const checkStr = (an || s).toUpperCase();
+  if (checkStr.startsWith('M') || checkStr.includes('MAC') || checkStr.includes('APPLE') || checkStr.includes('IMAC')) {
+    return 'MacBook';
+  }
+
   return 'Windows Laptop';
 }
 
@@ -322,7 +359,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       localAssets.forEach(asset => {
         // For laptops, merge into MacBook / Windows Laptop sub-groups.
         // For all other assets, group by their exact alias name as before.
-        const subGroup = getLaptopSubGroup(asset.aliasName, asset.type);
+        const subGroup = getLaptopSubGroup(asset);
         const key = subGroup ?? asset.aliasName ?? asset.sku ?? 'Unknown';
         if (!groups[key]) {
           groups[key] = {
@@ -362,7 +399,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       // For laptops, default to the OS sub-group label (MacBook / Windows Laptop).
       // This is read by renderCell and never flows into onLocalUpdate or saveAllChanges.
       printName: printAliasOverrides[String(a.id)]
-        ?? getLaptopSubGroup(a.aliasName, a.type)
+        ?? getLaptopSubGroup(a)
         ?? a.aliasName
         ?? a.sku
         ?? '',

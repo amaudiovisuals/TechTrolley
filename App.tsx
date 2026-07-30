@@ -30,15 +30,51 @@ function getSkuFamily(sku: string): string {
 const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 
 /**
- * Returns a display-level sub-group label for laptop assets.
- * Rule: if aliasName starts with 'M' (case-insensitive) → 'MacBook'
- *       otherwise → 'Windows Laptop'
+ * Returns a display-level sub-group label for laptop assets ('MacBook' or 'Windows Laptop').
  * Returns null for non-laptop assets — leaves them completely unchanged.
  */
-function getLaptopSubGroup(aliasName: string, type: string): string | null {
-  if (type !== 'Laptops') return null;
-  const trimmed = (aliasName || '').trim();
-  if (/^M/i.test(trimmed)) return 'MacBook';
+function getLaptopSubGroup(
+  arg1?: Asset | string | null,
+  type?: string,
+  sku?: string,
+  description?: string
+): string | null {
+  let an = '';
+  let t = '';
+  let s = '';
+  let d = '';
+
+  if (typeof arg1 === 'string') {
+    an = arg1.trim();
+    t = (type || '').trim();
+    s = (sku || '').trim();
+    d = (description || '').trim();
+  } else if (arg1 && typeof arg1 === 'object') {
+    an = (arg1.aliasName || (arg1 as any).alias_name || '').trim();
+    t = (arg1.type || '').trim();
+    s = (arg1.sku || '').trim();
+    d = (arg1.description || '').trim();
+  }
+
+  // Direct aliasName check for exact matches in database
+  if (an === 'Apple MacBook' || an === 'MacBook') return 'MacBook';
+  if (an === 'Windows Laptop') return 'Windows Laptop';
+
+  // Check if asset is a laptop by type, aliasName, sku, or description
+  const itTypes = ['laptops', 'it & networking', 'computers & servers'];
+  const nameCombo = `${an} ${s} ${d}`.toLowerCase();
+  
+  const isLaptopType = itTypes.includes(t.toLowerCase());
+  const isLaptopName = nameCombo.includes('laptop') || nameCombo.includes('macbook') || nameCombo.includes('vivobook') || nameCombo.includes('thinkpad');
+
+  if (!isLaptopType && !isLaptopName) return null;
+
+  // Classify MacBook vs Windows Laptop
+  const checkStr = (an || s).toUpperCase();
+  if (checkStr.startsWith('M') || checkStr.includes('MAC') || checkStr.includes('APPLE') || checkStr.includes('IMAC')) {
+    return 'MacBook';
+  }
+
   return 'Windows Laptop';
 }
 
@@ -981,7 +1017,7 @@ const App: React.FC = () => {
     assets.forEach(a => {
       if (a.isTemporary) return;
       // Compute the display-level alias (sub-group for laptops, raw alias for everything else)
-      const displayAlias = getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName;
+      const displayAlias = getLaptopSubGroup(a) ?? a.aliasName;
       if (!displayAlias) return;
       // Exclude damaged / flagged assets from the count
       const isDamagedOrFlagged = BAD_STATUSES.has(a.status) || !!(a.flag && a.flag !== '');
@@ -1009,7 +1045,7 @@ const App: React.FC = () => {
 
       // J-118: Alias Filter Condition — match against display-level alias (sub-group for laptops)
       if (selectedAlias !== 'All') {
-        const displayAlias = getLaptopSubGroup(asset.aliasName, asset.type) ?? asset.aliasName;
+        const displayAlias = getLaptopSubGroup(asset) ?? asset.aliasName;
         if (displayAlias !== selectedAlias) return false;
       }
 
@@ -3917,7 +3953,7 @@ const App: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-black text-sky-400 font-mono uppercase truncate">{asset.sku}</p>
                     <div className="flex items-center gap-2 mt-1 min-w-0">
-                      <h4 className="text-base font-black text-white uppercase truncate flex-1">{asset.aliasName || 'Untitled Asset'}</h4>
+                      <h4 className="text-base font-black text-white uppercase truncate flex-1">{getLaptopSubGroup(asset) || asset.aliasName || 'Untitled Asset'}</h4>
                       {asset.sub_assets && asset.sub_assets.length > 0 && (
                         <span className="w-5 h-5 bg-sky-500/20 text-sky-400 rounded-lg flex items-center justify-center text-[8px]" title="Main Asset with Components">
                           <i className="fa-solid fa-boxes-stacked" />
@@ -3988,7 +4024,7 @@ const App: React.FC = () => {
                     <td className="px-6 py-6">
                       <div className="flex items-center gap-3">
                         <div>
-                          <p className="font-black text-white text-base uppercase truncate max-w-[200px]">{asset.aliasName || '-'}</p>
+                          <p className="font-black text-white text-base uppercase truncate max-w-[200px]">{getLaptopSubGroup(asset) || asset.aliasName || '-'}</p>
                           <p className="text-[9px] text-slate-500 font-black mt-1 uppercase truncate">MAC: {asset.macAddress || 'N/A'}</p>
                         </div>
                         {asset.sub_assets && asset.sub_assets.length > 0 && (
@@ -6353,7 +6389,7 @@ const App: React.FC = () => {
                                      }
                                      // F-3: Cart view — group by display alias (MacBook/Windows Laptop for laptops)
                                       const groups = filteredReqs.reduce((acc: Record<string, Asset[]>, a) => {
-                                        const key = getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName ?? a.sku ?? 'Unknown';
+                                        const key = getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown';
                                         if (!acc[key]) acc[key] = [];
                                         acc[key].push(a);
                                         return acc;
@@ -6384,7 +6420,7 @@ const App: React.FC = () => {
                                                         const targetName = name;
                                                         const gPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
                                                         const availableAsset = gPool.find(a => 
-                                                          (getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName ?? a.sku ?? 'Unknown') === targetName && 
+                                                          (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown') === targetName && 
                                                           !conferenceFormData.requirements.some((id: any) => String(id) === String(a.id)) &&
                                                           !conferenceFormData.assets.some((id: any) => String(id) === String(a.id)) &&
                                                           a.status !== AssetStatus.DAMAGED
@@ -6445,7 +6481,7 @@ const App: React.FC = () => {
                                        .filter(Boolean) as Asset[];
                                      const groups = pendingAssets.reduce((acc: Record<string, Asset[]>, a) => {
                                        // Group laptops under MacBook / Windows Laptop; all others by raw alias
-                                       const key = getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName ?? a.sku ?? 'Unknown';
+                                       const key = getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown';
                                        if (!acc[key]) acc[key] = [];
                                        acc[key].push(a);
                                        return acc;
@@ -6579,7 +6615,7 @@ const App: React.FC = () => {
                                          ...stagedList.map(a => ({ asset: a, type: 'staged' }))
                                        ];
                                        const groups = allItems.reduce((acc: Record<string, {asset: Asset, type: string}[]>, item) => {
-                                         const key = getLaptopSubGroup(item.asset.aliasName, item.asset.type) ?? item.asset.aliasName ?? item.asset.sku ?? 'Unknown';
+                                         const key = getLaptopSubGroup(item.asset) ?? item.asset.aliasName ?? item.asset.sku ?? 'Unknown';
                                          if (!acc[key]) acc[key] = [];
                                          acc[key].push(item);
                                          return acc;
@@ -6798,7 +6834,7 @@ const App: React.FC = () => {
                         // across batches always collapse into a single group.
                         // Laptops are grouped as MacBook or Windows Laptop by getLaptopSubGroup.
                         const groups = packupList.reduce((acc: Record<string, Asset[]>, a) => {
-                          const key = (getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName ?? a.sku ?? 'Unknown').trim();
+                          const key = (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown').trim();
                           if (!acc[key]) acc[key] = [];
                           acc[key].push(a);
                           return acc;
@@ -6908,7 +6944,7 @@ const App: React.FC = () => {
                              const crosscheckList = crossPool.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id)));
                              const groups = crosscheckList.reduce((acc: Record<string, Asset[]>, a) => {
                                // Group laptops as MacBook / Windows Laptop
-                               const key = getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName ?? a.sku ?? 'Unknown';
+                               const key = getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown';
                                if (!acc[key]) acc[key] = [];
                                acc[key].push(a);
                                return acc;
