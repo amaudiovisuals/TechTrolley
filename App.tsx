@@ -2813,6 +2813,22 @@ const App: React.FC = () => {
       });
   };
 
+  const handleUpdateConsumableQuantity = async (assetId: string | number, newQuantity: number) => {
+    if (newQuantity < 0) return;
+    try {
+      const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ quantity: newQuantity })
+      });
+      if (res.ok) {
+        setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { ...a, quantity: newQuantity } : a));
+        showScanToast(`✅ Stock updated to ${newQuantity}`, 'success');
+      }
+    } catch (err) {
+      console.error('Failed to update consumable quantity:', err);
+    }
+  };
+
   const openEditAssetForm = (asset: Asset) => {
     if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
     setEditingAsset(asset);
@@ -3850,6 +3866,21 @@ const App: React.FC = () => {
           >
             <i className="fa-solid fa-file-pdf" /> PDF
           </button>
+
+          <button
+            onClick={() => {
+              setInventoryCategoryFilter(prev => prev === 'Consumables' ? 'All' : 'Consumables');
+              setSelectedAlias('All');
+              setInventoryPage(1);
+            }}
+            className={`flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs transition flex items-center justify-center gap-2 shadow-lg ${
+              inventoryCategoryFilter === 'Consumables'
+                ? 'bg-amber-500 text-white shadow-amber-500/30 ring-2 ring-amber-400'
+                : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30'
+            }`}
+          >
+            <i className="fa-solid fa-cubes" /> Consumables
+          </button>
           <div className="flex gap-2">
             <div className="relative" ref={registerDropdownRef}>
               <button
@@ -4033,10 +4064,42 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center text-[10px]">
                   <p className="text-slate-500 font-bold uppercase">{asset.type}</p>
-                  <div className="flex gap-4">
-                    <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }} className="text-red-400"><i className="fa-solid fa-trash"></i></button>
-                  </div>
+                  {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-[9px] font-black text-slate-400 uppercase mr-1">Qty:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateConsumableQuantity(asset.id, Math.max(0, (asset.quantity || 0) - 1))}
+                        className="w-6 h-6 bg-slate-800 text-slate-300 rounded flex items-center justify-center font-bold text-xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        value={asset.quantity ?? 0}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val >= 0) {
+                            handleUpdateConsumableQuantity(asset.id, val);
+                          }
+                        }}
+                        className="w-12 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-center text-xs font-black text-amber-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateConsumableQuantity(asset.id, (asset.quantity || 0) + 1)}
+                        className="w-6 h-6 bg-slate-800 text-slate-300 rounded flex items-center justify-center font-bold text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-4">
+                      <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }} className="text-red-400"><i className="fa-solid fa-trash"></i></button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -4097,7 +4160,40 @@ const App: React.FC = () => {
                       <p className="text-[10px] text-slate-500 font-black uppercase">{asset.type}</p>
                     </td>
                     <td className="px-6 py-6 text-center">
-                      <p className="text-xs font-black text-white">{asset.quantity || 1}</p>
+                      {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
+                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateConsumableQuantity(asset.id, Math.max(0, (asset.quantity || 0) - 1))}
+                            className="w-7 h-7 bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-300 rounded-lg flex items-center justify-center font-bold text-xs transition"
+                            title="Decrease stock"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={asset.quantity ?? 0}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (!isNaN(val) && val >= 0) {
+                                handleUpdateConsumableQuantity(asset.id, val);
+                              }
+                            }}
+                            className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs font-black text-amber-400 outline-none focus:border-amber-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateConsumableQuantity(asset.id, (asset.quantity || 0) + 1)}
+                            className="w-7 h-7 bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-300 rounded-lg flex items-center justify-center font-bold text-xs transition"
+                            title="Increase stock"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-xs font-black text-white">{asset.quantity || 1}</p>
+                      )}
                     </td>
                     <td className="px-6 py-6 text-center">
                       <div className="flex flex-col items-center gap-1">
