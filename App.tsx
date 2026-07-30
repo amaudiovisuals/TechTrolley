@@ -6489,7 +6489,11 @@ const App: React.FC = () => {
                                                   <div className="border-t border-sky-100 divide-y divide-sky-50">
                                                     {items.map(asset => (
                                                       <div key={asset.id} className="flex items-center gap-3 px-4 py-2.5">
-                                                        <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                        <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
+                                                          {asset.aliasName && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(asset.aliasName)
+                                                            ? `${asset.aliasName} • ${asset.sku || asset.serialNumber}`
+                                                            : (asset.sku || asset.serialNumber)}
+                                                        </span>
                                                         <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
                                                           <i className="fa-solid fa-trash-can text-[9px]"></i>
                                                         </button>
@@ -6552,7 +6556,11 @@ const App: React.FC = () => {
                                                  <div className="border-t border-orange-100 divide-y divide-orange-50">
                                                    {items.map(asset => (
                                                      <div key={asset.id} className="flex items-center gap-3 px-4 py-2.5">
-                                                       <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                       <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
+                                                          {asset.aliasName && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(asset.aliasName)
+                                                            ? `${asset.aliasName} • ${asset.sku || asset.serialNumber}`
+                                                            : (asset.sku || asset.serialNumber)}
+                                                        </span>
                                                        <span className="shrink-0 px-1.5 py-0.5 bg-orange-400 text-white text-[8px] font-black rounded-full">PENDING</span>
                                                      </div>
                                                    ))}
@@ -6688,7 +6696,11 @@ const App: React.FC = () => {
                                                <div className={`border-t ${colors.border} divide-y divide-slate-100/50`}>
                                                  {items.map(({ asset, type }) => (
                                                    <div key={`${type}-${asset.id}`} className="flex items-center gap-3 px-4 py-2.5">
-                                                     <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                     <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
+                                             {asset.aliasName && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(asset.aliasName)
+                                               ? `${asset.aliasName} • ${asset.sku || asset.serialNumber}`
+                                               : (asset.sku || asset.serialNumber)}
+                                           </span>
                                                      <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
                                                        {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : 'PACKED'}
                                                      </span>
@@ -6820,7 +6832,11 @@ const App: React.FC = () => {
                                                 <div className={`border-t ${colors.border} divide-y divide-slate-100/50`}>
                                                   {items.map(({ asset, type }) => (
                                                     <div key={`${type}-${asset.id}`} className="flex items-center gap-3 px-4 py-2.5">
-                                                      <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                      <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
+                                                        {asset.aliasName && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(asset.aliasName)
+                                                          ? `${asset.aliasName} • ${asset.sku || asset.serialNumber}`
+                                                          : (asset.sku || asset.serialNumber)}
+                                                      </span>
                                                       <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
                                                         {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : type === 'pending' ? 'PENDING' : 'ASSIGNED'}
                                                       </span>
@@ -7013,7 +7029,11 @@ const App: React.FC = () => {
                                      <div className="border-t border-orange-100 divide-y divide-orange-50">
                                        {items.map(asset => (
                                          <div key={asset.id} className="flex items-center gap-2 px-4 py-2.5">
-                                           <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                           <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
+                                             {asset.aliasName && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(asset.aliasName)
+                                               ? `${asset.aliasName} • ${asset.sku || asset.serialNumber}`
+                                               : (asset.sku || asset.serialNumber)}
+                                           </span>
                                            {(user?.role === 'godown_incharge' || user?.is_staff) && (
                                              <div className="flex gap-1.5 shrink-0">
                                                <button 
