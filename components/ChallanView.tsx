@@ -2,6 +2,18 @@ import React from 'react';
 import { Booking, Asset, Client, CompanySettings } from '../types';
 import { Logo } from './Logo';
 
+/**
+ * Returns 'MacBook' or 'Windows Laptop' for Laptop-type assets.
+ * Rule: alias starting with 'M' (case-insensitive) → MacBook, else → Windows Laptop.
+ * Returns null for non-laptop assets so they are completely unaffected.
+ */
+function getLaptopSubGroup(aliasName: string, type: string): string | null {
+  if (type !== 'Laptops') return null;
+  const trimmed = (aliasName || '').trim();
+  if (/^M/i.test(trimmed)) return 'MacBook';
+  return 'Windows Laptop';
+}
+
 interface ChallanViewProps {
   booking: Booking;
   client: Client;
@@ -308,7 +320,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       const groups: Record<string, Asset & { serials: string[], ids: (string | number)[] }> = {};
 
       localAssets.forEach(asset => {
-        const key = asset.aliasName || asset.sku || 'Unknown';
+        // For laptops, merge into MacBook / Windows Laptop sub-groups.
+        // For all other assets, group by their exact alias name as before.
+        const subGroup = getLaptopSubGroup(asset.aliasName, asset.type);
+        const key = subGroup ?? asset.aliasName ?? asset.sku ?? 'Unknown';
         if (!groups[key]) {
           groups[key] = {
             ...asset,
@@ -316,6 +331,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             serials: [],
             ids: []
           };
+          // Override aliasName on the group header so the display name is correct
+          if (subGroup) (groups[key] as any).aliasName = subGroup;
         }
         groups[key].quantity += (Number(asset.quantity) || 1);
         if (asset.serialNumber && asset.serialNumber.trim()) {
@@ -339,11 +356,16 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       return nameA.localeCompare(nameB);
     });
 
-    // J-111: Inject the print-only alias override as a non-persisted field `printName`.
-    // This is read by renderCell and never flows into onLocalUpdate or saveAllChanges.
     return sorted.map(a => ({
       ...a,
-      printName: printAliasOverrides[String(a.id)] ?? (a.aliasName || a.sku || ''),
+      // J-111: Inject the print-only alias override as a non-persisted field `printName`.
+      // For laptops, default to the OS sub-group label (MacBook / Windows Laptop).
+      // This is read by renderCell and never flows into onLocalUpdate or saveAllChanges.
+      printName: printAliasOverrides[String(a.id)]
+        ?? getLaptopSubGroup(a.aliasName, a.type)
+        ?? a.aliasName
+        ?? a.sku
+        ?? '',
     }));
   }, [localAssets, isGrouped, isEditMode, printAliasOverrides]);
 

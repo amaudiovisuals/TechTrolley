@@ -29,6 +29,19 @@ function getSkuFamily(sku: string): string {
 
 const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 
+/**
+ * Returns a display-level sub-group label for laptop assets.
+ * Rule: if aliasName starts with 'M' (case-insensitive) → 'MacBook'
+ *       otherwise → 'Windows Laptop'
+ * Returns null for non-laptop assets — leaves them completely unchanged.
+ */
+function getLaptopSubGroup(aliasName: string, type: string): string | null {
+  if (type !== 'Laptops') return null;
+  const trimmed = (aliasName || '').trim();
+  if (/^M/i.test(trimmed)) return 'MacBook';
+  return 'Windows Laptop';
+}
+
 const ScanPrompt: React.FC<{ title?: string, subtitle?: string }> = ({
   title = "Ready to Scan",
   subtitle = "Type a SKU or scan a QR code to see results"
@@ -958,9 +971,30 @@ const App: React.FC = () => {
     return ['All', ...new Set(assets.map(a => (a as any).category || getUICategory(a.type)).filter(Boolean))] as string[];
   }, [assets]);
 
-  // J-118: Compute unique aliases
+  // J-118: Compute unique aliases with count badges and laptop OS sub-grouping
   const uniqueAliases = useMemo(() => {
-    return ['All', ...Array.from(new Set(assets.map(a => a.aliasName).filter(Boolean))).sort()];
+    // Use the full shadow database for accurate counts across all pages
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    const BAD_STATUSES = new Set(['Damaged', 'On Service', 'Missing', 'Expired']);
+    const countMap: Record<string, number> = {};
+
+    pool.forEach(a => {
+      if (a.isTemporary) return;
+      // Compute the display-level alias (sub-group for laptops, raw alias for everything else)
+      const displayAlias = getLaptopSubGroup(a.aliasName, a.type) ?? a.aliasName;
+      if (!displayAlias) return;
+      // Exclude damaged / flagged assets from the count
+      const isDamagedOrFlagged = BAD_STATUSES.has(a.status) || (a.flag && a.flag !== '');
+      if (!isDamagedOrFlagged) {
+        countMap[displayAlias] = (countMap[displayAlias] || 0) + 1;
+      }
+    });
+
+    const sorted = Object.keys(countMap).sort();
+    return [
+      { label: 'All Aliases', value: 'All', count: 0 },
+      ...sorted.map(alias => ({ label: alias, value: alias, count: countMap[alias] }))
+    ];
   }, [assets]);
 
   // Compute filtered assets once
@@ -973,8 +1007,11 @@ const App: React.FC = () => {
       // Don't show ticket-only transient items in main inventory
       if (asset.isTemporary) return false;
 
-      // J-118: Alias Filter Condition
-      if (selectedAlias !== 'All' && asset.aliasName !== selectedAlias) return false;
+      // J-118: Alias Filter Condition — match against display-level alias (sub-group for laptops)
+      if (selectedAlias !== 'All') {
+        const displayAlias = getLaptopSubGroup(asset.aliasName, asset.type) ?? asset.aliasName;
+        if (displayAlias !== selectedAlias) return false;
+      }
 
       if (inventoryCategoryFilter !== 'All') {
         const assetCat = (asset as any).category || getUICategory(asset.type);
@@ -3862,8 +3899,10 @@ const App: React.FC = () => {
               className="w-full h-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 md:py-0 text-white font-black text-xs uppercase outline-none focus:border-sky-500 transition-all cursor-pointer appearance-none"
               style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
             >
-              {uniqueAliases.map(alias => (
-                <option key={alias} value={alias}>{alias === 'All' ? 'All Aliases' : alias}</option>
+              {uniqueAliases.map(({ label, value, count }) => (
+                <option key={value} value={value}>
+                  {value === 'All' ? 'All Aliases' : `${label} (${count})`}
+                </option>
               ))}
             </select>
           </div>
