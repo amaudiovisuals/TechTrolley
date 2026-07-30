@@ -113,11 +113,16 @@ function getLaptopSubGroup(
   if (!includeSubId) return group;
 
   // Determine sub-identifier (the old alias name or SKU model like 105, M-17, etc.)
-  const subId = (an && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(an)) 
-    ? an 
-    : (s.includes('-') ? s.split('-').slice(0, -1).join('-') : s);
+  let subId = '';
+  if (an && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(an)) {
+    subId = an;
+  } else if (s) {
+    const lastDash = s.lastIndexOf('-');
+    subId = (lastDash !== -1 ? s.slice(0, lastDash) : s).replace(/_/g, ' ');
+  }
 
-  return subId ? `${group} (${subId})` : group;
+  const cleanSubId = subId.trim();
+  return cleanSubId ? `${group} (${cleanSubId})` : group;
 }
 
 const ScanPrompt: React.FC<{ title?: string, subtitle?: string }> = ({
@@ -4047,7 +4052,7 @@ const App: React.FC = () => {
             <thead className="bg-slate-950/40 text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">
               <tr>
                 <th className="px-6 py-6">SKU</th>
-                <th className="px-6 py-6">Alias Name</th>
+                <th className="px-6 py-6 min-w-[300px]">Alias Name</th>
                 <th className="px-6 py-6">Serial Number</th>
                 <th className="px-6 py-6">Description</th>
                 <th className="px-6 py-6">Type</th>
@@ -4066,7 +4071,7 @@ const App: React.FC = () => {
                     <td className="px-6 py-6">
                       <div className="flex items-center gap-3">
                         <div>
-                          <p className="font-black text-white text-base uppercase truncate max-w-[200px]">{getLaptopSubGroup(asset, undefined, undefined, undefined, true) || asset.aliasName || '-'}</p>
+                          <p className="font-black text-white text-base uppercase max-w-[500px] leading-snug break-words">{getLaptopSubGroup(asset, undefined, undefined, undefined, true) || asset.aliasName || '-'}</p>
                           <p className="text-[9px] text-slate-500 font-black mt-1 uppercase truncate">MAC: {asset.macAddress || 'N/A'}</p>
                         </div>
                         {asset.sub_assets && asset.sub_assets.length > 0 && (

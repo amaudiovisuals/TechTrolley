@@ -85,11 +85,17 @@ function getLaptopSubGroup(
 
   if (!includeSubId) return group;
 
-  const subId = (an && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(an)) 
-    ? an 
-    : (s.includes('-') ? s.split('-').slice(0, -1).join('-') : s);
+  // Determine sub-identifier (the old alias name or SKU model like 105, M-17, etc.)
+  let subId = '';
+  if (an && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(an)) {
+    subId = an;
+  } else if (s) {
+    const lastDash = s.lastIndexOf('-');
+    subId = (lastDash !== -1 ? s.slice(0, lastDash) : s).replace(/_/g, ' ');
+  }
 
-  return subId ? `${group} (${subId})` : group;
+  const cleanSubId = subId.trim();
+  return cleanSubId ? `${group} (${cleanSubId})` : group;
 }
 
 interface ChallanViewProps {
