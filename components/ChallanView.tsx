@@ -2,15 +2,28 @@ import React from 'react';
 import { Booking, Asset, Client, CompanySettings } from '../types';
 import { Logo } from './Logo';
 
+const EXCLUDED_LAPTOP_KEYWORDS = [
+  'connector', 'modem', 'monitor', 'mouse', 'server', 'printer', 'ups', 
+  'router', 'hub', 'cable', 'splitter', 'switcher', 'switch', 'adapter', 'talkback', 
+  'handycam', 'projector', 'speaker', 'mixer', 'camera', 'scanner', 'screen',
+  'tv', 'display', 'led wall', 'sound card', 'capture card', 'mic', 'microphone'
+];
+
+const WINDOWS_LAPTOP_BRANDS = [
+  'hp', 'dell', 'asus', 'acer', 'lenovo', 'thinkpad', 'msi', 'samsung', 'intel', 'amd', 'ryzen', 'windows'
+];
+
 /**
  * Returns 'MacBook' or 'Windows Laptop' for Laptop-type assets.
+ * Also optionally appends the original sub-identifier in parentheses e.g. 'MacBook (M-17)'.
  * Returns null for non-laptop assets so they are completely unaffected.
  */
 function getLaptopSubGroup(
   arg1?: Asset | string | null,
   type?: string,
   sku?: string,
-  description?: string
+  description?: string,
+  includeSubId: boolean = false
 ): string | null {
   let an = '';
   let t = '';
@@ -29,26 +42,54 @@ function getLaptopSubGroup(
     d = (arg1.description || '').trim();
   }
 
-  // Direct aliasName check for exact matches in database
-  if (an === 'Apple MacBook' || an === 'MacBook') return 'MacBook';
-  if (an === 'Windows Laptop') return 'Windows Laptop';
+  const combined = `${an} ${s} ${d}`.toLowerCase();
 
-  // Check if asset is a laptop by type, aliasName, sku, or description
-  const itTypes = ['laptops', 'it & networking', 'computers & servers'];
-  const nameCombo = `${an} ${s} ${d}`.toLowerCase();
-  
-  const isLaptopType = itTypes.includes(t.toLowerCase());
-  const isLaptopName = nameCombo.includes('laptop') || nameCombo.includes('macbook') || nameCombo.includes('vivobook') || nameCombo.includes('thinkpad');
-
-  if (!isLaptopType && !isLaptopName) return null;
-
-  // Classify MacBook vs Windows Laptop
-  const checkStr = (an || s).toUpperCase();
-  if (checkStr.startsWith('M') || checkStr.includes('MAC') || checkStr.includes('APPLE') || checkStr.includes('IMAC')) {
-    return 'MacBook';
+  // 1. Exclusion Check: if it contains any non-laptop keyword, it is NOT a laptop!
+  if (EXCLUDED_LAPTOP_KEYWORDS.some(k => combined.includes(k))) {
+    return null;
   }
 
-  return 'Windows Laptop';
+  // 2. Inclusion Check: is it a laptop?
+  const itTypes = ['laptops', 'it & networking', 'computers & servers'];
+  const explicitAliases = ['apple macbook', 'windows laptop', 'macbook'];
+  const laptopKeywords = ['laptop', 'macbook', 'vivobook', 'thinkpad', 'ideapad', 'pavilion', 'inspiron', 'latitude', 'precision', 'zenbook', 'tuf_fx', 'omen', 'helios', 'victus'];
+
+  const isLaptopType = itTypes.includes(t.toLowerCase());
+  const isExplicit = explicitAliases.includes(an.toLowerCase());
+  const isLaptopName = laptopKeywords.some(k => combined.includes(k));
+
+  let isLaptop = isExplicit || isLaptopName;
+  if (!isLaptop && isLaptopType) {
+    const anUpper = an.toUpperCase();
+    if (anUpper.startsWith('M-') || anUpper.startsWith('AM-') || anUpper.startsWith('M') || anUpper.startsWith('AM') || /^\d+$/.test(an)) {
+      isLaptop = true;
+    }
+  }
+
+  if (!isLaptop) return null;
+
+  // 3. Classify MacBook vs Windows Laptop
+  let isMac = false;
+  if (WINDOWS_LAPTOP_BRANDS.some(b => combined.includes(b))) {
+    isMac = false;
+  } else if (combined.includes('macbook') || combined.includes('apple') || combined.includes('imac')) {
+    isMac = true;
+  } else {
+    const checkStr = (an || s).toUpperCase();
+    if (checkStr.startsWith('M-') || checkStr.startsWith('M1') || checkStr.startsWith('M2') || checkStr.startsWith('M3') || checkStr.startsWith('M4')) {
+      isMac = true;
+    }
+  }
+
+  const group = isMac ? 'MacBook' : 'Windows Laptop';
+
+  if (!includeSubId) return group;
+
+  const subId = (an && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(an)) 
+    ? an 
+    : (s.includes('-') ? s.split('-').slice(0, -1).join('-') : s);
+
+  return subId ? `${group} (${subId})` : group;
 }
 
 interface ChallanViewProps {

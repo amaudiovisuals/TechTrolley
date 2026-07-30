@@ -29,15 +29,28 @@ function getSkuFamily(sku: string): string {
 
 const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 
+const EXCLUDED_LAPTOP_KEYWORDS = [
+  'connector', 'modem', 'monitor', 'mouse', 'server', 'printer', 'ups', 
+  'router', 'hub', 'cable', 'splitter', 'switcher', 'switch', 'adapter', 'talkback', 
+  'handycam', 'projector', 'speaker', 'mixer', 'camera', 'scanner', 'screen',
+  'tv', 'display', 'led wall', 'sound card', 'capture card', 'mic', 'microphone'
+];
+
+const WINDOWS_LAPTOP_BRANDS = [
+  'hp', 'dell', 'asus', 'acer', 'lenovo', 'thinkpad', 'msi', 'samsung', 'intel', 'amd', 'ryzen', 'windows'
+];
+
 /**
  * Returns a display-level sub-group label for laptop assets ('MacBook' or 'Windows Laptop').
+ * Also optionally appends the original sub-identifier in parentheses e.g. 'MacBook (M-17)'.
  * Returns null for non-laptop assets — leaves them completely unchanged.
  */
 function getLaptopSubGroup(
   arg1?: Asset | string | null,
   type?: string,
   sku?: string,
-  description?: string
+  description?: string,
+  includeSubId: boolean = false
 ): string | null {
   let an = '';
   let t = '';
@@ -56,26 +69,55 @@ function getLaptopSubGroup(
     d = (arg1.description || '').trim();
   }
 
-  // Direct aliasName check for exact matches in database
-  if (an === 'Apple MacBook' || an === 'MacBook') return 'MacBook';
-  if (an === 'Windows Laptop') return 'Windows Laptop';
+  const combined = `${an} ${s} ${d}`.toLowerCase();
 
-  // Check if asset is a laptop by type, aliasName, sku, or description
-  const itTypes = ['laptops', 'it & networking', 'computers & servers'];
-  const nameCombo = `${an} ${s} ${d}`.toLowerCase();
-  
-  const isLaptopType = itTypes.includes(t.toLowerCase());
-  const isLaptopName = nameCombo.includes('laptop') || nameCombo.includes('macbook') || nameCombo.includes('vivobook') || nameCombo.includes('thinkpad');
-
-  if (!isLaptopType && !isLaptopName) return null;
-
-  // Classify MacBook vs Windows Laptop
-  const checkStr = (an || s).toUpperCase();
-  if (checkStr.startsWith('M') || checkStr.includes('MAC') || checkStr.includes('APPLE') || checkStr.includes('IMAC')) {
-    return 'MacBook';
+  // 1. Exclusion Check: if it contains any non-laptop keyword, it is NOT a laptop!
+  if (EXCLUDED_LAPTOP_KEYWORDS.some(k => combined.includes(k))) {
+    return null;
   }
 
-  return 'Windows Laptop';
+  // 2. Inclusion Check: is it a laptop?
+  const itTypes = ['laptops', 'it & networking', 'computers & servers'];
+  const explicitAliases = ['apple macbook', 'windows laptop', 'macbook'];
+  const laptopKeywords = ['laptop', 'macbook', 'vivobook', 'thinkpad', 'ideapad', 'pavilion', 'inspiron', 'latitude', 'precision', 'zenbook', 'tuf_fx', 'omen', 'helios', 'victus'];
+
+  const isLaptopType = itTypes.includes(t.toLowerCase());
+  const isExplicit = explicitAliases.includes(an.toLowerCase());
+  const isLaptopName = laptopKeywords.some(k => combined.includes(k));
+
+  let isLaptop = isExplicit || isLaptopName;
+  if (!isLaptop && isLaptopType) {
+    const anUpper = an.toUpperCase();
+    if (anUpper.startsWith('M-') || anUpper.startsWith('AM-') || anUpper.startsWith('M') || anUpper.startsWith('AM') || /^\d+$/.test(an)) {
+      isLaptop = true;
+    }
+  }
+
+  if (!isLaptop) return null;
+
+  // 3. Classify MacBook vs Windows Laptop
+  let isMac = false;
+  if (WINDOWS_LAPTOP_BRANDS.some(b => combined.includes(b))) {
+    isMac = false;
+  } else if (combined.includes('macbook') || combined.includes('apple') || combined.includes('imac')) {
+    isMac = true;
+  } else {
+    const checkStr = (an || s).toUpperCase();
+    if (checkStr.startsWith('M-') || checkStr.startsWith('M1') || checkStr.startsWith('M2') || checkStr.startsWith('M3') || checkStr.startsWith('M4')) {
+      isMac = true;
+    }
+  }
+
+  const group = isMac ? 'MacBook' : 'Windows Laptop';
+
+  if (!includeSubId) return group;
+
+  // Determine sub-identifier (the old alias name or SKU model like 105, M-17, etc.)
+  const subId = (an && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(an)) 
+    ? an 
+    : (s.includes('-') ? s.split('-').slice(0, -1).join('-') : s);
+
+  return subId ? `${group} (${subId})` : group;
 }
 
 const ScanPrompt: React.FC<{ title?: string, subtitle?: string }> = ({
@@ -3953,7 +3995,7 @@ const App: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-black text-sky-400 font-mono uppercase truncate">{asset.sku}</p>
                     <div className="flex items-center gap-2 mt-1 min-w-0">
-                      <h4 className="text-base font-black text-white uppercase truncate flex-1">{getLaptopSubGroup(asset) || asset.aliasName || 'Untitled Asset'}</h4>
+                      <h4 className="text-base font-black text-white uppercase truncate flex-1">{getLaptopSubGroup(asset, undefined, undefined, undefined, true) || asset.aliasName || 'Untitled Asset'}</h4>
                       {asset.sub_assets && asset.sub_assets.length > 0 && (
                         <span className="w-5 h-5 bg-sky-500/20 text-sky-400 rounded-lg flex items-center justify-center text-[8px]" title="Main Asset with Components">
                           <i className="fa-solid fa-boxes-stacked" />
@@ -4024,7 +4066,7 @@ const App: React.FC = () => {
                     <td className="px-6 py-6">
                       <div className="flex items-center gap-3">
                         <div>
-                          <p className="font-black text-white text-base uppercase truncate max-w-[200px]">{getLaptopSubGroup(asset) || asset.aliasName || '-'}</p>
+                          <p className="font-black text-white text-base uppercase truncate max-w-[200px]">{getLaptopSubGroup(asset, undefined, undefined, undefined, true) || asset.aliasName || '-'}</p>
                           <p className="text-[9px] text-slate-500 font-black mt-1 uppercase truncate">MAC: {asset.macAddress || 'N/A'}</p>
                         </div>
                         {asset.sub_assets && asset.sub_assets.length > 0 && (
