@@ -1655,11 +1655,58 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLogistics = async () => {
-    const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees, staged_assets, pdf_document, ...restConferenceData } = conferenceFormData;
+    const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees, staged_assets, pdf_document, consumable_data, ...restConferenceData } = conferenceFormData;
     
     if (!id) {
       handleSaveConference();
       return;
+    }
+
+    // Process consumable settlements and deduct consumed quantity from inventory DB
+    const updatedConsumableData = { ...(consumable_data || {}) };
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    let hasConsumableSettlement = false;
+
+    for (const [assetId, cData] of Object.entries(updatedConsumableData) as [string, any][]) {
+      if (cData && Number(cData.requested || 0) > 0 && cData.status !== 'settled') {
+        const dispatched = Number(cData.requested || 0);
+        const returned = Number(cData.returned ?? dispatched);
+        const consumed = Math.max(0, dispatched - returned);
+
+        updatedConsumableData[assetId] = {
+          ...cData,
+          returned,
+          consumed,
+          status: 'settled'
+        };
+        hasConsumableSettlement = true;
+
+        if (consumed > 0) {
+          const foundAsset = pool.find(a => String(a.id) === String(assetId));
+          if (foundAsset) {
+            const newStock = Math.max(0, (foundAsset.quantity || 0) - consumed);
+            try {
+              await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
+                method: 'PATCH',
+                body: JSON.stringify({ quantity: newStock })
+              });
+              setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { ...a, quantity: newStock } : a));
+              if (allAssetsRef.current) {
+                allAssetsRef.current = allAssetsRef.current.map(a => String(a.id) === String(assetId) ? { ...a, quantity: newStock } : a);
+              }
+            } catch (e) {
+              console.error(`Failed to update consumable inventory stock for asset #${assetId}:`, e);
+            }
+          }
+        }
+      }
+    }
+
+    if (hasConsumableSettlement) {
+      setConferenceFormData((prev: any) => ({
+        ...prev,
+        consumable_data: updatedConsumableData
+      }));
     }
 
     try {
@@ -1669,11 +1716,12 @@ const App: React.FC = () => {
         body.append('vehicle_number', vehicle_number || '');
         body.append('driver_phone', driver_phone || '');
         body.append('pdf_document', pdfFile);
+        body.append('consumable_data', JSON.stringify(updatedConsumableData));
         
         // Append remaining core text fields so edits don't get lost
         Object.entries(restConferenceData).forEach(([k, v]) => {
           if (v !== undefined && v !== null) {
-            body.append(k, typeof v === 'string' ? v : v.toString());
+            body.append(k, typeof v === 'string' ? v : JSON.stringify(v));
           }
         });
 
@@ -1689,6 +1737,7 @@ const App: React.FC = () => {
           end_date: restConferenceData.end_date || null,
           vehicle_number,
           driver_phone,
+          consumable_data: updatedConsumableData,
           assets: (assetIds || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
           requirements: (requirements || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
           crosscheck_assets: (crosscheck_assets || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
@@ -7086,9 +7135,9 @@ const App: React.FC = () => {
                                                     <i className="fa-solid fa-cubes"></i>
                                                   </div>
                                                   <div className="min-w-0 flex-1">
-                                                    <p className="font-black uppercase text-xs text-slate-800 truncate">{aliasName}</p>
-                                                    <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mt-0.5">
-                                                      Consumable • Stock: {asset?.quantity ?? 'N/A'}
+                                                    <p style={{ color: '#0f172a' }} className="font-black uppercase text-sm text-slate-900 truncate">{aliasName}</p>
+                                                    <p className="text-[9px] font-bold text-amber-700 uppercase tracking-wider mt-0.5">
+                                                      Consumable • Stock Available: {asset?.quantity ?? 'N/A'}
                                                     </p>
                                                   </div>
                                                 </div>
@@ -7445,7 +7494,7 @@ const App: React.FC = () => {
                           
                           {(() => {
                             const consumableEntries = Object.entries(conferenceFormData.consumable_data || {})
-                              .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0);
+                              .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0 && data?.status !== 'settled');
 
                             if (consumableEntries.length === 0) return null;
 
@@ -7471,15 +7520,15 @@ const App: React.FC = () => {
                                     const consumedQty = Math.max(0, dispatchedQty - returnedQty);
 
                                     return (
-                                      <div key={`c-cross-${assetId}`} className="rounded-2xl border border-amber-200 bg-amber-50/20 p-4 space-y-3 shadow-sm">
+                                      <div key={`c-cross-${assetId}`} className="rounded-2xl border border-amber-300 bg-amber-50/40 p-4 space-y-3 shadow-sm">
                                         <div className="flex items-center justify-between gap-3">
                                           <div className="flex items-center gap-3 min-w-0 flex-1">
-                                            <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-xs font-black shrink-0">
+                                            <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-xs font-black shrink-0 shadow-sm">
                                               <i className="fa-solid fa-cubes"></i>
                                             </div>
-                                            <span className="font-black uppercase text-xs text-slate-900 truncate">{aliasName}</span>
+                                            <span style={{ color: '#0f172a' }} className="font-black uppercase text-sm text-slate-900 truncate flex-1">{aliasName}</span>
                                           </div>
-                                          <span className="px-3 py-1 bg-sky-100 text-sky-700 text-[10px] font-black rounded-full uppercase">
+                                          <span className="px-3 py-1 bg-sky-100 text-sky-800 text-[10px] font-black rounded-full uppercase shrink-0">
                                             Dispatched: {dispatchedQty} Units
                                           </span>
                                         </div>
