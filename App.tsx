@@ -2880,17 +2880,24 @@ const App: React.FC = () => {
 
 
   const handleDeleteAsset = (id: string) => {
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    const targetAsset = pool.find(a => String(a.id) === String(id));
+    if (targetAsset && (targetAsset.status === AssetStatus.IN_USE || targetAsset.status === AssetStatus.CROSSCHECK)) {
+      alert(`🔒 Cannot delete "${targetAsset.aliasName || targetAsset.sku}" because it is currently IN USE by an active conference.`);
+      return;
+    }
+
     if (!confirm("Are you sure you want to delete this asset?")) return;
 
-    console.log("Attempting to delete asset with ID:", id);
-    const url = `${API_BASE}/api/assets/${id}/`;
-    console.log("DELETE URL:", url);
+    setAssets(prev => prev.filter(a => String(a.id) !== String(id)));
+    allAssetsRef.current = allAssetsRef.current.filter(a => String(a.id) !== String(id));
 
+    const url = `${API_BASE}/api/assets/${id}/`;
     apiFetch(url, {
       method: 'DELETE'
     })
       .then(async res => {
-        if (res.ok) {
+        if (res.ok || res.status === 404) {
           fetchAssets();
         } else {
           let errText = res.statusText;
@@ -2904,12 +2911,18 @@ const App: React.FC = () => {
       })
       .catch(err => {
         console.error("Network error deleting asset:", err);
-        alert(`Failed to connect to server for deletion: ${err.message}`);
       });
   };
 
   const handleUpdateConsumableQuantity = async (assetId: string | number, newQuantity: number) => {
     if (newQuantity < 0) return;
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    const targetAsset = pool.find(a => String(a.id) === String(assetId));
+    if (targetAsset && (targetAsset.status === AssetStatus.IN_USE || targetAsset.status === AssetStatus.CROSSCHECK)) {
+      showScanToast(`🔒 Cannot edit quantity of "${targetAsset.aliasName || targetAsset.sku}" while it is In Use`, 'warning');
+      return;
+    }
+
     try {
       const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
         method: 'PATCH',
@@ -4160,39 +4173,60 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-center text-[10px]">
                   <p className="text-slate-500 font-bold uppercase">{asset.type}</p>
                   {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
-                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <span className="text-[9px] font-black text-slate-400 uppercase mr-1">Qty:</span>
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateConsumableQuantity(asset.id, Math.max(0, (asset.quantity || 0) - 1))}
-                        className="w-6 h-6 bg-slate-800 text-slate-300 rounded flex items-center justify-center font-bold text-xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        value={asset.quantity ?? 0}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          if (!isNaN(val) && val >= 0) {
-                            handleUpdateConsumableQuantity(asset.id, val);
-                          }
-                        }}
-                        className="w-12 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-center text-xs font-black text-amber-400"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleUpdateConsumableQuantity(asset.id, (asset.quantity || 0) + 1)}
-                        className="w-6 h-6 bg-slate-800 text-slate-300 rounded flex items-center justify-center font-bold text-xs"
-                      >
-                        +
-                      </button>
-                    </div>
+                    asset.status === AssetStatus.AVAILABLE ? (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[9px] font-black text-slate-400 uppercase mr-1">Qty:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateConsumableQuantity(asset.id, Math.max(0, (asset.quantity || 0) - 1))}
+                          className="w-6 h-6 bg-slate-800 text-slate-300 rounded flex items-center justify-center font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          value={asset.quantity ?? 0}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val) && val >= 0) {
+                              handleUpdateConsumableQuantity(asset.id, val);
+                            }
+                          }}
+                          className="w-12 bg-slate-950 border border-slate-700 rounded px-1 py-0.5 text-center text-xs font-black text-amber-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateConsumableQuantity(asset.id, (asset.quantity || 0) + 1)}
+                          className="w-6 h-6 bg-slate-800 text-slate-300 rounded flex items-center justify-center font-bold text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase">Qty:</span>
+                        <span className="text-xs font-black text-amber-400">{asset.quantity || 1}</span>
+                        <span className="text-[8px] font-bold text-orange-400 uppercase tracking-tighter">(In Use)</span>
+                      </div>
+                    )
                   ) : (
                     <div className="flex gap-4">
                       <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteAsset(asset.id); }} className="text-red-400"><i className="fa-solid fa-trash"></i></button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (asset.status !== AssetStatus.AVAILABLE) {
+                            alert(`🔒 Cannot delete "${asset.aliasName || asset.sku}" while it is In Use by an active event.`);
+                            return;
+                          }
+                          handleDeleteAsset(asset.id);
+                        }}
+                        className={asset.status !== AssetStatus.AVAILABLE ? "text-slate-600 cursor-not-allowed" : "text-red-400"}
+                        title={asset.status !== AssetStatus.AVAILABLE ? "Cannot delete asset while In Use" : "Delete Asset"}
+                      >
+                        <i className="fa-solid fa-trash"></i>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -4256,36 +4290,43 @@ const App: React.FC = () => {
                     </td>
                     <td className="px-6 py-6 text-center">
                       {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
-                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateConsumableQuantity(asset.id, Math.max(0, (asset.quantity || 0) - 1))}
-                            className="w-7 h-7 bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-300 rounded-lg flex items-center justify-center font-bold text-xs transition"
-                            title="Decrease stock"
-                          >
-                            -
-                          </button>
-                          <input
-                            type="number"
-                            min="0"
-                            value={asset.quantity ?? 0}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10);
-                              if (!isNaN(val) && val >= 0) {
-                                handleUpdateConsumableQuantity(asset.id, val);
-                              }
-                            }}
-                            className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs font-black text-amber-400 outline-none focus:border-amber-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateConsumableQuantity(asset.id, (asset.quantity || 0) + 1)}
-                            className="w-7 h-7 bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-300 rounded-lg flex items-center justify-center font-bold text-xs transition"
-                            title="Increase stock"
-                          >
-                            +
-                          </button>
-                        </div>
+                        asset.status === AssetStatus.AVAILABLE ? (
+                          <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateConsumableQuantity(asset.id, Math.max(0, (asset.quantity || 0) - 1))}
+                              className="w-7 h-7 bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-300 rounded-lg flex items-center justify-center font-bold text-xs transition"
+                              title="Decrease stock"
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              value={asset.quantity ?? 0}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val) && val >= 0) {
+                                  handleUpdateConsumableQuantity(asset.id, val);
+                                }
+                              }}
+                              className="w-16 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-center text-xs font-black text-amber-400 outline-none focus:border-amber-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateConsumableQuantity(asset.id, (asset.quantity || 0) + 1)}
+                              className="w-7 h-7 bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-300 rounded-lg flex items-center justify-center font-bold text-xs transition"
+                              title="Increase stock"
+                            >
+                              +
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center">
+                            <span className="text-xs font-black text-amber-400">{asset.quantity || 1}</span>
+                            <span className="text-[8px] font-bold text-orange-400 uppercase tracking-tighter">(In Use)</span>
+                          </div>
+                        )
                       ) : (
                         <p className="text-xs font-black text-white">{asset.quantity || 1}</p>
                       )}
@@ -4305,8 +4346,21 @@ const App: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-6 text-right space-x-4">
-                      <button onClick={() => openEditAssetForm(asset)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
-                      <button onClick={() => handleDeleteAsset(asset.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
+                      <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (asset.status !== AssetStatus.AVAILABLE) {
+                            alert(`🔒 Cannot delete "${asset.aliasName || asset.sku}" while it is In Use by an active event.`);
+                            return;
+                          }
+                          handleDeleteAsset(asset.id);
+                        }}
+                        className={asset.status !== AssetStatus.AVAILABLE ? "text-slate-600 cursor-not-allowed" : "text-red-400 hover:text-white"}
+                        title={asset.status !== AssetStatus.AVAILABLE ? "Cannot delete asset while In Use" : "Delete Asset"}
+                      >
+                        <i className="fa-solid fa-trash"></i>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -6978,92 +7032,6 @@ const App: React.FC = () => {
                                       <p className="text-center text-[10px] text-slate-400 font-bold uppercase mt-4 tracking-widest italic animate-pulse">Finalize items to clear current packing station</p>
                                     </div>
                                   )}
-                                  {(() => {
-                                    const consumableEntries = Object.entries(conferenceFormData.consumable_data || {})
-                                      .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0);
-
-                                    if (consumableEntries.length === 0) return null;
-
-                                    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-
-                                    return (
-                                      <div className="space-y-4 mt-6 pt-6 border-t border-amber-200/50">
-                                        <div className="flex items-center justify-between px-1">
-                                          <h4 className="text-[10px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-2">
-                                            <i className="fa-solid fa-cubes"></i> Consumables Requirements
-                                          </h4>
-                                          <span className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
-                                            {consumableEntries.length} ITEMS
-                                          </span>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                          {consumableEntries.map(([assetId, data]: [string, any]) => {
-                                            const asset = pool.find(a => String(a.id) === String(assetId));
-                                            const aliasName = asset?.aliasName || asset?.sku || `Consumable #${assetId}`;
-                                            const requestedQty = Number(data.requested || 0);
-                                            const maxAvailable = asset?.quantity || 999;
-
-                                            return (
-                                              <div key={`c-req-${assetId}`} className="rounded-2xl border border-amber-200 bg-amber-50/20 p-4 flex items-center justify-between shadow-sm">
-                                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                  <div className="w-8 h-8 bg-amber-500 text-white rounded-xl flex items-center justify-center text-xs font-black shrink-0 shadow-sm">
-                                                    <i className="fa-solid fa-cubes"></i>
-                                                  </div>
-                                                  <div className="min-w-0 flex-1">
-                                                    <p className="font-black uppercase text-xs text-slate-800 truncate">{aliasName}</p>
-                                                    <p className="text-[9px] font-bold text-amber-600 uppercase tracking-wider mt-0.5">
-                                                      Consumable • Stock: {asset?.quantity ?? 'N/A'}
-                                                    </p>
-                                                  </div>
-                                                </div>
-
-                                                <div className="flex items-center gap-3 shrink-0">
-                                                  <div className="flex items-center bg-white border border-amber-300 rounded-full font-black text-xs overflow-hidden shadow-sm">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleUpdateRequestedConsumable(assetId, -1)}
-                                                      className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
-                                                      title="Decrease quantity"
-                                                    >
-                                                      <i className="fa-solid fa-minus text-[9px]"></i>
-                                                    </button>
-                                                    <span className="px-2.5 text-slate-800 font-extrabold min-w-[2rem] text-center text-xs">
-                                                      {requestedQty}
-                                                    </span>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => {
-                                                        if (requestedQty >= maxAvailable) {
-                                                          showScanToast(`⚠️ Capped at max available stock (${maxAvailable})`, 'warning');
-                                                          return;
-                                                        }
-                                                        handleUpdateRequestedConsumable(assetId, 1);
-                                                      }}
-                                                      className="px-2.5 py-1 text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
-                                                      title="Increase quantity"
-                                                    >
-                                                      <i className="fa-solid fa-plus text-[9px]"></i>
-                                                    </button>
-                                                  </div>
-
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => handleUpdateRequestedConsumable(assetId, -requestedQty)}
-                                                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0"
-                                                    title="Remove consumable requirement"
-                                                  >
-                                                    <i className="fa-solid fa-trash-can text-[9px]"></i>
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    );
-                                  })()}
-
                                   {(() => {
                                     const consumableEntries = Object.entries(conferenceFormData.consumable_data || {})
                                       .filter(([_, data]: [string, any]) => Number(data?.requested || 0) > 0);
