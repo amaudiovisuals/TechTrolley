@@ -2206,7 +2206,18 @@ const App: React.FC = () => {
       const assetIdStr = quantityAsset.id.toString();
       const currentData = { ...(conferenceFormData.consumable_data || {}) };
       const existing = currentData[assetIdStr] || { requested: 0, returned: 0, consumed: 0 };
-      const newRequested = (existing.requested || 0) + selectedQuantity;
+      const currentReq = Number(existing.requested || 0);
+      const totalStock = Number(quantityAsset.quantity || 0);
+      const maxAvailableToAssign = Math.max(0, totalStock - currentReq);
+
+      if (maxAvailableToAssign <= 0) {
+        showScanToast(`⚠️ Out of stock! All ${totalStock} unit(s) of "${quantityAsset.aliasName || quantityAsset.sku}" are already assigned to this request.`, 'warning');
+        setShowQuantityModal(false);
+        return;
+      }
+
+      const validAdd = Math.min(selectedQuantity, maxAvailableToAssign);
+      const newRequested = currentReq + validAdd;
 
       currentData[assetIdStr] = {
         requested: newRequested,
@@ -2220,7 +2231,7 @@ const App: React.FC = () => {
         consumable_data: currentData
       }));
 
-      showScanToast(`✅ Added ${selectedQuantity} unit(s) of "${quantityAsset.aliasName || quantityAsset.sku}" to Consumables`, 'success');
+      showScanToast(`✅ Added ${validAdd} unit(s) of "${quantityAsset.aliasName || quantityAsset.sku}" to Consumables (Total: ${newRequested})`, 'success');
       setShowQuantityModal(false);
 
       if (conferenceFormData.id) {
@@ -2473,10 +2484,20 @@ const App: React.FC = () => {
         triggerAssetConferenceAction(asset, 'remove');
       } else if (assetTab === 'assigned') {
         if (asset.type === AssetCategory.CONSUMABLES) {
+          const currentReq = Number(conferenceFormData.consumable_data?.[String(asset.id)]?.requested || 0);
+          const totalStock = Number(asset.quantity || 0);
+          const availableToAssign = Math.max(0, totalStock - currentReq);
+
+          if (availableToAssign <= 0) {
+            showScanToast(`⚠️ Out of stock! All ${totalStock} unit(s) of "${asset.aliasName || asset.sku}" are already assigned to this request.`, 'warning');
+            setQuickAddInput('');
+            return;
+          }
+
           setQuantityAsset(asset);
-          setSelectedQuantity(1);
+          setSelectedQuantity(Math.min(1, availableToAssign));
           setShowQuantityModal(true);
-          showScanToast(`📦 Scanned Consumable: "${asset.aliasName || asset.sku}"`, 'success');
+          showScanToast(`📦 Scanned Consumable: "${asset.aliasName || asset.sku}" (${availableToAssign} remaining available)`, 'success');
           setQuickAddInput('');
           return;
         }
@@ -7895,24 +7916,42 @@ const App: React.FC = () => {
                     const q = normalizeSearch(consumablesPickerSearchQuery);
                     return normalizeSearch(a.aliasName || a.sku || '').includes(q);
                   })
-                  .map(a => (
-                    <button
-                      key={a.id}
-                      onClick={() => {
-                        setQuantityAsset(a);
-                        setSelectedQuantity(a.quantity);
-                        setShowConsumablesPicker(false);
-                        setShowQuantityModal(true);
-                      }}
-                      className="w-full flex items-center justify-between p-6 bg-slate-950/50 border border-slate-800 rounded-2xl hover:border-amber-500 group transition animate-in fade-in slide-in-from-left-4"
-                    >
-                      <div className="text-left">
-                        <p className="text-sm font-black text-white uppercase group-hover:text-amber-500 transition">{a.aliasName || a.sku}</p>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Stock Level: <span className="text-slate-300">{a.quantity} Units</span></p>
-                      </div>
-                      <i className="fa-solid fa-chevron-right text-slate-700 group-hover:text-amber-500 group-hover:translate-x-1 transition"></i>
-                    </button>
-                  ))}
+                  .map(a => {
+                    const currentReq = Number(conferenceFormData.consumable_data?.[String(a.id)]?.requested || 0);
+                    const availableStock = Math.max(0, (a.quantity || 0) - currentReq);
+
+                    return (
+                      <button
+                        key={a.id}
+                        disabled={availableStock <= 0}
+                        onClick={() => {
+                          if (availableStock <= 0) return;
+                          setQuantityAsset(a);
+                          setSelectedQuantity(Math.min(1, availableStock));
+                          setShowConsumablesPicker(false);
+                          setShowQuantityModal(true);
+                        }}
+                        className={`w-full flex items-center justify-between p-6 bg-slate-950/50 border rounded-2xl transition animate-in fade-in slide-in-from-left-4 ${
+                          availableStock <= 0
+                            ? 'border-slate-800/50 opacity-40 cursor-not-allowed'
+                            : 'border-slate-800 hover:border-amber-500 group cursor-pointer'
+                        }`}
+                      >
+                        <div className="text-left">
+                          <p className="text-sm font-black text-white uppercase group-hover:text-amber-500 transition">{a.aliasName || a.sku}</p>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                            Available Stock: <span className="text-amber-400 font-extrabold">{availableStock} Units</span>
+                            {currentReq > 0 && <span className="text-slate-400 font-medium ml-2">({currentReq} in this request)</span>}
+                          </p>
+                        </div>
+                        {availableStock > 0 ? (
+                          <i className="fa-solid fa-chevron-right text-slate-700 group-hover:text-amber-500 group-hover:translate-x-1 transition"></i>
+                        ) : (
+                          <span className="px-3 py-1 bg-red-500/10 border border-red-500/20 text-red-400 text-[9px] font-black rounded-full uppercase">All Assigned</span>
+                        )}
+                      </button>
+                    );
+                  })}
 
                 {assets.filter(a => a.type === AssetCategory.CONSUMABLES && a.status === 'Available' && (a.quantity || 0) > 0).length === 0 && (
                   <div className="py-12 text-center space-y-4">
@@ -7936,80 +7975,99 @@ const App: React.FC = () => {
       )}
 
       {/* Partial Quantity Selection Modal */}
-      {showQuantityModal && quantityAsset && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300"></div>
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-8 border-b border-slate-800 bg-slate-950/30 flex justify-between items-center">
-              <div>
-                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Select Quantity</h3>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
-                  Item: <span className="text-amber-500">{quantityAsset.aliasName || quantityAsset.sku}</span>
-                </p>
-              </div>
-              <button onClick={() => setShowQuantityModal(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:text-white transition">
-                <i className="fa-solid fa-times text-xl"></i>
-              </button>
-            </div>
+      {showQuantityModal && quantityAsset && (() => {
+        const isConsumableAsset = quantityAsset.type === AssetCategory.CONSUMABLES;
+        const currentReqQty = isConsumableAsset
+          ? Number(conferenceFormData.consumable_data?.[String(quantityAsset.id)]?.requested || 0)
+          : 0;
+        const effectiveMax = isConsumableAsset
+          ? Math.max(0, (quantityAsset.quantity || 0) - currentReqQty)
+          : quantityAsset.quantity;
 
-            <div className="p-10 space-y-10">
-              <div className="bg-slate-950/50 p-8 rounded-3xl border border-slate-800 text-center space-y-4">
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Items</p>
-                <p className="text-6xl font-black text-white tracking-widest">{quantityAsset.quantity}</p>
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300"></div>
+            <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="p-8 border-b border-slate-800 bg-slate-950/30 flex justify-between items-center">
+                <div>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Select Quantity</h3>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">
+                    Item: <span className="text-amber-500">{quantityAsset.aliasName || quantityAsset.sku}</span>
+                  </p>
+                </div>
+                <button onClick={() => setShowQuantityModal(false)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:text-white transition">
+                  <i className="fa-solid fa-times text-xl"></i>
+                </button>
               </div>
 
-              <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Taking to Conference</label>
-                  <span className="px-4 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[10px] font-black uppercase">
-                    Splitting stock
-                  </span>
+              <div className="p-10 space-y-10">
+                <div className="bg-slate-950/50 p-8 rounded-3xl border border-slate-800 text-center space-y-2">
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available to Request</p>
+                  <p className="text-6xl font-black text-amber-400 tracking-widest">{effectiveMax}</p>
+                  {isConsumableAsset && currentReqQty > 0 && (
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                      (Total Stock: {quantityAsset.quantity} • Already Requested: {currentReqQty})
+                    </p>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-6">
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Quantity to Add</label>
+                    <span className="px-4 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[10px] font-black uppercase">
+                      Stock Assignment
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-6">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))}
+                      className="w-20 h-20 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-2xl border border-slate-700 transition text-2xl"
+                    >
+                      <i className="fa-solid fa-minus"></i>
+                    </button>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max={effectiveMax}
+                      value={selectedQuantity > effectiveMax ? (effectiveMax > 0 ? effectiveMax : 1) : selectedQuantity}
+                      onChange={(e) => setSelectedQuantity(Math.min(effectiveMax, Math.max(1, parseInt(e.target.value) || 1)))}
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-3xl p-6 text-center text-4xl font-black text-white outline-none focus:border-amber-500 transition"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedQuantity(Math.min(effectiveMax, selectedQuantity + 1))}
+                      className="w-20 h-20 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-2xl border border-slate-700 transition text-2xl"
+                    >
+                      <i className="fa-solid fa-plus"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 pt-4">
                   <button
-                    onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))}
-                    className="w-20 h-20 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-2xl border border-slate-700 transition text-2xl"
+                    type="button"
+                    onClick={() => setShowQuantityModal(false)}
+                    className="flex-1 py-5 bg-slate-800 text-slate-400 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-700 hover:text-white transition"
                   >
-                    <i className="fa-solid fa-minus"></i>
+                    Cancel
                   </button>
-
-                  <input
-                    type="number"
-                    min="1"
-                    max={quantityAsset.quantity}
-                    value={selectedQuantity}
-                    onChange={(e) => setSelectedQuantity(Math.min(quantityAsset.quantity, Math.max(1, parseInt(e.target.value) || 1)))}
-                    className="flex-1 bg-slate-950 border border-slate-800 rounded-3xl p-6 text-center text-4xl font-black text-white outline-none focus:border-amber-500 transition"
-                  />
-
                   <button
-                    onClick={() => setSelectedQuantity(Math.min(quantityAsset.quantity, selectedQuantity + 1))}
-                    className="w-20 h-20 flex items-center justify-center bg-slate-800 hover:bg-slate-700 text-white rounded-2xl border border-slate-700 transition text-2xl"
+                    type="button"
+                    onClick={submitQuantityAssignment}
+                    className="flex-[2] py-5 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-amber-400 transition shadow-lg shadow-amber-500/20"
                   >
-                    <i className="fa-solid fa-plus"></i>
+                    Add <span className="mx-1 opacity-50">•</span> {Math.min(selectedQuantity, effectiveMax)} {Math.min(selectedQuantity, effectiveMax) === 1 ? 'Unit' : 'Units'}
                   </button>
                 </div>
-              </div>
-
-              <div className="flex gap-4 pt-4">
-                <button
-                  onClick={() => setShowQuantityModal(false)}
-                  className="flex-1 py-5 bg-slate-800 text-slate-400 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-700 hover:text-white transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitQuantityAssignment}
-                  className="flex-[2] py-5 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-amber-400 transition shadow-lg shadow-amber-500/20"
-                >
-                  Add <span className="mx-1 opacity-50">•</span> {selectedQuantity} {selectedQuantity === 1 ? 'Unit' : 'Units'}
-                </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <style>{`
         .form-input-night { width: 100%; background: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.25rem; color: #fff; font-weight: 900; text-transform: uppercase; outline: none; transition: border-color 0.2s; }
