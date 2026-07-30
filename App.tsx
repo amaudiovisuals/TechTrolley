@@ -181,17 +181,17 @@ type AssetView = 'List' | 'Form' | 'Details';
 type EmployeeView = 'List' | 'Form';
 type ConferenceView = 'List' | 'Form' | 'Details';
 
-const GlobalQRPreview: React.FC = () => {
+const GlobalQRPreview: React.FC<{ value?: string }> = ({ value = GLOBAL_CONSUMABLES_SKU }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (canvasRef.current) {
-      QRCode.toCanvas(canvasRef.current, GLOBAL_CONSUMABLES_SKU, {
+      QRCode.toCanvas(canvasRef.current, value || GLOBAL_CONSUMABLES_SKU, {
         width: 120,
         margin: 2,
         color: { dark: '#000000', light: '#ffffff' },
       }).catch(console.error);
     }
-  }, []);
+  }, [value]);
   return <canvas ref={canvasRef} className="rounded-lg shadow-md" style={{ width: '60px', height: '60px' }} />;
 };
 
@@ -2385,6 +2385,14 @@ const App: React.FC = () => {
         }
         triggerAssetConferenceAction(asset, 'remove');
       } else if (assetTab === 'assigned') {
+        if (asset.type === AssetCategory.CONSUMABLES) {
+          setQuantityAsset(asset);
+          setSelectedQuantity(1);
+          setShowQuantityModal(true);
+          showScanToast(`📦 Scanned Consumable: "${asset.aliasName || asset.sku}"`, 'success');
+          setQuickAddInput('');
+          return;
+        }
         const scanAction = (isAddingVal === true || user?.role === 'technician' || user?.role === 'godown_incharge') ? 'add' : 'remove';
         
         if (scanAction === 'add') {
@@ -2695,7 +2703,7 @@ const App: React.FC = () => {
       condition: assetFormData.condition || 'Good',
       barcode: assetFormData.barcode || finalSku,
       barcode_type: assetFormData.barcodeType || 'CODE128',
-      qr_code: isConsumable ? GLOBAL_CONSUMABLES_SKU : (assetFormData.qrCode || ''),
+      qr_code: assetFormData.qrCode || finalSku,
       flag: assetFormData.flag || '',
       quantity: assetFormData.quantity || 1,
       assigned_to: assetFormData.assigned_to,
@@ -5624,21 +5632,21 @@ const App: React.FC = () => {
                     </div>
                     <div className="bg-sky-500/10 border border-sky-500/20 p-6 rounded-3xl flex items-center gap-6 animate-in fade-in slide-in-from-top-2 duration-500">
                       <div className="shrink-0 p-2 bg-white rounded-2xl">
-                        <GlobalQRPreview />
+                        <GlobalQRPreview value={editingAsset?.qrCode || assetFormData.sku || 'CNS-AUTO'} />
                       </div>
                       <div className="flex-1 space-y-3">
                         <div>
-                          <p className="text-[11px] font-black text-white uppercase tracking-wider">Shared Global QR Identity</p>
+                          <p className="text-[11px] font-black text-white uppercase tracking-wider">Item Unique QR Identity</p>
                           <p className="text-[10px] font-bold text-sky-400/80 uppercase tracking-widest leading-relaxed">
-                            All consumables reuse this QR code: <span className="text-white font-mono bg-white/10 px-2 py-0.5 rounded">{GLOBAL_CONSUMABLES_SKU}</span>.
+                            All units of <span className="text-amber-400 font-bold">{assetFormData.aliasName || 'this consumable'}</span> share this unique item QR code: <span className="text-white font-mono bg-white/10 px-2 py-0.5 rounded">{editingAsset?.qrCode || editingAsset?.sku || assetFormData.sku || 'Auto-Generated'}</span>.
                           </p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => setQrTarget({ sku: GLOBAL_CONSUMABLES_SKU, name: 'Global Consumables QR' })}
+                          onClick={() => setQrTarget({ sku: editingAsset?.qrCode || assetFormData.sku || 'CNS-AUTO', name: assetFormData.aliasName || 'Consumable Item QR' })}
                           className="px-4 py-2.5 bg-sky-500/10 border border-sky-500/20 text-sky-400 rounded-xl text-[10px] font-black uppercase hover:bg-sky-500 hover:text-white transition flex items-center gap-2"
                         >
-                          <i className="fa-solid fa-print"></i> Print QR Label
+                          <i className="fa-solid fa-print"></i> Print Item QR Label
                         </button>
                       </div>
                     </div>
