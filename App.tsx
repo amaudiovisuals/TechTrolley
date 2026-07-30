@@ -5503,14 +5503,18 @@ const App: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
                       <div className="md:col-span-2">
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Item Name (Alias)</label>
-                        <input list="alias-dictionary-list" autoComplete="off" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" placeholder="e.g. Batteries AAA" required />
+                        <input list="alias-dictionary-list" autoComplete="off" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" placeholder="e.g. Yellow & Black Tape" required />
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Unit Rate / Price</label>
                         <input type="number" value={assetFormData.itemPrice} onChange={e => setAssetFormData({ ...assetFormData, itemPrice: parseFloat(e.target.value) || 0 })} className="form-input-night" required />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Initial Stock Quantity</label>
+                        <input type="number" min="1" value={assetFormData.quantity} onChange={e => setAssetFormData({ ...assetFormData, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })} className="form-input-night" placeholder="e.g. 20" required />
+                      </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Short Description</label>
                         <input value={assetFormData.description} onChange={e => setAssetFormData({ ...assetFormData, description: e.target.value })} className="form-input-night" placeholder="Optional notes..." />
@@ -6576,26 +6580,38 @@ const App: React.FC = () => {
 
                                 {/* 2. Godown Search/Scan Bar */}
                                 <div className="space-y-4">
-                                  <div className="relative group">
-                                    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
-                                      <i className="fa-solid fa-magnifying-glass"></i>
-                                    </div>
-                                    <input 
-                                      type="text"
-                                      placeholder="SCAN OR SEARCH ASSETS TO PACK..."
-                                      value={quickAddInput}
-                                      onChange={(e) => setQuickAddInput(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          const val = (e.target as HTMLInputElement).value.trim();
-                                          if (val) {
-                                             handleScan(val, true);
-                                             setQuickAddInput('');
+                                  <div className="flex gap-3">
+                                    <div className="relative group flex-1">
+                                      <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                                        <i className="fa-solid fa-magnifying-glass"></i>
+                                      </div>
+                                      <input 
+                                        type="text"
+                                        placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
+                                        value={quickAddInput}
+                                        onChange={(e) => setQuickAddInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            const val = (e.target as HTMLInputElement).value.trim();
+                                            if (val) {
+                                               handleScan(val, true); 
+                                               setQuickAddInput('');
+                                            }
                                           }
-                                        }
+                                        }}
+                                        className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setConsumablesPickerSearchQuery('');
+                                        setShowConsumablesPicker(true);
                                       }}
-                                      className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
-                                    />
+                                      className="shrink-0 px-6 py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-500/20 flex items-center gap-2"
+                                    >
+                                      <i className="fa-solid fa-cubes text-base"></i> + Consumables
+                                    </button>
                                   </div>
                                   {quickAddInput && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

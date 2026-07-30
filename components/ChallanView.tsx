@@ -397,13 +397,46 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const processedAssets = React.useMemo(() => {
+    const consumableAssets: Asset[] = [];
+    const cData = (booking as any).consumable_data || {};
+    Object.entries(cData).forEach(([assetId, data]: [string, any]) => {
+      const requestedQty = Number(data?.requested || data?.quantity || 0);
+      if (requestedQty > 0) {
+        const found = assets.find(a => String(a.id) === String(assetId));
+        consumableAssets.push({
+          id: `consumable-${assetId}`,
+          sku: found?.sku || `CONSUMABLE-${assetId}`,
+          aliasName: found?.aliasName || found?.sku || 'Consumable Item',
+          serialNumber: 'Consumable',
+          type: 'Consumables',
+          quantity: requestedQty,
+          itemPrice: found?.itemPrice || 0,
+          status: 'In Use' as any,
+          barcode: '',
+          condition: 'Good',
+          description: 'Assigned Consumable Item',
+          isBarcodeAdded: false,
+          macAddress: '',
+          imeiNumber1: '',
+          imeiNumber2: '',
+          purchasedDate: '',
+          depreciationPercentage: 0,
+          availableFrom: '',
+          availableTill: '',
+          createdAt: '',
+          lastMaintained: ''
+        });
+      }
+    });
+
+    const combinedLocal = [...localAssets, ...consumableAssets];
     let list: Asset[] = [];
     if (!isGrouped || isEditMode) {
-      list = [...localAssets];
+      list = [...combinedLocal];
     } else {
       const groups: Record<string, Asset & { serials: string[], ids: (string | number)[] }> = {};
 
-      localAssets.forEach(asset => {
+      combinedLocal.forEach(asset => {
         // For laptops, merge into MacBook / Windows Laptop sub-groups.
         // For all other assets, group by their exact alias name as before.
         const subGroup = getLaptopSubGroup(asset);
