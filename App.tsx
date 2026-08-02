@@ -485,6 +485,16 @@ const App: React.FC = () => {
   const [showConsumablesPicker, setShowConsumablesPicker] = useState(false);
   const [consumablesPickerSearchQuery, setConsumablesPickerSearchQuery] = useState('');
 
+  // Asset Transfer Modal State
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferSelectedIds, setTransferSelectedIds] = useState<Set<string>>(new Set());
+  const [transferTargetConfId, setTransferTargetConfId] = useState<string>('');
+  const [transferFromAddress, setTransferFromAddress] = useState<string>('');
+  const [transferScanInput, setTransferScanInput] = useState<string>('');
+  const [transferring, setTransferring] = useState(false);
+  const [showTransferScanner, setShowTransferScanner] = useState(false);
+  const transferScanRef = useRef<HTMLInputElement>(null);
+
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
@@ -1293,7 +1303,9 @@ const App: React.FC = () => {
             challanAssets: (c.challan_assets || []).map((id: any) => id.toString()),
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
             pdf_document: c.pdf_document,
-            isAudit: c.is_audit || false  // J-109: propagate audit flag into backendConferences
+            isAudit: c.is_audit || false,  // J-109: propagate audit flag into backendConferences
+            transfer_log: c.transfer_log || [],  // Asset transfer audit trail
+
           }));
           setBackendConferences(mapped);
           
@@ -1770,6 +1782,103 @@ const App: React.FC = () => {
     }
   };
 
+  // ── Asset Transfer Handler ──────────────────────────────────────────────
+  const handleAssetTransfer = async () => {
+    const sourceId = conferenceFormData.id;
+    if (!sourceId) return;
+    if (transferSelectedIds.size === 0) {
+      alert('Please select at least one asset to transfer.');
+      return;
+    }
+    if (!transferTargetConfId) {
+      alert('Please select a destination conference.');
+      return;
+    }
+
+    const targetConf = backendConferences.find(c => c.id === transferTargetConfId);
+    const assetNames = Array.from(transferSelectedIds).map(id => {
+      const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+      const a = pool.find(x => String(x.id) === id);
+      return a?.aliasName || a?.sku || `#${id}`;
+    });
+
+    const confirmed = window.confirm(
+      `⚠️ ASSET TRANSFER CONFIRMATION\n\n` +
+      `You are about to transfer ${transferSelectedIds.size} item(s):\n` +
+      assetNames.join(', ') + `\n\n` +
+      `FROM: ${transferFromAddress || conferenceFormData.transport_address || conferenceFormData.name}\n` +
+      `TO:   ${targetConf?.conferenceName || targetConf?.name || 'Selected Conference'}\n\n` +
+      `This will:\n` +
+      `• Freeze the current dispatch challan (if not already frozen)\n` +
+      `• Remove these items from THIS conference's Packup list\n` +
+      `• Add them to the destination conference's Packup list\n\n` +
+      `This action CANNOT be undone. Proceed?`
+    );
+    if (!confirmed) return;
+
+    setTransferring(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${sourceId}/transfer-assets/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          asset_ids: Array.from(transferSelectedIds).map((id: string) => parseInt(id, 10)),
+
+          target_conference_id: parseInt(transferTargetConfId, 10),
+          from_address: transferFromAddress || conferenceFormData.transport_address || ''
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        const src = data.source_conference;
+        setConferenceFormData((prev: any) => ({
+          ...prev,
+          assets: (src.assets || []).map(String),
+          challan_assets: (src.challan_assets || []).map(String),
+          transfer_log: src.transfer_log || []
+        }));
+
+        setBackendConferences(prev => prev.map(c => {
+          if (c.id === String(src.id)) {
+            return {
+              ...c,
+              assets: (src.assets || []).map(String),
+              challanAssets: (src.challan_assets || []).map(String),
+              transfer_log: src.transfer_log || []
+            };
+          }
+          if (c.id === String(data.target_conference.id)) {
+            const tgt = data.target_conference;
+            return {
+              ...c,
+              assets: (tgt.assets || []).map(String),
+              transfer_log: tgt.transfer_log || []
+            };
+          }
+          return c;
+        }));
+
+        setShowTransferModal(false);
+        setTransferSelectedIds(new Set());
+        setTransferTargetConfId('');
+        setTransferFromAddress('');
+        setTransferScanInput('');
+
+        setScanToast({ message: `✅ Transferred ${data.transferred_count} item(s) to ${targetConf?.conferenceName || targetConf?.name}`, type: 'success' });
+        setTimeout(() => { fetchConferences(); fetchAssets(); }, 500);
+      } else {
+        const errMsg = data.error || 'Transfer failed. Please try again.';
+        alert(`❌ Transfer Failed:\n\n${errMsg}`);
+      }
+    } catch (err) {
+      console.error('Asset transfer network error:', err);
+      alert(`❌ Network error during transfer.\n\n${err}`);
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   const openNewConferenceForm = () => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
@@ -1783,6 +1892,7 @@ const App: React.FC = () => {
     });
     setConferenceView('Form');
   };
+
 
 
   const openEditConferenceForm = (conf: any) => {
@@ -7298,116 +7408,175 @@ const App: React.FC = () => {
                             normalizeSearch(a.type || '').includes(qNorm);
                         });
 
-                        if (packupList.length === 0) {
-                          return (
-                            <div className="grid grid-cols-1">
-                              <div className="col-span-2 py-20 text-center space-y-4">
+                        // ── Transfer Assets header (admin/godown_incharge only) ──
+                        const canTransfer = user?.is_staff || user?.role === 'admin' || user?.role === 'godown_incharge';
+                        const transferLog: any[] = conferenceFormData.transfer_log || [];
+
+                        return (
+                          <div className="space-y-3">
+                            {/* Transfer Button header */}
+                            {canTransfer && packupList.length > 0 && (
+                              <div className="flex items-center justify-between px-1 mb-1">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                  {packupList.length} Item{packupList.length !== 1 ? 's' : ''} On-Site
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTransferFromAddress(conferenceFormData.transport_address || '');
+                                    setTransferSelectedIds(new Set());
+                                    setTransferTargetConfId('');
+                                    setTransferScanInput('');
+                                    setShowTransferModal(true);
+                                  }}
+                                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-500/20 active:scale-95"
+                                >
+                                  <i className="fa-solid fa-arrow-right-arrow-left text-[10px]"></i>
+                                  Transfer Assets
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Transfer Log section — shows completed transfer events */}
+                            {transferLog.length > 0 && (
+                              <div className="rounded-2xl border border-purple-200 bg-purple-50/30 p-3 space-y-2">
+                                <p className="text-[9px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-2">
+                                  <i className="fa-solid fa-clock-rotate-left"></i> Transfer History ({transferLog.length})
+                                </p>
+                                {transferLog.map((entry: any, idx: number) => (
+                                  <div key={idx} className={`flex items-start gap-2.5 p-2 rounded-xl text-[10px] border ${entry.direction === 'outgoing' ? 'bg-orange-50 border-orange-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                    <i className={`fa-solid mt-0.5 shrink-0 ${entry.direction === 'outgoing' ? 'fa-arrow-up-right-from-square text-orange-500' : 'fa-arrow-down-to-line text-emerald-500'}`}></i>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-black text-slate-800">
+                                        {entry.direction === 'outgoing'
+                                          ? `→ ${entry.to_conference_name}`
+                                          : `← ${entry.from_conference_name}`}
+                                        <span className="ml-1.5 text-slate-400 font-normal">{entry.asset_names?.length || entry.transferred_asset_ids?.length || 0} items</span>
+                                      </p>
+                                      {entry.from_address && (
+                                        <p className="text-slate-500 mt-0.5">From: {entry.from_address}</p>
+                                      )}
+                                      <p className="text-slate-400 mt-0.5">{new Date(entry.timestamp).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })} • {entry.transferred_by}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Empty state */}
+                            {packupList.length === 0 && (
+                              <div className="py-20 text-center space-y-4">
                                 <div className="text-slate-200 text-6xl"><i className="fa-solid fa-truck-ramp-box"></i></div>
                                 <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No assets dispatched to site yet</p>
                               </div>
-                            </div>
-                          );
-                        }
+                            )}
 
-                        // J-119 Task 3: Normalize key (trim) so aliasName differences in casing/whitespace
-                        // across batches always collapse into a single group.
-                        // Laptops are grouped as MacBook or Windows Laptop by getLaptopSubGroup.
-                        const groups = packupList.reduce((acc: Record<string, Asset[]>, a) => {
-                          const key = (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown').trim();
-                          if (!acc[key]) acc[key] = [];
-                          acc[key].push(a);
-                          return acc;
-                        }, {} as Record<string, Asset[]>);
 
-                        return (
-                          <div className="space-y-2">
-                            {Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
-                              const gKey = `packup-${name}`;
-                              const isOpen = !!expandedGroups[gKey];
+                            {/* Grouped asset list */}
+                            {packupList.length > 0 && (() => {
+                              // J-119 Task 3: Normalize key (trim) so aliasName differences in casing/whitespace
+                              // across batches always collapse into a single group.
+                              // Laptops are grouped as MacBook or Windows Laptop by getLaptopSubGroup.
+                              const groups = packupList.reduce((acc: Record<string, Asset[]>, a) => {
+                                const key = (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown').trim();
+                                if (!acc[key]) acc[key] = [];
+                                acc[key].push(a);
+                                return acc;
+                              }, {} as Record<string, Asset[]>);
+
                               return (
-                                <div key={gKey} className="rounded-2xl border border-emerald-100 bg-emerald-50/10 overflow-hidden shadow-sm">
-                                  <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/20 transition-all">
-                                    <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-sm border border-emerald-200 shrink-0">
-                                      <i className="fa-solid fa-check-double"></i>
-                                    </div>
-                                    <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                    <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.reduce((sum, i) => sum + (i.quantity || 1), 0)}</span>
-                                    <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
-                                  </button>
-                                  {isOpen && (
-                                    <div className="border-t border-emerald-100 divide-y divide-emerald-50">
-                                      {items.map(asset => (
-                                        <div key={asset.id} className="relative flex items-center gap-2 px-4 py-2.5">
-                                          <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
-                                          <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded-full">ON-SITE</span>
-                                          {user?.role === 'technician' && (
-                                            <div className="flex gap-1.5 shrink-0">
-                                              <button
-                                                onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
-                                                className={`w-7 h-7 border rounded-lg flex items-center justify-center transition-all ${
-                                                  asset.status === 'Damaged' || asset.flag === 'Missing'
-                                                    ? 'bg-red-500 border-red-400 text-white animate-pulse'
-                                                    : 'bg-white border-slate-200 text-slate-400 hover:text-red-500'
-                                                }`}
-                                                title="Report Issue"
-                                              >
-                                                <i className="fa-solid fa-circle-exclamation text-[9px]"></i>
-                                              </button>
-                                              <button
-                                                onClick={() => triggerAssetConferenceAction(asset, 'remove')}
-                                                className="w-7 h-7 bg-white border border-slate-200 text-slate-400 hover:text-orange-500 hover:border-orange-300 rounded-lg flex items-center justify-center transition-all"
-                                                title="Move to Crosscheck (Return)"
-                                              >
-                                                <i className="fa-solid fa-arrow-right-from-bracket text-[9px]"></i>
-                                              </button>
-                                            </div>
-                                          )}
-                                          {/* J-119 Task 1: Admin Remove button — hard-removes asset from this conference */}
-                                          {user?.is_staff && (
-                                            <button
-                                              onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                              className="w-7 h-7 bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 rounded-lg flex items-center justify-center transition-all shrink-0"
-                                              title="Admin: Remove from Packup"
-                                            >
-                                              <i className="fa-solid fa-trash-can text-[9px]"></i>
-                                            </button>
-                                          )}
-                                          {/* Floating Issue Menu */}
-                                          {flagMenuAssetId === asset.id && (
-                                            <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
-                                              <button
-                                                onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, 'Packup')}
-                                                className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
-                                              >
-                                                <i className="fa-solid fa-flag text-red-500 text-xs"></i>
-                                                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
-                                              </button>
-                                              <button
-                                                onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, 'Packup')}
-                                                className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
-                                              >
-                                                <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
-                                                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
-                                              </button>
-                                              <button
-                                                onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, 'Packup')}
-                                                className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
-                                              >
-                                                <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
-                                                <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
-                                              </button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                <div className="space-y-2">
+                                  {Object.entries(groups).map(([name, items]: [string, Asset[]]) => {
+                                    const gKey = `packup-${name}`;
+                                    const isOpen = !!expandedGroups[gKey];
+                                    return (
+                                      <div key={gKey} className="rounded-2xl border border-emerald-100 bg-emerald-50/10 overflow-hidden shadow-sm">
+                                        <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/20 transition-all">
+                                          <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-sm border border-emerald-200 shrink-0">
+                                            <i className="fa-solid fa-check-double"></i>
+                                          </div>
+                                          <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
+                                          <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.reduce((sum, i) => sum + (i.quantity || 1), 0)}</span>
+                                          <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
+                                        </button>
+                                        {isOpen && (
+                                          <div className="border-t border-emerald-100 divide-y divide-emerald-50">
+                                            {items.map(asset => (
+                                              <div key={asset.id} className="relative flex items-center gap-2 px-4 py-2.5">
+                                                <span className="font-mono text-[10px] text-slate-500 truncate flex-1">{asset.sku || asset.serialNumber}</span>
+                                                <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[8px] font-black rounded-full">ON-SITE</span>
+                                                {user?.role === 'technician' && (
+                                                  <div className="flex gap-1.5 shrink-0">
+                                                    <button
+                                                      onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
+                                                      className={`w-7 h-7 border rounded-lg flex items-center justify-center transition-all ${
+                                                        asset.status === 'Damaged' || asset.flag === 'Missing'
+                                                          ? 'bg-red-500 border-red-400 text-white animate-pulse'
+                                                          : 'bg-white border-slate-200 text-slate-400 hover:text-red-500'
+                                                      }`}
+                                                      title="Report Issue"
+                                                    >
+                                                      <i className="fa-solid fa-circle-exclamation text-[9px]"></i>
+                                                    </button>
+                                                    <button
+                                                      onClick={() => triggerAssetConferenceAction(asset, 'remove')}
+                                                      className="w-7 h-7 bg-white border border-slate-200 text-slate-400 hover:text-orange-500 hover:border-orange-300 rounded-lg flex items-center justify-center transition-all"
+                                                      title="Move to Crosscheck (Return)"
+                                                    >
+                                                      <i className="fa-solid fa-arrow-right-from-bracket text-[9px]"></i>
+                                                    </button>
+                                                  </div>
+                                                )}
+                                                {/* J-119 Task 1: Admin Remove button — hard-removes asset from this conference */}
+                                                {user?.is_staff && (
+                                                  <button
+                                                    onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                                    className="w-7 h-7 bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 rounded-lg flex items-center justify-center transition-all shrink-0"
+                                                    title="Admin: Remove from Packup"
+                                                  >
+                                                    <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                                  </button>
+                                                )}
+                                                {/* Floating Issue Menu */}
+                                                {flagMenuAssetId === asset.id && (
+                                                  <div className="absolute top-0 right-12 z-[60] bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 min-w-[160px] animate-in fade-in slide-in-from-right-2 duration-200">
+                                                    <button
+                                                      onClick={() => handleQuickUpdateAsset(asset, { flag: AssetFlag.MISSING }, conferenceFormData.id, 'Packup')}
+                                                      className="w-full px-4 py-3 hover:bg-red-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                                    >
+                                                      <i className="fa-solid fa-flag text-red-500 text-xs"></i>
+                                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Missing</span>
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.DAMAGED, flag: AssetFlag.REQUIRED_SERVICE }, conferenceFormData.id, 'Packup')}
+                                                      className="w-full px-4 py-3 hover:bg-orange-50 flex items-center gap-3 rounded-xl transition-colors text-left"
+                                                    >
+                                                      <i className="fa-solid fa-tools text-orange-500 text-xs"></i>
+                                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Mark Damaged</span>
+                                                    </button>
+                                                    <button
+                                                      onClick={() => handleQuickUpdateAsset(asset, { status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE }, conferenceFormData.id, 'Packup')}
+                                                      className="w-full px-4 py-3 hover:bg-slate-50 flex items-center gap-3 rounded-xl transition-colors text-left border-t border-slate-100"
+                                                    >
+                                                      <i className="fa-solid fa-check text-emerald-500 text-xs"></i>
+                                                      <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Clear / No Issue</span>
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               );
-                            })}
+                            })()}
                           </div>
                         );
                       })()}
+
 
 
                       {assetTab === 'crosscheck' && (
@@ -7663,7 +7832,297 @@ const App: React.FC = () => {
         </button>
       )}
 
+      {/* ══════════════════════════════════════════════════════════════════
+           ASSET TRANSFER MODAL
+           Shows all packup assets for the current conference.
+           Admin / Godown Incharge can: click-select, hardware-scan, or
+           phone-camera-scan items, choose a destination conference, and
+           confirm the transfer.
+      ══════════════════════════════════════════════════════════════════ */}
+      {showTransferModal && (() => {
+        const packPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+        const modalPackupList = packPool.filter(a =>
+          new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))
+        );
+        const otherConferences = backendConferences.filter(c =>
+          c.id !== conferenceFormData.id && !c.isAudit
+        );
+        const targetConf = otherConferences.find(c => c.id === transferTargetConfId);
+        const allSelected = modalPackupList.length > 0 && modalPackupList.every(a => transferSelectedIds.has(String(a.id)));
+
+        // Handle hardware scanner input in the transfer modal
+        const handleTransferScanKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+          if (e.key === 'Enter') {
+            const val = transferScanInput.trim();
+            if (!val) return;
+            const found = modalPackupList.find(a =>
+              a.sku === val || a.serialNumber === val || a.qrCode === val || a.barcode === val || String(a.id) === val
+            );
+            if (found) {
+              setTransferSelectedIds(prev => {
+                const next = new Set(prev);
+                if (next.has(String(found.id))) next.delete(String(found.id));
+                else next.add(String(found.id));
+                return next;
+              });
+            }
+            setTransferScanInput('');
+          }
+        };
+
+        // Handle phone camera scan into transfer modal
+        const handleTransferCameraScan = (code: string) => {
+          setShowTransferScanner(false);
+          const found = modalPackupList.find(a =>
+            a.sku === code || a.serialNumber === code || a.qrCode === code || a.barcode === code || String(a.id) === code
+          );
+          if (found) {
+            setTransferSelectedIds(prev => {
+              const next = new Set(prev);
+              if (next.has(String(found.id))) next.delete(String(found.id));
+              else next.add(String(found.id));
+              return next;
+            });
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full sm:max-w-lg bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                    <span className="w-8 h-8 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+                      <i className="fa-solid fa-arrow-right-arrow-left text-sm"></i>
+                    </span>
+                    Transfer Assets
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                    Select items → Choose destination → Confirm
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setShowTransferModal(false); setTransferSelectedIds(new Set()); }}
+                  className="w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center transition-colors text-slate-600"
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              {/* Scrollable body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+
+                {/* ── Step 1: Select Assets ─────────────────────────── */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Step 1 — Select Assets
+                      {transferSelectedIds.size > 0 && (
+                        <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[9px]">
+                          {transferSelectedIds.size} selected
+                        </span>
+                      )}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (allSelected) setTransferSelectedIds(new Set());
+                        else setTransferSelectedIds(new Set(modalPackupList.map(a => String(a.id))));
+                      }}
+                      className="text-[10px] font-black text-purple-600 hover:text-purple-700 uppercase tracking-widest"
+                    >
+                      {allSelected ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+
+                  {/* Scan input (hardware scanner or type) */}
+                  <div className="relative mb-3 group">
+                    <i className="fa-solid fa-barcode absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-purple-500 transition-colors text-sm"></i>
+                    <input
+                      ref={transferScanRef}
+                      type="text"
+                      placeholder="Scan QR / Barcode to toggle selection..."
+                      value={transferScanInput}
+                      onChange={e => setTransferScanInput(e.target.value)}
+                      onKeyDown={handleTransferScanKeyDown}
+                      className="w-full bg-slate-50 rounded-2xl pl-12 pr-14 py-3.5 text-sm font-bold text-slate-800 border border-slate-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+                    />
+                    {isMobilePhone && (
+                      <button
+                        type="button"
+                        onClick={() => setShowTransferScanner(true)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-purple-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/30 transition-transform active:scale-90"
+                        title="Scan with camera"
+                      >
+                        <i className="fa-solid fa-camera text-xs"></i>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Asset list */}
+                  {modalPackupList.length === 0 ? (
+                    <div className="py-8 text-center text-slate-400 text-sm">
+                      No assets in the Packup list to transfer.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
+                      {modalPackupList.map(asset => {
+                        const sid = String(asset.id);
+                        const checked = transferSelectedIds.has(sid);
+                        const inCrosscheck = new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(sid);
+                        return (
+                          <button
+                            key={sid}
+                            type="button"
+                            disabled={inCrosscheck}
+                            onClick={() => {
+                              if (inCrosscheck) return;
+                              setTransferSelectedIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(sid)) next.delete(sid);
+                                else next.add(sid);
+                                return next;
+                              });
+                            }}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left ${
+                              inCrosscheck
+                                ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-100'
+                                : checked
+                                ? 'bg-purple-50 border-purple-300 shadow-sm'
+                                : 'bg-white border-slate-100 hover:border-purple-200 hover:bg-purple-50/30'
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
+                              checked ? 'bg-purple-600 border-purple-600' : 'border-slate-300'
+                            }`}>
+                              {checked && <i className="fa-solid fa-check text-white text-[9px]"></i>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-black text-[11px] text-slate-900 truncate uppercase">{asset.aliasName || asset.sku}</p>
+                              <p className="text-[10px] text-slate-400 font-mono truncate">{asset.sku}{asset.serialNumber ? ` · ${asset.serialNumber}` : ''}</p>
+                            </div>
+                            {inCrosscheck && (
+                              <span className="shrink-0 text-[9px] font-black text-orange-500 uppercase bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
+                                In Crosscheck
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Step 2: From Address ──────────────────────────── */}
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                    Step 2 — From Address (optional)
+                  </p>
+                  <input
+                    type="text"
+                    placeholder={`Current venue (e.g. ${conferenceFormData.transport_address || 'HICC Hyderabad'})`}
+                    value={transferFromAddress}
+                    onChange={e => setTransferFromAddress(e.target.value)}
+                    className="w-full bg-slate-50 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-800 border border-slate-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+                  />
+                </div>
+
+                {/* ── Step 3: Choose Destination Conference ─────────── */}
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                    Step 3 — Destination Conference
+                  </p>
+                  <select
+                    value={transferTargetConfId}
+                    onChange={e => setTransferTargetConfId(e.target.value)}
+                    className="w-full bg-slate-50 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-800 border border-slate-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all appearance-none"
+                  >
+                    <option value="">-- Select destination conference --</option>
+                    {otherConferences.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.conferenceName || c.name} {c.transport_address ? `· ${c.transport_address}` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Preview target venue */}
+                  {targetConf && (
+                    <div className="mt-2 px-4 py-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-[10px] text-emerald-700 font-bold flex items-center gap-2">
+                      <i className="fa-solid fa-location-dot text-emerald-500"></i>
+                      Arriving at: {targetConf.transport_address || targetConf.billing_address || 'Address not set'}
+                    </div>
+                  )}
+
+                  {/* ── Shortcut: Create New Conference for Same Venue ─ */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTransferModal(false);
+                      // Pre-fill the new conference form with the current venue
+                      openNewConferenceForm();
+                      // Auto-fill the transport_address with current venue
+                      setTimeout(() => {
+                        setConferenceFormData((prev: any) => ({
+                          ...prev,
+                          transport_address: conferenceFormData.transport_address || '',
+                          billing_address: conferenceFormData.billing_address || '',
+                          name: `${conferenceFormData.name} — Next Program`
+                        }));
+                      }, 100);
+                    }}
+                    className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-purple-300 text-purple-600 hover:bg-purple-50 hover:border-purple-400 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                  >
+                    <i className="fa-solid fa-plus-circle"></i>
+                    Create New Conference for Same Venue
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Footer — Confirm button */}
+              <div className="px-6 py-4 border-t border-slate-100 shrink-0 space-y-3">
+                {transferSelectedIds.size > 0 && transferTargetConfId && (
+                  <div className="px-4 py-3 bg-amber-50 rounded-xl border border-amber-200 text-[10px] text-amber-700 font-bold">
+                    <i className="fa-solid fa-triangle-exclamation mr-1.5"></i>
+                    The current challan will be frozen (if not already) and {transferSelectedIds.size} item(s) will be removed from this conference's Packup.
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShowTransferModal(false); setTransferSelectedIds(new Set()); }}
+                    className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={transferSelectedIds.size === 0 || !transferTargetConfId || transferring}
+                    onClick={handleAssetTransfer}
+                    className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
+                  >
+                    {transferring ? (
+                      <><i className="fa-solid fa-spinner fa-spin"></i> Transferring...</>
+                    ) : (
+                      <><i className="fa-solid fa-arrow-right-arrow-left"></i> Transfer {transferSelectedIds.size > 0 ? `(${transferSelectedIds.size})` : ''}</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Phone Camera scanner inside transfer modal */}
+            {showTransferScanner && (
+              <Scanner onScan={handleTransferCameraScan} onClose={() => setShowTransferScanner(false)} />
+            )}
+          </div>
+        );
+      })()}
+
       {showScanner && <Scanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+
 
       {/* QR Label Modal */}
       {qrTarget && (

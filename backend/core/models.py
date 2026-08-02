@@ -217,6 +217,7 @@ class Conference(models.Model):
     approximate_value = models.DecimalField(max_digits=20, decimal_places=2, default=0, null=True, blank=True)
     flag_log = models.JSONField(default=list, blank=True, help_text="Log of assets flagged during this conference: [{'asset_id': 1, 'flag': 'Missing', 'stage': 'Packup', 'timestamp': '...'}]")
     consumable_data = models.JSONField(default=dict, blank=True, help_text="Tracks consumable quantities per conference: {'asset_id': {'requested': 5, 'returned': 3, 'consumed': 2, 'status': 'settled'}}")
+    transfer_log = models.JSONField(default=list, blank=True, help_text="Audit log of all asset transfers: [{'timestamp': '...', 'direction': 'outgoing'|'incoming', 'transferred_asset_ids': [], 'asset_names': [], 'to/from_conference_id': X, 'to/from_conference_name': '...', 'from_address': '...', 'transferred_by': '...'}]")
     # J-109: Audit Mode — when True, assets in this conference do not lock other live events
     is_audit = models.BooleanField(default=False, help_text="If True, this conference is a non-blocking audit list. Its assets will not lock availability for other conferences.")
 

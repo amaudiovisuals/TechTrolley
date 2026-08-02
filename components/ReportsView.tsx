@@ -12,7 +12,7 @@ interface ReportsViewProps {
 const normalizeSearch = (s: string) => (s || '').replace(/[-_\s]/g, '').toLowerCase();
 
 export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEditAsset }) => {
-    const [activeTab, setActiveTab] = useState<'Conferences' | 'Personal' | 'Flagged'>('Conferences');
+    const [activeTab, setActiveTab] = useState<'Conferences' | 'Personal' | 'Flagged' | 'Transfers'>('Conferences');
 
     // Data State
     const [assets, setAssets] = useState<Asset[]>([]);
@@ -516,9 +516,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
             </div>
 
             <div className="flex border-b border-slate-800 gap-8 overflow-x-auto no-scrollbar">
-                {(['Conferences', 'Personal', 'Flagged'] as const).map(tab => (
+                {(['Conferences', 'Personal', 'Flagged', 'Transfers'] as const).map(tab => (
                     <button key={tab} onClick={() => { setActiveTab(tab); setCurrentPage(1); }} className={`pb-4 text-xs font-black uppercase tracking-widest transition-colors relative whitespace-nowrap ${activeTab === tab ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}>
-                        {tab === 'Conferences' ? 'Conferences' : tab === 'Personal' ? 'Employee Assets' : 'Flagged Items'}
+                        {tab === 'Conferences' ? 'Conferences' : tab === 'Personal' ? 'Employee Assets' : tab === 'Flagged' ? 'Flagged Items' : 'Transfers'}
                         {activeTab === tab && <div className="absolute bottom-0 left-0 w-full h-1 bg-sky-400 rounded-t-full" />}
                     </button>
                 ))}
@@ -722,6 +722,125 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                     </div>
                 </div>
             )}
+
+            {/* ─── TRANSFERS TAB ─────────────────────────────────────── */}
+            {activeTab === 'Transfers' && (() => {
+                // Flatten all transfer_log entries from all conferences
+                const allEntries: { conf: any; entry: any }[] = [];
+                conferences.forEach(c => {
+                    const log: any[] = (c as any).transfer_log || [];
+                    log.forEach(entry => allEntries.push({ conf: c, entry }));
+                });
+
+                // Sort newest first
+                allEntries.sort((a, b) => new Date(b.entry.timestamp).getTime() - new Date(a.entry.timestamp).getTime());
+
+                const [transferSearch, setTransferSearch] = React.useState('');
+                const filtered = allEntries.filter(({ conf, entry }) => {
+                    if (!transferSearch) return true;
+                    const q = transferSearch.toLowerCase();
+                    return (
+                        (conf.conferenceName || conf.name || '').toLowerCase().includes(q) ||
+                        (entry.to_conference_name || '').toLowerCase().includes(q) ||
+                        (entry.from_conference_name || '').toLowerCase().includes(q) ||
+                        (entry.from_address || '').toLowerCase().includes(q) ||
+                        (entry.transferred_by || '').toLowerCase().includes(q) ||
+                        (entry.asset_names || []).join(' ').toLowerCase().includes(q)
+                    );
+                });
+
+                return (
+                    <div className="bg-slate-900/30 p-5 md:p-8 rounded-[2.5rem] border border-slate-800/50 space-y-6">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div>
+                                <h3 className="text-xl font-black text-white uppercase tracking-tight">Transfer Log</h3>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1 tracking-wider">{allEntries.length} transfer event{allEntries.length !== 1 ? 's' : ''} across all conferences</p>
+                            </div>
+                            <input
+                                type="text"
+                                placeholder="SEARCH BY CONFERENCE, VENUE, PERSON..."
+                                value={transferSearch}
+                                onChange={e => setTransferSearch(e.target.value)}
+                                className="form-input-night px-6 py-4 text-[10px] font-black uppercase tracking-widest w-full md:w-96"
+                            />
+                        </div>
+
+                        {filtered.length === 0 ? (
+                            <div className="py-20 text-center space-y-3">
+                                <i className="fa-solid fa-arrow-right-arrow-left text-5xl text-slate-700"></i>
+                                <p className="text-slate-500 font-black uppercase text-xs tracking-widest">{allEntries.length === 0 ? 'No transfers have been made yet' : 'No results match your search'}</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {filtered.map(({ conf, entry }, idx) => (
+                                    <div
+                                        key={idx}
+                                        className={`flex items-start gap-4 p-5 rounded-3xl border transition-all ${
+                                            entry.direction === 'outgoing'
+                                                ? 'bg-orange-950/30 border-orange-800/30 hover:border-orange-600/40'
+                                                : 'bg-emerald-950/30 border-emerald-800/30 hover:border-emerald-600/40'
+                                        }`}
+                                    >
+                                        {/* Direction icon */}
+                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                                            entry.direction === 'outgoing' ? 'bg-orange-500/20 text-orange-400' : 'bg-emerald-500/20 text-emerald-400'
+                                        }`}>
+                                            <i className={`fa-solid ${
+                                                entry.direction === 'outgoing' ? 'fa-arrow-up-right-from-square' : 'fa-arrow-down-to-line'
+                                            }`}></i>
+                                        </div>
+
+                                        <div className="flex-1 min-w-0 space-y-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                                                    entry.direction === 'outgoing' ? 'bg-orange-500/20 text-orange-400' : 'bg-emerald-500/20 text-emerald-400'
+                                                }`}>
+                                                    {entry.direction === 'outgoing' ? '↑ Outgoing' : '↓ Incoming'}
+                                                </span>
+                                                <span className="text-[10px] font-black text-white">
+                                                    {conf.conferenceName || (conf as any).name}
+                                                </span>
+                                                <i className="fa-solid fa-arrow-right text-slate-600 text-[9px]"></i>
+                                                <span className="text-[10px] font-bold text-slate-300">
+                                                    {entry.direction === 'outgoing' ? entry.to_conference_name : entry.from_conference_name}
+                                                </span>
+                                            </div>
+
+                                            {/* Asset names */}
+                                            {(entry.asset_names || []).length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 mt-1">
+                                                    {(entry.asset_names as string[]).map((name: string, i: number) => (
+                                                        <span key={i} className="text-[9px] font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-lg">{name}</span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="flex flex-wrap items-center gap-3 text-[10px] text-slate-500 font-bold mt-1">
+                                                {entry.from_address && (
+                                                    <span><i className="fa-solid fa-location-dot mr-1 text-slate-600"></i>{entry.from_address}</span>
+                                                )}
+                                                <span><i className="fa-solid fa-user mr-1 text-slate-600"></i>{entry.transferred_by}</span>
+                                                <span><i className="fa-regular fa-clock mr-1 text-slate-600"></i>
+                                                    {new Date(entry.timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Item count badge */}
+                                        <div className="shrink-0 text-right">
+                                            <span className={`text-lg font-black ${
+                                                entry.direction === 'outgoing' ? 'text-orange-400' : 'text-emerald-400'
+                                            }`}>{(entry.transferred_asset_ids || []).length}</span>
+                                            <p className="text-[9px] text-slate-600 font-bold uppercase">items</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+
         </div>
     );
 };

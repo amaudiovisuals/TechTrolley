@@ -6,6 +6,7 @@ from . import conference_views
 from . import profile_view
 from . import subrental_views
 from . import subrental_ticket_views
+from . import transfer_views
 
 urlpatterns = [
     # API endpoints or views
@@ -18,6 +19,7 @@ urlpatterns = [
     
     path('conferences/', conference_views.conference_list, name='conference_list'),
     path('conferences/<int:pk>/', conference_views.conference_detail, name='conference_detail'),
+    path('conferences/<int:pk>/transfer-assets/', transfer_views.asset_transfer, name='asset_transfer'),
     
     path('dashboard/', views.dashboard, name='dashboard'),
     path('asset-stats/', views.asset_stats, name='asset_stats'),
