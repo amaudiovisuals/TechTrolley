@@ -195,6 +195,7 @@ export interface Booking {
   pdf_document?: string | null;
   approximate_value?: number;
   isAudit?: boolean; // J-109: When true, assets in this conference do not lock other events
+  transfer_log?: any[];
 }
 
 export interface DeliveryChallanRecord {

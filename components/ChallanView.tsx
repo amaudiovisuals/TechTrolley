@@ -103,6 +103,7 @@ interface ChallanViewProps {
   client: Client;
   assets: Asset[];
   companySettings?: CompanySettings;
+  challanTitle?: string;
   onUpdateAsset?: (assetId: string, updates: Partial<Asset>, silent?: boolean) => Promise<void>;
   onAddAdhocItem?: (item: Partial<Asset>) => Promise<string | void>;
   onUpdateConferenceValue?: (conferenceId: string, value: number) => Promise<void>;
@@ -165,7 +166,7 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({
-  booking, client, assets, companySettings, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets
+  booking, client, assets, companySettings, challanTitle, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
@@ -630,6 +631,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             challanNoOverride={challanNoOverride}
             setChallanNoOverride={setChallanNoOverride}
             subrentalTickets={subrentalTickets}
+            challanTitle={challanTitle}
           />
         </div>
       ))}
@@ -650,13 +652,14 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   challanNoOverride: string | null;
   setChallanNoOverride: (val: string | null) => void;
   subrentalTickets?: any[];
+  challanTitle?: string;
 }
 
 const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   booking, client, assets, companySettings, copyLabel, bw,
   visibleColumns, isEditMode, onLocalUpdate, onRemoveRow,
   totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride,
-  subrentalTickets
+  subrentalTickets, challanTitle
 }) => {
   const accent = bw ? '#111111' : '#00AEEF';
   const orange = bw ? '#111111' : '#F15A24';
@@ -870,7 +873,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <span className="text-[8px] font-black uppercase tracking-widest border border-gray-900 px-2 py-0.5 rounded text-gray-900">{copyLabel}</span>
           </div>
           <div>
-            <h2 className="text-lg font-black text-gray-900 tracking-tighter uppercase leading-none">Delivery Challan</h2>
+            <h2 className="text-lg font-black text-gray-900 tracking-tighter uppercase leading-none">{challanTitle || 'Delivery Challan'}</h2>
             <div className="text-[9px] font-black uppercase tracking-widest flex items-center justify-end gap-1 mt-1" style={{ color: orange }}>
               <span>Challan No:</span>
               {isEditMode ? (

@@ -495,6 +495,10 @@ const App: React.FC = () => {
   const [showTransferScanner, setShowTransferScanner] = useState(false);
   const transferScanRef = useRef<HTMLInputElement>(null);
 
+  // Print Selection & Challan Detail View state
+  const [printSelectConf, setPrintSelectConf] = useState<Booking | null>(null);
+  const [challanDetailTab, setChallanDetailTab] = useState<'dispatch' | 'return'>('dispatch');
+
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
   const [viewingAsset, setViewingAsset] = useState<Asset | null>(null);
@@ -5278,21 +5282,39 @@ const App: React.FC = () => {
     </div>
   );
 
-  const handlePrintChallan = (conf: Booking | null) => {
+  const handlePrintChallan = (conf: Booking | null, mode: 'dispatch' | 'return' = 'dispatch', forceChoice = false) => {
     // BUG J-1: Guard against null conference (e.g. unsaved editing state)
     if (!conf) {
       alert('Please save the conference first before printing the challan.');
       return;
     }
+
+    const hasTransfers = (conf.transfer_log && conf.transfer_log.length > 0) ||
+      (conf.challanAssets && conf.challanAssets.length > 0 &&
+       (conf.challanAssets.length !== (conf.assets?.length || 0) ||
+        JSON.stringify([...conf.challanAssets].sort()) !== JSON.stringify([...(conf.assets || [])].sort())));
+
+    if (hasTransfers && forceChoice) {
+      setPrintSelectConf(conf);
+      return;
+    }
+
     // Store locally to persist exact current state across the new tab boundary
     localStorage.setItem('print_conf_data', JSON.stringify(conf));
+    localStorage.setItem('print_challan_title', mode === 'return' ? 'RETURN CHALLAN' : 'DELIVERY CHALLAN');
+
     const challanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-    const relevantAssets = challanPool.filter(a => {
-      const historicalList = (conf.challanAssets && conf.challanAssets.length > 0) 
-                             ? conf.challanAssets 
-                             : [...(conf.assets || []), ...(conf.staged_assets || [])];
-      return historicalList.map(String).includes(String(a.id));
-    });
+    let targetAssetIds: string[] = [];
+
+    if (mode === 'return') {
+      targetAssetIds = (conf.assets || []).map(String);
+    } else {
+      targetAssetIds = (conf.challanAssets && conf.challanAssets.length > 0)
+                       ? conf.challanAssets.map(String)
+                       : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
+    }
+
+    const relevantAssets = challanPool.filter(a => targetAssetIds.includes(String(a.id)));
     localStorage.setItem('print_assets_data', JSON.stringify(relevantAssets));
 
     // Open in new tab
@@ -5545,7 +5567,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex gap-3">
                   {user?.role !== 'godown_incharge' && (
-                    <button onClick={(e) => { e.stopPropagation(); handlePrintChallan(conf); }} className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center"><i className="fa-solid fa-print"></i></button>
+                    <button onClick={(e) => { e.stopPropagation(); handlePrintChallan(conf, 'dispatch', true); }} className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center"><i className="fa-solid fa-print"></i></button>
                   )}
                   {user?.is_staff && (
                     <button onClick={(e) => { e.stopPropagation(); handleDeleteConference(conf.id); }} className="w-10 h-10 bg-red-500/10 text-red-500 rounded-xl flex items-center justify-center"><i className="fa-solid fa-trash"></i></button>
@@ -5688,6 +5710,8 @@ const App: React.FC = () => {
     if (!printConf) {
       return <div className="min-h-screen bg-white flex items-center justify-center text-black font-bold uppercase">Generating Challan Preview...</div>;
     }
+    const printTitle = localStorage.getItem('print_challan_title') || 'DELIVERY CHALLAN';
+
     return (
       <div className="min-h-screen bg-white p-8 print:p-0 print:m-0 print:min-h-0 relative">
         <button
@@ -5704,6 +5728,7 @@ const App: React.FC = () => {
           assets={printAssets}
           companySettings={companySettings}
           subrentalTickets={confSubrentalTickets}
+          challanTitle={printTitle}
         />
         <style>{`
             @media print {
@@ -6478,7 +6503,7 @@ const App: React.FC = () => {
                       <div className="pt-4 grid grid-cols-1 gap-3">
                         <button 
                           type="button"
-                          onClick={() => handlePrintChallan(editingConference)}
+                          onClick={() => handlePrintChallan(editingConference, 'dispatch', true)}
                           className="w-full py-4 md:py-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/20 transition-all active:scale-95 leading-tight"
                         >
                           <i className="fa-solid fa-print"></i> <span>Print Delivery Challan</span>
@@ -7766,32 +7791,80 @@ const App: React.FC = () => {
           {currentPage === 'Billing' && challanViewMode === 'List' && renderChallanList()}
 
           {
-            currentPage === 'Billing' && challanViewMode === 'Detail' && selectedBookingForChallan && (
-              <div className="animate-in fade-in zoom-in duration-300">
-                <div className="no-print p-8 flex justify-between container mx-auto">
-                  <button onClick={() => setChallanViewMode('List')} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold uppercase text-xs">Back to List</button>
-                  <div className="flex gap-4">
-                    <button onClick={() => handlePrintChallan(selectedBookingForChallan)} className="px-6 py-3 bg-sky-500 text-white rounded-xl font-bold uppercase text-xs">Print Challan</button>
+            currentPage === 'Billing' && challanViewMode === 'Detail' && selectedBookingForChallan && (() => {
+              const conf = selectedBookingForChallan;
+              const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+
+              const dispatchIds = (conf.challanAssets && conf.challanAssets.length > 0)
+                ? conf.challanAssets.map(String)
+                : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
+              const returnIds = (conf.assets || []).map(String);
+
+              const hasTransfers = (conf.transfer_log && conf.transfer_log.length > 0) ||
+                (dispatchIds.length !== returnIds.length || JSON.stringify([...dispatchIds].sort()) !== JSON.stringify([...returnIds].sort()));
+
+              const activeAssetIds = (hasTransfers && challanDetailTab === 'return') ? returnIds : dispatchIds;
+              const detailTitle = (hasTransfers && challanDetailTab === 'return') ? 'RETURN CHALLAN' : 'DELIVERY CHALLAN';
+              const detailAssets = pool.filter(a => activeAssetIds.includes(String(a.id)));
+
+              return (
+                <div className="animate-in fade-in zoom-in duration-300">
+                  <div className="no-print p-8 flex flex-col md:flex-row justify-between items-center gap-4 container mx-auto">
+                    <button onClick={() => setChallanViewMode('List')} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold uppercase text-xs">
+                      ← Back to List
+                    </button>
+
+                    {/* Dual Challan Tab Toggle if transfers exist */}
+                    {hasTransfers && (
+                      <div className="flex bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800 shadow-xl">
+                        <button
+                          onClick={() => setChallanDetailTab('dispatch')}
+                          className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                            challanDetailTab === 'dispatch'
+                              ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          📄 Original Dispatch ({dispatchIds.length})
+                        </button>
+                        <button
+                          onClick={() => setChallanDetailTab('return')}
+                          className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                            challanDetailTab === 'return'
+                              ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          ↩️ Return Challan ({returnIds.length})
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-4">
+                      <button
+                        onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch')}
+                        className="px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold uppercase text-xs shadow-lg shadow-sky-500/20 transition-all flex items-center gap-2"
+                      >
+                        <i className="fa-solid fa-print"></i>
+                        Print {hasTransfers ? (challanDetailTab === 'return' ? 'Return Challan' : 'Dispatch Challan') : 'Challan'}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
-                  <ChallanView
-                    booking={selectedBookingForChallan}
-                    client={MOCK_CLIENTS[0]}
-                    assets={(allAssetsRef.current.length > 0 ? allAssetsRef.current : assets).filter(a => {
-                      const historicalList = selectedBookingForChallan.challanAssets && selectedBookingForChallan.challanAssets.length > 0 
-                                             ? selectedBookingForChallan.challanAssets 
-                                             : [...(selectedBookingForChallan.assets || []), ...(selectedBookingForChallan.staged_assets || [])];
-                      return historicalList.map(String).includes(a.id.toString());
-                    })}
-                    companySettings={companySettings}
-                    onUpdateAsset={handleChallanAssetUpdate}
-                    onAddAdhocItem={handleAddAdhocChallanItem}
-                    showScanToast={showScanToast}
-                    onUpdateConferenceValue={handleUpdateConferenceValue}
-                    onUpdateChallanNumber={handleUpdateChallanNumber}
-                    onSaveFullChallan={handleSaveFullChallan}
-                    subrentalTickets={confSubrentalTickets}
+
+                  <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
+                    <ChallanView
+                      booking={conf}
+                      client={MOCK_CLIENTS[0]}
+                      assets={detailAssets}
+                      challanTitle={detailTitle}
+                      companySettings={companySettings}
+                      onUpdateAsset={handleChallanAssetUpdate}
+                      onAddAdhocItem={handleAddAdhocChallanItem}
+                      showScanToast={showScanToast}
+                      onUpdateConferenceValue={handleUpdateConferenceValue}
+                      onUpdateChallanNumber={handleUpdateChallanNumber}
+                      onSaveFullChallan={handleSaveFullChallan}
+                      subrentalTickets={confSubrentalTickets}
                     onRemoveAssets={async (assetIds) => {
                       if (!selectedBookingForChallan) return;
                       const currentAssets = (selectedBookingForChallan.assets || []).map(String);
@@ -7814,8 +7887,8 @@ const App: React.FC = () => {
                   />
                 </div>
               </div>
-            )
-          }
+            );
+          })()}
 
 
         </div >
@@ -8126,6 +8199,98 @@ const App: React.FC = () => {
       })()}
 
       {showScanner && <Scanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+
+      {/* ── PRINT CHALLAN CHOICE MODAL ────────────────────────────── */}
+      {printSelectConf && (() => {
+        const conf = printSelectConf;
+        const dispatchCount = (conf.challanAssets && conf.challanAssets.length > 0)
+          ? conf.challanAssets.length
+          : ((conf.assets?.length || 0) + (conf.staged_assets?.length || 0));
+        const returnCount = conf.assets?.length || 0;
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5">
+              <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                    <span className="w-8 h-8 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+                      <i className="fa-solid fa-print text-sm"></i>
+                    </span>
+                    Select Challan Version
+                  </h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1 truncate max-w-[280px]">
+                    {conf.conferenceName || (conf as any).name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPrintSelectConf(null)}
+                  className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              <p className="text-xs font-bold text-slate-600 leading-relaxed">
+                Asset transfers occurred for this event. Select which challan version you wish to view/print:
+              </p>
+
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const c = printSelectConf;
+                    setPrintSelectConf(null);
+                    handlePrintChallan(c, 'dispatch', false);
+                  }}
+                  className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-sky-200 bg-sky-50/50 hover:bg-sky-100/70 transition-all text-left group shadow-sm active:scale-98"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-10 h-10 rounded-xl bg-sky-500 text-white flex items-center justify-center text-base shadow-md shrink-0">
+                      📄
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-black text-xs text-slate-900 uppercase tracking-tight">Original Dispatch Challan</p>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">All items originally sent from godown</p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 px-2.5 py-1 bg-sky-500 text-white rounded-lg text-[10px] font-black">{dispatchCount} Items</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const c = printSelectConf;
+                    setPrintSelectConf(null);
+                    handlePrintChallan(c, 'return', false);
+                  }}
+                  className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-purple-200 bg-purple-50/50 hover:bg-purple-100/70 transition-all text-left group shadow-sm active:scale-98"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center text-base shadow-md shrink-0">
+                      ↩️
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-black text-xs text-slate-900 uppercase tracking-tight">Godown Return Challan</p>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">Remaining items returning to godown</p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 px-2.5 py-1 bg-purple-600 text-white rounded-lg text-[10px] font-black">{returnCount} Items</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPrintSelectConf(null)}
+                className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
 
       {/* QR Label Modal */}
