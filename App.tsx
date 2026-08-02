@@ -7855,9 +7855,8 @@ const App: React.FC = () => {
           if (e.key === 'Enter') {
             const val = transferScanInput.trim();
             if (!val) return;
-            const found = modalPackupList.find(a =>
-              a.sku === val || a.serialNumber === val || a.qrCode === val || a.barcode === val || String(a.id) === val
-            );
+            const asset = findAssetFromScan(val);
+            const found = asset ? modalPackupList.find(a => String(a.id) === String(asset.id)) : undefined;
             if (found) {
               setTransferSelectedIds(prev => {
                 const next = new Set(prev);
@@ -7865,6 +7864,9 @@ const App: React.FC = () => {
                 else next.add(String(found.id));
                 return next;
               });
+              setScanToast({ message: `✅ Selected "${found.aliasName || found.sku}"`, type: 'success' });
+            } else {
+              setScanToast({ message: `⚠️ "${val}" not found in this conference's packup`, type: 'warning' });
             }
             setTransferScanInput('');
           }
@@ -7873,9 +7875,8 @@ const App: React.FC = () => {
         // Handle phone camera scan into transfer modal
         const handleTransferCameraScan = (code: string) => {
           setShowTransferScanner(false);
-          const found = modalPackupList.find(a =>
-            a.sku === code || a.serialNumber === code || a.qrCode === code || a.barcode === code || String(a.id) === code
-          );
+          const asset = findAssetFromScan(code);
+          const found = asset ? modalPackupList.find(a => String(a.id) === String(asset.id)) : undefined;
           if (found) {
             setTransferSelectedIds(prev => {
               const next = new Set(prev);
@@ -7883,6 +7884,9 @@ const App: React.FC = () => {
               else next.add(String(found.id));
               return next;
             });
+            setScanToast({ message: `✅ Selected "${found.aliasName || found.sku}"`, type: 'success' });
+          } else {
+            setScanToast({ message: `⚠️ "${code}" not found in this conference's packup`, type: 'warning' });
           }
         };
 

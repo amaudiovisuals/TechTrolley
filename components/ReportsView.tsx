@@ -26,6 +26,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
     const [confEndDate, setConfEndDate] = useState('');
     
     const [empSearch, setEmpSearch] = useState('');
+    const [transferSearch, setTransferSearch] = useState('');
     const [flagFilter, setFlagFilter] = useState<AssetFlag | 'All'>('All');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 20;
@@ -735,7 +736,6 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                 // Sort newest first
                 allEntries.sort((a, b) => new Date(b.entry.timestamp).getTime() - new Date(a.entry.timestamp).getTime());
 
-                const [transferSearch, setTransferSearch] = React.useState('');
                 const filtered = allEntries.filter(({ conf, entry }) => {
                     if (!transferSearch) return true;
                     const q = transferSearch.toLowerCase();
