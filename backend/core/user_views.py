@@ -104,3 +104,30 @@ def update_user_role(request):
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def admin_reset_password(request):
+    if not request.user.is_superuser and not request.user.is_staff:
+        return Response({'error': 'Unauthorized. Only admins can reset passwords.'}, status=status.HTTP_403_FORBIDDEN)
+        
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+    user = User.objects.filter(username__iexact=email).first() or User.objects.filter(email__iexact=email).first()
+    
+    if user:
+        user.set_password('amoffice')
+        user.save()
+        return Response({'message': f'Password for {user.email or user.username} has been reset to "amoffice".'})
+    
+    # Fallback to Employee table if no Django User exists yet
+    from .models import Employee
+    emp = Employee.objects.filter(email__iexact=email).first()
+    if emp:
+        User.objects.create_user(username=emp.email, email=emp.email, password='amoffice', is_staff=False)
+        return Response({'message': f'User account provisioned and password set to "amoffice" for {emp.email}.'})
+
+    return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+

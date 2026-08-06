@@ -16,6 +16,7 @@ urlpatterns = [
     path('system-users/', user_views.system_user_list, name='system_user_list'),
     path('system-users/<int:pk>/', user_views.system_user_delete, name='system_user_delete'),
     path('users/role/', user_views.update_user_role, name='update_user_role'),
+    path('users/reset-password/', user_views.admin_reset_password, name='admin_reset_password'),
     
     path('conferences/', conference_views.conference_list, name='conference_list'),
     path('conferences/<int:pk>/', conference_views.conference_detail, name='conference_detail'),

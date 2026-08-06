@@ -284,6 +284,7 @@ class CompanySettings(models.Model):
     theme_template = models.CharField(max_length=20, default='blue', choices=[('blue', 'Blue'), ('green', 'Green')])
     print_label_width = models.IntegerField(default=50, help_text="Label width in mm")
     print_label_height = models.IntegerField(default=25, help_text="Label height in mm")
+    next_challan_number = models.IntegerField(default=1000, help_text="Next auto-generated challan number")
 
     def __str__(self):
         return self.name
@@ -304,6 +305,7 @@ class CompanySettings(models.Model):
             existing.theme_template = self.theme_template
             existing.print_label_width = self.print_label_width
             existing.print_label_height = self.print_label_height
+            existing.next_challan_number = self.next_challan_number
             existing.save()
             return
         super(CompanySettings, self).save(*args, **kwargs)

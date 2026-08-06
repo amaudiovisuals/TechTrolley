@@ -26,7 +26,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         name: '', address: '', phone: '', email: '', gst_number: '', website: '',
         logo: null, powered_by_name: 'am audiovisuals',
         dashboard_config: {}, theme_template: 'blue',
-        print_label_width: 50, print_label_height: 25
+        print_label_width: 50, print_label_height: 25,
+        next_challan_number: 1000
     });
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -108,6 +109,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             }
             formData.append('print_label_width', companySettings.print_label_width.toString());
             formData.append('print_label_height', companySettings.print_label_height.toString());
+            if (companySettings.next_challan_number !== undefined) {
+                formData.append('next_challan_number', companySettings.next_challan_number.toString());
+            }
 
             if (logoFile) {
                 formData.append('logo', logoFile);
@@ -292,6 +296,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         } catch (e) { alert('Connection error'); }
     };
 
+    const handleResetPassword = async (email: string) => {
+        if (!confirm(`Are you sure you want to reset the password for ${email}? It will be set to "amoffice".`)) return;
+        try {
+            const res = await apiFetch(`${API_BASE}/api/users/reset-password/`, {
+                method: 'POST',
+                body: JSON.stringify({ email })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert(data.message || 'Password reset successfully to "amoffice".');
+            } else {
+                alert(`Failed to reset password: ${data.error || 'Unknown error'}`);
+            }
+        } catch (e) {
+            alert('Connection error while resetting password.');
+        }
+    };
+
     // Consolidated Merge Logic
     const allConsolidatedUsers = React.useMemo(() => {
         // Map employees and system users into a unified format
@@ -439,6 +461,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                             <div>
                                 <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Email</label>
                                 <input disabled={!isEditing} type="email" value={companySettings.email} onChange={e => setCompanySettings({ ...companySettings, email: e.target.value })} className={`w-full bg-[#0f172a] border ${isEditing ? 'border-slate-800 focus:border-sky-500' : 'border-transparent text-slate-400'} rounded-xl p-4 font-bold transition-all`} required />
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-amber-500/5 rounded-2xl border border-amber-500/20 space-y-2">
+                            <label className="text-[10px] uppercase font-black text-amber-400 tracking-widest block">
+                                <i className="fa-solid fa-file-invoice mr-1.5"></i> Next Challan Number (Auto Sequence)
+                            </label>
+                            <div className="flex items-center gap-4">
+                                <input 
+                                    type="number" 
+                                    disabled={!isEditing} 
+                                    value={companySettings.next_challan_number ?? 1000} 
+                                    onChange={e => setCompanySettings({ ...companySettings, next_challan_number: parseInt(e.target.value) || 0 })} 
+                                    className={`w-full max-w-xs bg-[#0f172a] border ${isEditing ? 'border-amber-500/50 focus:border-amber-400' : 'border-transparent text-amber-400'} rounded-xl p-4 font-black text-lg transition-all`} 
+                                />
+                                <div className="text-[10px] text-slate-400 font-medium">
+                                    <p className="font-bold text-amber-400/90 uppercase">Current Sequence Counter</p>
+                                    <p>The next created delivery challan will automatically get this number (e.g. #{companySettings.next_challan_number ?? 1000}).</p>
+                                </div>
                             </div>
                         </div>
                         <div className="pt-8 border-t border-slate-800/50 space-y-8">
@@ -618,6 +659,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                             <option value="godown_incharge">Incharge</option>
                                             <option value="technician">Technician</option>
                                         </select>
+                                         <button 
+                                            onClick={() => handleResetPassword(u.email)}
+                                            className="w-10 h-10 flex items-center justify-center text-slate-600 hover:text-amber-400 hover:bg-amber-400/10 rounded-xl transition"
+                                            title="Reset Password to 'amoffice'"
+                                        >
+                                            <i className="fa-solid fa-key text-sm"></i>
+                                        </button>
                                         <button 
                                             onClick={() => u.source === 'system' ? handleDeleteUser(u.id) : handleDeleteEmployee(u.id!)} 
                                             className="w-10 h-10 flex items-center justify-center text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition"

@@ -137,6 +137,14 @@ class ConferenceSerializer(serializers.ModelSerializer):
         
         pdf_doc = validated_data.get('pdf_document')
         if isinstance(pdf_doc, str): validated_data.pop('pdf_document')
+
+        # Auto-assign next_challan_number if not specified or blank
+        if not validated_data.get('challan_number'):
+            settings_obj = CompanySettings.objects.first()
+            if settings_obj:
+                validated_data['challan_number'] = str(settings_obj.next_challan_number)
+                settings_obj.next_challan_number += 1
+                settings_obj.save(update_fields=['next_challan_number'])
             
         conference = Conference.objects.create(**validated_data)
         

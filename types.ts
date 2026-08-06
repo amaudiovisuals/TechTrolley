@@ -222,6 +222,7 @@ export interface CompanySettings {
   theme_template?: 'blue' | 'green';
   print_label_width: number;
   print_label_height: number;
+  next_challan_number?: number;
 }
 
 export interface SubrentalTicketItem {
