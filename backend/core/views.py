@@ -376,6 +376,22 @@ def company_settings(request):
         settings_obj, created = CompanySettings.objects.get_or_create(pk=1)
 
         if request.method == 'GET':
+            # Auto-sync next_challan_number if it's lagging behind existing conferences
+            try:
+                from .models import Conference
+                highest = 999
+                for conf in Conference.objects.all():
+                    val = conf.challan_number or (str(1000 + conf.id) if conf.id else '')
+                    if str(val).isdigit():
+                        num = int(val)
+                        if num > highest:
+                            highest = num
+                if highest >= settings_obj.next_challan_number:
+                    settings_obj.next_challan_number = highest + 1
+                    settings_obj.save(update_fields=['next_challan_number'])
+            except Exception as ex:
+                print("Auto-sync challan number warning:", ex)
+
             serializer = CompanySettingsSerializer(settings_obj, context={'request': request})
             return Response(serializer.data)
         
