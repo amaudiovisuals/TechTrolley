@@ -4483,116 +4483,173 @@ const App: React.FC = () => {
 
 
       <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
-        <div className="p-4 md:p-8 border-b border-slate-800/40 flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative group">
-            <i className="fa-solid fa-search absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-sky-500 transition-colors" />
+        <div className="p-4 md:p-6 border-b border-slate-800/40 space-y-4">
+          {/* Row 1: Primary Search Bar (Full Width, Crisp & Highly Visible) */}
+          <div className="relative group w-full">
+            <i className="fa-solid fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-sm" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => {
                 const val = e.target.value;
                 setSearchQuery(val);
-                // J-120: Eager auto-submit removed — prefix "s1_pro_1" no longer fires before
-                // scanner finishes typing "s1_pro_10". Submit is now Enter-only (see onKeyDown).
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   const code = searchQuery.trim();
                   if (!code) return;
-                  // allAssetsRef always has the full dataset — instant lookup, no fetch needed
                   handleScan(code);
                 }
               }}
-              placeholder="SEARCH OR SCAN EQUIPMENT..."
+              placeholder="Search equipment by name, SKU, serial number, MAC, IMEI..."
               ref={inventorySearchRef}
-              className={`w-full pl-14 ${isMobilePhone ? 'pr-28' : searchQuery.trim() ? 'pr-32' : 'pr-6'} py-4 md:py-5 rounded-2xl border border-slate-800 bg-slate-950/40 text-white font-black text-xs md:text-sm uppercase focus:border-sky-500/50 outline-none transition-all placeholder:text-slate-600`}
+              style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+              className="w-full pl-12 pr-36 py-3.5 md:py-4 rounded-2xl border border-slate-300 bg-white text-slate-900 font-bold text-xs md:text-sm uppercase tracking-wide focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all placeholder:text-slate-400 placeholder:normal-case shadow-sm"
             />
-            {searchQuery.trim() && (
-              <div className={`absolute ${isMobilePhone ? 'right-14' : 'right-4'} top-1/2 -translate-y-1/2 flex items-center pointer-events-none`}>
-                <span className="bg-sky-500/20 text-sky-400 border border-sky-500/30 text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider">
-                  {filteredInventoryAssets.length} {filteredInventoryAssets.length === 1 ? 'item' : 'items'}
-                </span>
-              </div>
-            )}
-            {isMobilePhone && (
-              <button
-                onClick={() => setShowScanner(true)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 md:w-12 md:h-12 bg-sky-500/10 text-sky-400 rounded-xl flex items-center justify-center hover:bg-sky-500 hover:text-white transition group/btn"
+            {/* Right side controls: Item count badge & Clear button & Mobile Camera */}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {searchQuery.trim() && (
+                <>
+                  <span className="bg-sky-50 text-sky-600 border border-sky-200 text-[10px] md:text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap shadow-sm">
+                    {filteredInventoryAssets.length} {filteredInventoryAssets.length === 1 ? 'item' : 'items'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      inventorySearchRef.current?.focus();
+                    }}
+                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition"
+                    title="Clear search"
+                  >
+                    <i className="fa-solid fa-xmark text-xs" />
+                  </button>
+                </>
+              )}
+              {isMobilePhone && (
+                <button
+                  onClick={() => setShowScanner(true)}
+                  className="w-9 h-9 md:w-10 md:h-10 bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white rounded-xl flex items-center justify-center transition group/btn shadow-sm"
+                  title="Scan with Camera"
+                >
+                  <i className="fa-solid fa-camera text-sm group-hover/btn:scale-110 transition-transform" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Row 2: Secondary Filter Bar (Category, Alias, Purchase Date) */}
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
+            {/* Category Filter */}
+            <div className="flex-1 sm:flex-initial sm:w-60 min-w-[180px]">
+              <select
+                value={inventoryCategoryFilter}
+                onChange={(e) => {
+                  setInventoryCategoryFilter(e.target.value);
+                  setInventoryPage(1);
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 md:py-3 text-slate-800 font-bold text-xs uppercase outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all cursor-pointer appearance-none shadow-sm"
+                style={{
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 1rem center',
+                  backgroundSize: '1rem'
+                }}
               >
-                <i className="fa-solid fa-camera text-sm md:text-base group-hover/btn:scale-110 transition-transform" />
-              </button>
-            )}
-          </div>
-          <div className="md:w-64">
-            <select
-              value={inventoryCategoryFilter}
-              onChange={(e) => {
-                setInventoryCategoryFilter(e.target.value);
-                setInventoryPage(1);
-              }}
-              className="w-full h-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 md:py-0 text-white font-black text-xs uppercase outline-none focus:border-sky-500 transition-all cursor-pointer appearance-none"
-              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
-            >
-              {derivedCategories.map(cat => (
-                <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat}</option>
-              ))}
-            </select>
-          </div>
-          <div className="md:w-64">
-            <select
-              value={selectedAlias}
-              onChange={(e) => {
-                setSelectedAlias(e.target.value);
-                setInventoryPage(1);
-              }}
-              className="w-full h-full bg-slate-950 border border-slate-800 rounded-2xl px-6 py-4 md:py-0 text-white font-black text-xs uppercase outline-none focus:border-sky-500 transition-all cursor-pointer appearance-none"
-              style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1.5rem center', backgroundSize: '1rem' }}
-            >
-              {uniqueAliases.map(({ label, value, count }) => (
-                <option key={value} value={value}>
-                  {value === 'All' ? 'All Aliases' : `${label} (${count})`}
-                </option>
-              ))}
-            </select>
-          </div>
-          {/* Purchase Date Range Filter */}
-          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 md:py-0 text-white shrink-0">
-            <i className="fa-regular fa-calendar text-slate-500 text-xs" />
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap hidden lg:inline">Purchased:</span>
-            <input
-              type="date"
-              value={purchaseDateFrom}
-              onChange={(e) => {
-                setPurchaseDateFrom(e.target.value);
-                setInventoryPage(1);
-              }}
-              className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
-              title="Purchase Date From"
-            />
-            <span className="text-slate-600 text-xs">-</span>
-            <input
-              type="date"
-              value={purchaseDateTo}
-              onChange={(e) => {
-                setPurchaseDateTo(e.target.value);
-                setInventoryPage(1);
-              }}
-              className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
-              title="Purchase Date To"
-            />
-            {(purchaseDateFrom || purchaseDateTo) && (
+                {derivedCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat === 'All' ? 'All Categories' : cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Alias Filter */}
+            <div className="flex-1 sm:flex-initial sm:w-60 min-w-[180px]">
+              <select
+                value={selectedAlias}
+                onChange={(e) => {
+                  setSelectedAlias(e.target.value);
+                  setInventoryPage(1);
+                }}
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 md:py-3 text-slate-800 font-bold text-xs uppercase outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all cursor-pointer appearance-none shadow-sm"
+                style={{
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 1rem center',
+                  backgroundSize: '1rem'
+                }}
+              >
+                {uniqueAliases.map(({ label, value, count }) => (
+                  <option key={value} value={value}>
+                    {value === 'All' ? 'All Aliases' : `${label} (${count})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Purchase Date Range Filter */}
+            <div className="flex items-center gap-2 bg-white border border-slate-300 rounded-xl px-4 py-2.5 md:py-3 text-slate-800 shadow-sm shrink-0">
+              <i className="fa-regular fa-calendar text-sky-500 text-xs" />
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">Purchased:</span>
+              <input
+                type="date"
+                value={purchaseDateFrom}
+                onChange={(e) => {
+                  setPurchaseDateFrom(e.target.value);
+                  setInventoryPage(1);
+                }}
+                style={{ color: '#0f172a', backgroundColor: 'transparent' }}
+                className="bg-transparent text-slate-800 text-xs font-bold outline-none cursor-pointer"
+                title="Purchase Date From"
+              />
+              <span className="text-slate-400 text-xs font-bold">to</span>
+              <input
+                type="date"
+                value={purchaseDateTo}
+                onChange={(e) => {
+                  setPurchaseDateTo(e.target.value);
+                  setInventoryPage(1);
+                }}
+                style={{ color: '#0f172a', backgroundColor: 'transparent' }}
+                className="bg-transparent text-slate-800 text-xs font-bold outline-none cursor-pointer"
+                title="Purchase Date To"
+              />
+              {(purchaseDateFrom || purchaseDateTo) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPurchaseDateFrom('');
+                    setPurchaseDateTo('');
+                    setInventoryPage(1);
+                  }}
+                  className="text-slate-400 hover:text-red-500 p-1 transition ml-1"
+                  title="Clear Date Range"
+                >
+                  <i className="fa-solid fa-xmark text-xs" />
+                </button>
+              )}
+            </div>
+
+            {/* Active Filters Reset Pill */}
+            {(inventoryCategoryFilter !== 'All' || selectedAlias !== 'All' || purchaseDateFrom || purchaseDateTo || searchQuery) && (
               <button
                 type="button"
                 onClick={() => {
+                  setSearchQuery('');
+                  setInventoryCategoryFilter('All');
+                  setSelectedAlias('All');
                   setPurchaseDateFrom('');
                   setPurchaseDateTo('');
                   setInventoryPage(1);
                 }}
-                className="text-slate-500 hover:text-red-400 p-1 transition"
-                title="Clear Date Range"
+                className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition flex items-center gap-1.5 self-center"
+                title="Reset all search and filter conditions"
               >
-                <i className="fa-solid fa-xmark text-xs" />
+                <i className="fa-solid fa-rotate-left text-[9px]" /> Reset Filters
               </button>
             )}
           </div>
@@ -5458,7 +5515,8 @@ const App: React.FC = () => {
             placeholder="Search Subrental Inventory (SKU, Name, Serial)..."
             value={subrentalSearchQuery}
             onChange={(e) => setSubrentalSearchQuery(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-16 pr-8 py-4 text-white font-black text-xs uppercase focus:border-sky-500 outline-none transition-all"
+            style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+            className="w-full bg-white border border-slate-300 rounded-2xl pl-16 pr-8 py-4 text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 focus:border-sky-500 outline-none transition-all shadow-sm"
           />
         </div>
       </div>
@@ -5552,7 +5610,8 @@ const App: React.FC = () => {
           <input
             type="text" value={employeeSearchQuery} onChange={(e) => setEmployeeSearchQuery(e.target.value)}
             placeholder="Search employees..."
-            className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-800 bg-slate-950/40 text-white font-black text-[10px] md:text-xs uppercase"
+            style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+            className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-300 bg-white text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 outline-none focus:border-indigo-500 shadow-sm"
           />
         </div>
         <div className="overflow-x-auto custom-scrollbar">
@@ -5657,7 +5716,8 @@ const App: React.FC = () => {
             <input
               type="text" value={challanSearchQuery} onChange={(e) => setChallanSearchQuery(e.target.value)}
               placeholder="Search challans..."
-              className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-800 bg-slate-950/40 text-white font-black text-[10px] md:text-xs uppercase"
+              style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+              className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-300 bg-white text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 outline-none focus:border-orange-500 shadow-sm"
             />
           </div>
           {/* Desktop Table View */}
@@ -5810,12 +5870,14 @@ const App: React.FC = () => {
             value={conferenceSearchTerm}
             onChange={(e) => setConferenceSearchTerm(e.target.value)}
             placeholder="Search conference name or venue..."
-            className="flex-1 bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold placeholder-slate-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+            className="flex-1 bg-white border border-slate-300 rounded-2xl px-6 py-4 text-slate-900 font-bold placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 shadow-sm"
          />
          <select
             value={conferenceStatusFilter}
             onChange={(e) => setConferenceStatusFilter(e.target.value)}
-            className="md:w-64 bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+            className="md:w-64 bg-white border border-slate-300 rounded-2xl px-6 py-4 text-slate-800 font-bold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 shadow-sm"
          >
             <option value="ALL">All Statuses</option>
             <option value="UPCOMING">Upcoming</option>
@@ -5825,7 +5887,8 @@ const App: React.FC = () => {
          <select
             value={conferenceTypeFilter}
             onChange={(e) => setConferenceTypeFilter(e.target.value)}
-            className="md:w-64 bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+            style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+            className="md:w-64 bg-white border border-slate-300 rounded-2xl px-6 py-4 text-slate-800 font-bold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 shadow-sm"
          >
             <option value="ALL">All Event Types</option>
             <option value="Medical Conference">Medical Conference</option>
