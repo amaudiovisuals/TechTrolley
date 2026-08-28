@@ -192,6 +192,7 @@ export interface Booking {
   vehicleNumber?: string;
   driverPhone?: string;
   challanDate?: string;
+  challan_date?: string;
   assigned_employees?: number[];
   pdf_document?: string | null;
   approximate_value?: number;

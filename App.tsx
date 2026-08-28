@@ -1397,8 +1397,11 @@ const App: React.FC = () => {
             vehicleNumber: c.vehicle_number,
             driverPhone: c.driver_phone,
             challanDate: c.challan_date || '',
+            challan_date: c.challan_date || '',
             startDate: c.start_date,
+            start_date: c.start_date,
             endDate: c.end_date,
+            end_date: c.end_date,
             type: c.conference_type as any,
             conferenceType: c.conference_type as any,
             contactPerson: c.contact_person,
@@ -4486,7 +4489,8 @@ const App: React.FC = () => {
         <div className="p-4 md:p-6 border-b border-slate-800/40 space-y-4">
           {/* Row 1: Primary Search Bar (Full Width, Crisp & Highly Visible) */}
           <div className="relative group w-full">
-            <i className="fa-solid fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-sm" />
+            {/* Search lens icon: hidden on mobile to prevent overlapping, visible on desktop/laptop */}
+            <i className="fa-solid fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-sm hidden md:block" />
             <input
               type="text"
               value={searchQuery}
@@ -4505,13 +4509,13 @@ const App: React.FC = () => {
               placeholder="Search equipment by name, SKU, serial number, MAC, IMEI..."
               ref={inventorySearchRef}
               style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-              className="w-full pl-12 pr-36 py-3.5 md:py-4 rounded-2xl border border-slate-300 bg-white text-slate-900 font-bold text-xs md:text-sm uppercase tracking-wide focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all placeholder:text-slate-400 placeholder:normal-case shadow-sm"
+              className="w-full px-4 md:pl-12 pr-24 md:pr-36 py-3.5 md:py-4 rounded-2xl border border-slate-300 bg-white text-slate-900 font-bold text-xs md:text-sm uppercase tracking-wide focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all placeholder:text-slate-400 placeholder:normal-case shadow-sm"
             />
             {/* Right side controls: Item count badge & Clear button & Mobile Camera */}
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
               {searchQuery.trim() && (
                 <>
-                  <span className="bg-sky-50 text-sky-600 border border-sky-200 text-[10px] md:text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap shadow-sm">
+                  <span className="hidden sm:inline-block bg-sky-50 text-sky-600 border border-sky-200 text-[10px] md:text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap shadow-sm">
                     {filteredInventoryAssets.length} {filteredInventoryAssets.length === 1 ? 'item' : 'items'}
                   </span>
                   <button
@@ -5509,14 +5513,14 @@ const App: React.FC = () => {
 
       <div className="flex flex-col md:flex-row gap-4 items-center mb-8">
         <div className="relative flex-1">
-          <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-500"></i>
+          <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 hidden md:block"></i>
           <input 
             type="text"
             placeholder="Search Subrental Inventory (SKU, Name, Serial)..."
             value={subrentalSearchQuery}
             onChange={(e) => setSubrentalSearchQuery(e.target.value)}
             style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-            className="w-full bg-white border border-slate-300 rounded-2xl pl-16 pr-8 py-4 text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 focus:border-sky-500 outline-none transition-all shadow-sm"
+            className="w-full bg-white border border-slate-300 rounded-2xl px-6 md:pl-16 pr-8 py-4 text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 focus:border-sky-500 outline-none transition-all shadow-sm"
           />
         </div>
       </div>
@@ -5694,6 +5698,27 @@ const App: React.FC = () => {
   };
 
   const renderChallanList = () => {
+    // Formats date string to DD/MM/YYYY matching ChallanView
+    const formatChallanDate = (rawDate?: string, fallbackDate?: string): string => {
+      const d = rawDate || fallbackDate;
+      if (!d) return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return d;
+      const parts = d.split('-');
+      if (parts.length === 3) {
+        const year = parts[0];
+        const month = parts[1];
+        const day = parts[2].split('T')[0];
+        if (day && month && year) {
+          return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+        }
+      }
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      }
+      return d;
+    };
+
     // Sort challans by number descending
     const sortedChallans = [...filteredConferences]
       .filter(conf => !challanSearchQuery ||
@@ -5737,6 +5762,7 @@ const App: React.FC = () => {
                 {sortedChallans.map((conf) => {
                   const historicalCount = getChallanTotalItemsCount(conf);
                   const hasAssets = historicalCount > 0;
+                  const challanDateDisplay = formatChallanDate(conf.challanDate || conf.challan_date, conf.startDate || (conf as any).start_date);
                   
                   return (
                     <tr key={conf.id} className="hover:bg-slate-800/10 transition">
@@ -5744,7 +5770,7 @@ const App: React.FC = () => {
                         <p className="font-black text-white text-base uppercase">#{conf.challanNumber}</p>
                       </td>
                       <td className="px-10 py-6">
-                        <p className="text-xs text-slate-300 font-bold uppercase">{new Date().toLocaleDateString('en-GB')}</p>
+                        <p className="text-xs text-slate-300 font-bold uppercase">{challanDateDisplay}</p>
                       </td>
                       <td className="px-10 py-6">
                         <p className="font-bold text-white text-xs uppercase">{conf.conferenceName}</p>
@@ -5795,6 +5821,7 @@ const App: React.FC = () => {
             {sortedChallans.map((conf) => {
               const historicalCount = getChallanTotalItemsCount(conf);
               const hasAssets = historicalCount > 0;
+              const challanDateDisplay = formatChallanDate(conf.challanDate || conf.challan_date, conf.startDate || (conf as any).start_date);
 
               return (
                 <div key={conf.id} className="bg-slate-900/60 border border-slate-800/60 p-5 rounded-2xl space-y-4">
@@ -5802,6 +5829,10 @@ const App: React.FC = () => {
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Challan #</p>
                       <p className="font-black text-white text-lg">#{conf.challanNumber}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
+                        <i className="fa-regular fa-calendar text-[9px] mr-1 text-sky-400"></i>
+                        {challanDateDisplay}
+                      </p>
                     </div>
                     <span className={`px-3 py-1 rounded-md text-[9px] font-black uppercase tracking-widest ${hasAssets ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
                       {hasAssets ? 'Generated' : 'Draft'}
