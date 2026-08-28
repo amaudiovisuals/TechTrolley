@@ -243,6 +243,7 @@ const App: React.FC = () => {
   const [selectedBookingForChallan, setSelectedBookingForChallan] = useState<Booking | null>(null);
   const [selectedConferenceDetails, setSelectedConferenceDetails] = useState<Booking | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const searchRequestIdRef = useRef<number>(0);
 
   // PWA Update Logic
   const {
@@ -603,6 +604,7 @@ const App: React.FC = () => {
   };
 
   const fetchAssets = (search: string = ''): Promise<Asset[]> => {
+    const requestId = ++searchRequestIdRef.current;
     // Use ?all=true so every asset is returned in a single response.
     // The backend already supports this (skips pagination when all=true).
     // This eliminates the blinking / batch-loading flicker and loads everything
@@ -610,10 +612,13 @@ const App: React.FC = () => {
     const url = `${API_BASE}/api/assets/?all=true&search=${encodeURIComponent(search)}&_t=${Date.now()}`;
     return apiFetch(url)
       .then(async res => {
+        if (requestId !== searchRequestIdRef.current) return [];
         const data = await res.json();
+        if (requestId !== searchRequestIdRef.current) return [];
         const results = Array.isArray(data) ? data : (data.results ?? data);
 
         if (Array.isArray(results)) {
+          if (requestId !== searchRequestIdRef.current) return [];
           const mappedAssets: Asset[] = results.map((asset: any) => ({
             ...asset,
             id: asset.id.toString(),
@@ -662,9 +667,12 @@ const App: React.FC = () => {
   };
 
   const silentPollUpdates = (search: string = '') => {
+    // If the user has typed an active search query in the inventory search, DO NOT poll or overwrite assets!
+    if (searchQuery.trim().length > 0) return Promise.resolve([]);
     const url = `${API_BASE}/api/assets/?search=${encodeURIComponent(search)}&_t=${Date.now()}`;
     return apiFetch(url)
       .then(async res => {
+        if (searchQuery.trim().length > 0) return [];
         const data = await res.json();
         const results = data.results !== undefined ? data.results : data;
 
@@ -1008,21 +1016,29 @@ const App: React.FC = () => {
   // Performance optimizations: Debounced Search & Pagination
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
-  // Poll every 5 seconds to keep asset statuses in sync (reduced from 30s to prevent scanning conflicts)
-  // BUG J-19: Do NOT re-fetch conferences while the user is in the conference form —
-  // it causes a race condition that can overwrite unsaved staged asset state.
+  // Polling: background refresh adjusted to 25s to prevent UI clobbering, race conditions, and excessive requests
+  // Skips polling if tab is hidden, or if searching inventory, or if viewing challan details or editing conference.
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (!isBackgroundSyncing && !debouncedSearchQuery) {
+      // 1. Do not poll if the browser tab is hidden/inactive
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      // 2. Only poll assets if no active search query is typed or settling
+      if (!isBackgroundSyncing && !searchQuery.trim() && !debouncedSearchQuery.trim()) {
         silentPollUpdates();
       }
+
+      // 3. Poll dashboard statistics
       fetchDashboardStats();
-      if (conferenceView !== 'Form') {
+
+      // 4. Do not poll conferences while in conference form or while viewing a challan in detail mode
+      const isViewingChallanDetail = currentPage === 'Billing' && challanViewMode === 'Detail';
+      if (conferenceView !== 'Form' && !isViewingChallanDetail) {
         fetchConferences();
       }
-    }, 5000);
+    }, 25000);
     return () => clearInterval(interval);
-  }, [conferenceView, isBackgroundSyncing, debouncedSearchQuery]);
+  }, [conferenceView, isBackgroundSyncing, searchQuery, debouncedSearchQuery, currentPage, challanViewMode]);
 
 
   // J-115: Revert J-114 UI, Restore original filter
@@ -1096,10 +1112,10 @@ const App: React.FC = () => {
 
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
-    // 1. Text Search is handled upstream by debouncedSearchQuery and fetchAssets,
-    //    but the resulting 'assets' array is fed here.
+    // 1. Text Search: Instant client-side filtering on searchQuery
+    const q = searchQuery.trim().toLowerCase();
     
-    // 2. Category Filter
+    // 2. Category & Alias Filter
     const filtered = assets.filter(asset => {
       // Don't show ticket-only transient items in main inventory
       if (asset.isTemporary) return false;
@@ -1114,6 +1130,18 @@ const App: React.FC = () => {
         const assetCat = (asset as any).category || getUICategory(asset.type);
         if (assetCat !== inventoryCategoryFilter) return false;
       }
+
+      if (q) {
+        const nameMatch = (asset.aliasName || '').toLowerCase().includes(q);
+        const skuMatch = (asset.sku || '').toLowerCase().includes(q);
+        const serialMatch = (asset.serialNumber || '').toLowerCase().includes(q);
+        const typeMatch = (asset.type || '').toLowerCase().includes(q);
+        const barcodeMatch = (asset.barcode || '').toLowerCase().includes(q);
+        const venueMatch = (asset.currentVenue || '').toLowerCase().includes(q);
+        if (!nameMatch && !skuMatch && !serialMatch && !typeMatch && !barcodeMatch && !venueMatch) {
+          return false;
+        }
+      }
       
       return true;
     });
@@ -1124,7 +1152,7 @@ const App: React.FC = () => {
       const dateB = new Date(b.createdAt || 0).getTime() || 0;
       return dateB - dateA; // Descending
     });
-  }, [assets, inventoryCategoryFilter, selectedAlias]);
+  }, [assets, inventoryCategoryFilter, selectedAlias, searchQuery]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     
@@ -1315,11 +1343,12 @@ const App: React.FC = () => {
           }));
           setBackendConferences(mapped);
           
-          // CRITICAL FIX: Also refresh the active challan view if it matches an updated conference
-          if (selectedBookingForChallan) {
-            const updatedActive = mapped.find(b => b.id === selectedBookingForChallan.id);
-            if (updatedActive) setSelectedBookingForChallan(updatedActive);
-          }
+          // Use functional updater to always target the current active conference and prevent stale closure reverting
+          setSelectedBookingForChallan(prev => {
+            if (!prev) return null;
+            const updatedActive = mapped.find(b => b.id === prev.id);
+            return updatedActive || prev;
+          });
 
           // If in print mode, set the selected booking immediately after fetching
           if (isPrintMode && printConfId) {
@@ -4303,8 +4332,15 @@ const App: React.FC = () => {
               }}
               placeholder="SEARCH OR SCAN EQUIPMENT..."
               ref={inventorySearchRef}
-              className={`w-full pl-14 ${isMobilePhone ? 'pr-16' : 'pr-6'} py-4 md:py-5 rounded-2xl border border-slate-800 bg-slate-950/40 text-white font-black text-xs md:text-sm uppercase focus:border-sky-500/50 outline-none transition-all placeholder:text-slate-600`}
+              className={`w-full pl-14 ${isMobilePhone ? 'pr-28' : searchQuery.trim() ? 'pr-32' : 'pr-6'} py-4 md:py-5 rounded-2xl border border-slate-800 bg-slate-950/40 text-white font-black text-xs md:text-sm uppercase focus:border-sky-500/50 outline-none transition-all placeholder:text-slate-600`}
             />
+            {searchQuery.trim() && (
+              <div className={`absolute ${isMobilePhone ? 'right-14' : 'right-4'} top-1/2 -translate-y-1/2 flex items-center pointer-events-none`}>
+                <span className="bg-sky-500/20 text-sky-400 border border-sky-500/30 text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider">
+                  {filteredInventoryAssets.length} {filteredInventoryAssets.length === 1 ? 'item' : 'items'}
+                </span>
+              </div>
+            )}
             {isMobilePhone && (
               <button
                 onClick={() => setShowScanner(true)}
@@ -4592,15 +4628,17 @@ const App: React.FC = () => {
             </tbody>
           </table>
         </div>
-        {totalInventoryPages > 1 && (
+        {filteredInventoryAssets.length > 0 && (
           <div className="p-6 border-t border-slate-800 bg-slate-950/20 flex items-center justify-between">
-            <p className="text-[10px] font-black text-slate-500 uppercase">
-              Showing {(inventoryPage - 1) * itemsPerPage + 1} to {Math.min(inventoryPage * itemsPerPage, filteredInventoryAssets.length)} of {filteredInventoryAssets.length}
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+              Showing {(inventoryPage - 1) * itemsPerPage + 1} to {Math.min(inventoryPage * itemsPerPage, filteredInventoryAssets.length)} of {filteredInventoryAssets.length} {filteredInventoryAssets.length === 1 ? 'item' : 'items'}
             </p>
-            <div className="flex gap-2">
-              <button disabled={inventoryPage === 1} onClick={() => setInventoryPage(p => p - 1)} className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 disabled:opacity-30 hover:text-white transition"><i className="fa-solid fa-chevron-left"></i></button>
-              <button disabled={inventoryPage === totalInventoryPages} onClick={() => setInventoryPage(p => p + 1)} className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 disabled:opacity-30 hover:text-white transition"><i className="fa-solid fa-chevron-right"></i></button>
-            </div>
+            {totalInventoryPages > 1 && (
+              <div className="flex gap-2">
+                <button disabled={inventoryPage === 1} onClick={() => setInventoryPage(p => p - 1)} className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 disabled:opacity-30 hover:text-white transition"><i className="fa-solid fa-chevron-left"></i></button>
+                <button disabled={inventoryPage === totalInventoryPages} onClick={() => setInventoryPage(p => p + 1)} className="w-10 h-10 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 disabled:opacity-30 hover:text-white transition"><i className="fa-solid fa-chevron-right"></i></button>
+              </div>
+            )}
           </div>
         )}
         
