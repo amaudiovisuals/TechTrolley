@@ -108,8 +108,11 @@ def asset_list(request):
             'ticket_items__ticket__conference'
         )
 
-        # Exclude temporary items created inside subrental tickets from all inventory views
-        assets_query = assets_query.filter(is_temporary=False)
+        # Exclude temporary items created inside subrental tickets from all inventory views,
+        # but keep temporary/ad-hoc items that were attached to a conference or challan
+        assets_query = assets_query.filter(
+            Q(is_temporary=False) | Q(assigned_conferences__isnull=False) | Q(challan_conferences__isnull=False)
+        ).distinct()
 
         if subrental_company_id:
             if subrental_company_id == 'null':

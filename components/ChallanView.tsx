@@ -214,16 +214,29 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     localStorage.setItem('challan_visible_columns', JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
+  const lastBookingIdRef = React.useRef<string>(booking.id);
+  const isSavingRef = React.useRef<boolean>(false);
+
   React.useEffect(() => {
-    // Only update localAssets if we are NOT in edit mode
-    // This prevents losing ad-hoc items or pending edits when props update
-    if (!isEditMode) {
+    // Only reset localAssets if switching to a different booking,
+    // or if external assets changed and we are NOT currently in edit mode or saving
+    const bookingChanged = lastBookingIdRef.current !== booking.id;
+    if (bookingChanged) {
+      lastBookingIdRef.current = booking.id;
+      setLocalAssets(assets.map(a => ({
+        ...a,
+        aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
+      })));
+      return;
+    }
+
+    if (!isEditMode && !isSavingRef.current) {
       setLocalAssets(assets.map(a => ({
         ...a,
         aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
       })));
     }
-  }, [assets, isEditMode]);
+  }, [assets, booking.id]);
 
   const toggleColumn = (key: ColumnKey) => {
     setVisibleColumns(prev =>
@@ -240,6 +253,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const saveAllChanges = async () => {
+    isSavingRef.current = true;
     const errors: string[] = [];
     try {
       // 1. Process removals in batch
@@ -272,12 +286,14 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
                 alias_name: asset.aliasName,
                 quantity: asset.quantity,
                 item_price: asset.itemPrice,
-                depreciation_percentage: asset.depreciationPercentage,
+                depreciation_percentage: asset.depreciationPercentage || 0,
                 serial_number: asset.serialNumber,
                 type: asset.type,
               } as any);
               if (returnedId) {
                 newAdhocIds.push(returnedId as string);
+                // Update local asset id from temp to real id
+                asset.id = returnedId as string;
               }
             } catch (err) {
               console.error(`Failed to add ad-hoc item ${asset.sku}:`, err);
@@ -292,7 +308,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               original.sku !== asset.sku ||
               original.quantity !== asset.quantity ||
               original.itemPrice !== asset.itemPrice ||
-              original.serialNumber !== asset.serialNumber
+              original.serialNumber !== asset.serialNumber ||
+              original.depreciationPercentage !== asset.depreciationPercentage
             )) {
               console.log("Updating existing asset (silent):", asset.id);
               // Backend expects snake_case
@@ -300,7 +317,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               if (original.aliasName !== asset.aliasName) updates.alias_name = asset.aliasName;
               if (original.sku !== asset.sku) updates.sku = asset.sku;
               if (original.quantity !== asset.quantity) updates.quantity = asset.quantity;
-              if (original.itemPrice !== asset.itemPrice) updates.item_price = asset.itemPrice;
+              if (original.itemPrice !== asset.itemPrice) {
+                updates.item_price = asset.itemPrice;
+                updates.depreciation_percentage = 0; // Clear depreciation so custom challan rate is preserved
+              }
               if (original.serialNumber !== asset.serialNumber) updates.serial_number = asset.serialNumber;
               try {
                 await onUpdateAsset(String(asset.id), updates, true); // silent = true
@@ -345,7 +365,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       if (onSaveFullChallan) {
         console.log("Saving full challan asset list...");
         const finalAssetIds = localAssets
-          .filter(a => !String(a.id).startsWith('new-')) // Exclude new ad-hoc items that haven't been saved to DB yet
+          .filter(a => !String(a.id).startsWith('new-'))
           .map(a => String(a.id));
         try {
           await onSaveFullChallan(booking.id, [...finalAssetIds, ...newAdhocIds]);
@@ -365,8 +385,12 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     } catch (err) {
       console.error("Critical error during saveAllChanges:", err);
       alert("Failed to save some changes. Check console for details.");
+    } finally {
+      setIsEditMode(false);
+      setTimeout(() => {
+        isSavingRef.current = false;
+      }, 1000);
     }
-    setIsEditMode(false);
   };
 
   const addRow = () => {
@@ -480,10 +504,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       // For laptops, default to the OS sub-group label (MacBook / Windows Laptop).
       // This is read by renderCell and never flows into onLocalUpdate or saveAllChanges.
       printName: printAliasOverrides[String(a.id)]
-        ?? getLaptopSubGroup(a)
-        ?? a.aliasName
-        ?? a.sku
-        ?? '',
+        ?? (isGrouped ? (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? '') : (a.aliasName || a.sku || ''))
     }));
   }, [localAssets, isGrouped, isEditMode, printAliasOverrides]);
 

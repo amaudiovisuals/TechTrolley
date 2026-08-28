@@ -1366,17 +1366,20 @@ const App: React.FC = () => {
     }
   };
 
-  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset> & { alias_name?: string; item_price?: number; serial_number?: string }, silent = false) => {
-    // Optimistic Update so Challan View updates instantly without flashing old state
-    if (!silent) {
-      setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { 
-        ...a, 
-        aliasName: updates.alias_name !== undefined ? updates.alias_name : a.aliasName,
-        sku: updates.sku !== undefined ? updates.sku : a.sku,
-        quantity: updates.quantity !== undefined ? updates.quantity : a.quantity,
-        itemPrice: updates.item_price !== undefined ? updates.item_price : a.itemPrice,
-        serialNumber: updates.serial_number !== undefined ? updates.serial_number : a.serialNumber
-      } : a));
+  const handleChallanAssetUpdate = async (assetId: string, updates: Partial<Asset> & { alias_name?: string; item_price?: number; serial_number?: string; depreciation_percentage?: number }, silent = false) => {
+    // Synchronize parent assets state immediately so Challan View does not revert
+    const updatedFields: Partial<Asset> = {
+      ...(updates.alias_name !== undefined ? { aliasName: updates.alias_name } : {}),
+      ...(updates.sku !== undefined ? { sku: updates.sku } : {}),
+      ...(updates.quantity !== undefined ? { quantity: updates.quantity } : {}),
+      ...(updates.item_price !== undefined ? { itemPrice: updates.item_price } : {}),
+      ...(updates.depreciation_percentage !== undefined ? { depreciationPercentage: updates.depreciation_percentage } : {}),
+      ...(updates.serial_number !== undefined ? { serialNumber: updates.serial_number } : {}),
+    };
+
+    setAssets(prev => prev.map(a => String(a.id) === String(assetId) ? { ...a, ...updatedFields } : a));
+    if (allAssetsRef.current) {
+      allAssetsRef.current = allAssetsRef.current.map(a => String(a.id) === String(assetId) ? { ...a, ...updatedFields } : a);
     }
 
     try {
@@ -1445,27 +1448,52 @@ const App: React.FC = () => {
           showScanToast(`✅ Asset Assigned to Challan`, 'success');
           // Update local state to reflect change in ChallanView
           setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: updatedChallanAssets } : null);
+          const mappedNewAsset: Asset = {
+            ...newAsset,
+            id: newAsset.id.toString(),
+            aliasName: newAsset.alias_name,
+            serialNumber: newAsset.serial_number,
+            itemPrice: parseFloat(newAsset.item_price) || 0,
+            quantity: parseInt(newAsset.quantity, 10) || 1,
+            depreciationPercentage: parseFloat(newAsset.depreciation_percentage) || 0,
+            createdAt: newAsset.created_at || new Date().toISOString()
+          };
+          setAssets(prev => [...prev, mappedNewAsset]);
+          if (allAssetsRef.current) {
+            allAssetsRef.current = [...allAssetsRef.current, mappedNewAsset];
+          }
           await fetchAssets();
           await fetchConferences();
           return String(newAsset.id);
+        } else {
+          const err = await confRes.json().catch(() => ({}));
+          console.error("Failed to assign ad-hoc item to conference:", err);
+          throw new Error("Failed to assign ad-hoc item to conference");
         }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Failed to create ad-hoc item:", err);
+        throw new Error("Failed to create ad-hoc item");
       }
     } catch (err) {
       console.error("Failed to add ad-hoc item", err);
       showScanToast(`⚠️ Failed to create ad-hoc item`, 'error');
+      throw err;
     }
   };
   
   const handleSaveFullChallan = async (conferenceId: string, assetIds: string[]) => {
     try {
+      const cleanIds = assetIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
       const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/`, {
         method: 'PATCH',
         body: JSON.stringify({
-          challan_assets: assetIds.map(id => parseInt(id, 10)).filter(id => !isNaN(id))
+          challan_assets: cleanIds
         })
       });
       if (res.ok) {
         showScanToast('✅ Challan State Frozen/Saved Successfully', 'success');
+        setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: cleanIds.map(String) } : null);
         await fetchConferences();
         await fetchAssets();
       } else {
@@ -5735,6 +5763,12 @@ const App: React.FC = () => {
           companySettings={companySettings}
           subrentalTickets={confSubrentalTickets}
           challanTitle={printTitle}
+          onUpdateAsset={handleChallanAssetUpdate}
+          onAddAdhocItem={handleAddAdhocChallanItem}
+          showScanToast={showScanToast}
+          onUpdateConferenceValue={handleUpdateConferenceValue}
+          onUpdateChallanNumber={handleUpdateChallanNumber}
+          onSaveFullChallan={handleSaveFullChallan}
         />
         <style>{`
             @media print {
