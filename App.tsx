@@ -175,6 +175,7 @@ import { ReportsView } from './components/ReportsView';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { QRLabelModal } from './components/QRLabelModal';
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 
 type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings' | 'Subrentals';
 type AssetView = 'List' | 'Form' | 'Details';
@@ -1208,6 +1209,42 @@ const App: React.FC = () => {
   // Used exclusively by findAssetFromScan so scanning works on ALL pages
   // regardless of which 50-item page is currently displayed in the inventory.
   const allAssetsRef = useRef<Asset[]>([]);
+
+  // Compute true item quantity sum for a conference challan (including multi-quantity assets & consumables)
+  const getChallanTotalItemsCount = useCallback((conf: Booking): number => {
+    const targetAssetIds = (conf.challanAssets && conf.challanAssets.length > 0)
+      ? conf.challanAssets.map(String)
+      : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
+
+    if (targetAssetIds.length === 0) return 0;
+
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    const targetSet = new Set(targetAssetIds);
+    let totalQty = 0;
+    let matchedCount = 0;
+
+    for (const a of pool) {
+      if (targetSet.has(String(a.id))) {
+        totalQty += (Number(a.quantity) || 1);
+        matchedCount++;
+      }
+    }
+
+    // Unmatched IDs (e.g. ad-hoc or items not yet loaded in current pool) count as 1 each
+    const unmatched = targetAssetIds.length - matchedCount;
+    if (unmatched > 0) {
+      totalQty += unmatched;
+    }
+
+    // Also include consumables if any
+    const cData = (conf as any).consumable_data || {};
+    Object.values(cData).forEach((item: any) => {
+      const q = Number(item?.requested || item?.quantity || 0);
+      if (q > 0) totalQty += q;
+    });
+
+    return totalQty;
+  }, [assets]);
 
   // Diagnostic Logs
   const [systemLogs, setSystemLogs] = useState<string[]>([]);
@@ -2904,6 +2941,60 @@ const App: React.FC = () => {
       });
   };
 
+  const handleExportSearchResults = () => {
+    if (filteredInventoryAssets.length === 0) {
+      showScanToast('⚠️ No items found to export', 'warning');
+      return;
+    }
+
+    try {
+      const dataToExport = filteredInventoryAssets.map((asset, idx) => ({
+        'S.No': idx + 1,
+        'SKU': asset.sku || '',
+        'Alias Name': getLaptopSubGroup(asset, undefined, undefined, undefined, true) || asset.aliasName || asset.name || '',
+        'Serial Number': asset.serialNumber || '',
+        'Type': asset.type || '',
+        'Quantity': asset.quantity || 1,
+        'Status': asset.status || 'Available',
+        'Current Venue / Event': asset.current_conference_name || asset.currentVenue || '',
+        'Price (₹)': asset.itemPrice || 0,
+        'Barcode': asset.barcode || '',
+        'Condition': asset.condition || 'Good',
+        'Description': asset.description || ''
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      worksheet['!cols'] = [
+        { wch: 6 },
+        { wch: 18 },
+        { wch: 32 },
+        { wch: 20 },
+        { wch: 18 },
+        { wch: 10 },
+        { wch: 14 },
+        { wch: 28 },
+        { wch: 12 },
+        { wch: 18 },
+        { wch: 12 },
+        { wch: 35 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Search Results');
+
+      const cleanQuery = searchQuery.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = cleanQuery 
+        ? `Inventory_Search_${cleanQuery}_${new Date().toISOString().split('T')[0]}.xlsx`
+        : `Inventory_Filtered_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      XLSX.writeFile(workbook, filename);
+      showScanToast(`📊 Exported ${filteredInventoryAssets.length} item(s) to Excel`, 'success');
+    } catch (err) {
+      console.error('Failed to export search results to Excel:', err);
+      alert('Failed to export search results to Excel. Please try again.');
+    }
+  };
+
   const handleDownloadInventoryPDF = () => {
     // Grouping logic borrowed from ReportsView
     const grouped: Record<string, Record<string, number>> = {};
@@ -4211,8 +4302,18 @@ const App: React.FC = () => {
           <button
             onClick={() => handleExportInventory('master')}
             className="flex-1 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-400 font-bold py-3 px-4 rounded-xl border border-emerald-500/20 hover:border-emerald-500/50 transition-all text-xs shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 group whitespace-nowrap"
+            title="Export full inventory master database"
           >
             <i className="fa-solid fa-file-excel" /> Export Stocks
+          </button>
+
+          <button
+            onClick={handleExportSearchResults}
+            disabled={filteredInventoryAssets.length === 0}
+            className="flex-1 bg-gradient-to-r from-sky-500/10 to-indigo-500/10 hover:from-sky-500/30 hover:to-indigo-500/30 text-sky-400 font-bold py-3 px-4 rounded-xl border border-sky-500/20 hover:border-sky-500/50 transition-all text-xs shadow-lg shadow-sky-500/10 flex items-center justify-center gap-2 group whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Export current search/filtered results to Excel"
+          >
+            <i className="fa-solid fa-file-excel" /> Export Search ({filteredInventoryAssets.length})
           </button>
 
           <button
@@ -5435,9 +5536,7 @@ const App: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-800/20">
                 {sortedChallans.map((conf) => {
-                  const historicalCount = (conf.challanAssets && conf.challanAssets.length > 0) 
-                    ? conf.challanAssets.length 
-                    : ((conf.assets?.length || 0) + (conf.staged_assets?.length || 0));
+                  const historicalCount = getChallanTotalItemsCount(conf);
                   const hasAssets = historicalCount > 0;
                   
                   return (
@@ -5495,9 +5594,7 @@ const App: React.FC = () => {
           {/* Mobile Card View */}
           <div className="md:hidden space-y-4 p-4">
             {sortedChallans.map((conf) => {
-              const historicalCount = (conf.challanAssets && conf.challanAssets.length > 0) 
-                ? conf.challanAssets.length 
-                : ((conf.assets?.length || 0) + (conf.staged_assets?.length || 0));
+              const historicalCount = getChallanTotalItemsCount(conf);
               const hasAssets = historicalCount > 0;
 
               return (
@@ -8290,10 +8387,18 @@ const App: React.FC = () => {
       {/* ── PRINT CHALLAN CHOICE MODAL ────────────────────────────── */}
       {printSelectConf && (() => {
         const conf = printSelectConf;
-        const dispatchCount = (conf.challanAssets && conf.challanAssets.length > 0)
-          ? conf.challanAssets.length
-          : ((conf.assets?.length || 0) + (conf.staged_assets?.length || 0));
-        const returnCount = conf.assets?.length || 0;
+        const dispatchCount = getChallanTotalItemsCount(conf);
+        const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+        const returnAssetIds = new Set((conf.assets || []).map(String));
+        let returnCount = 0;
+        for (const a of pool) {
+          if (returnAssetIds.has(String(a.id))) {
+            returnCount += (Number(a.quantity) || 1);
+          }
+        }
+        if (returnCount === 0 && (conf.assets || []).length > 0) {
+          returnCount = (conf.assets || []).length;
+        }
 
         return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
