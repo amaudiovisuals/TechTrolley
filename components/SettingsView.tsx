@@ -19,7 +19,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [userSearchQuery, setUserSearchQuery] = useState('');
-    const [roleFilter, setRoleFilter] = useState<'All' | 'admin' | 'godown_incharge' | 'technician'>('All');
+    const [roleFilter, setRoleFilter] = useState<'All' | 'admin' | 'godown_incharge' | 'technician' | 'accounts'>('All');
 
     // Company Settings State
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
@@ -620,6 +620,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                     <option value="admin">Admins Only</option>
                                     <option value="godown_incharge">Incharges</option>
                                     <option value="technician">Technicians</option>
+                                    <option value="accounts">Accounts</option>
                                 </select>
                             </div>
                         </div>
@@ -631,11 +632,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                         <div className={`w-12 h-12 rounded-2xl flex shrink-0 items-center justify-center shadow-inner ${
                                             u.role === 'admin' ? 'bg-orange-500/10 text-orange-400' :
                                             u.role === 'godown_incharge' ? 'bg-sky-500/10 text-sky-400' : 
+                                            u.role === 'accounts' ? 'bg-purple-500/10 text-purple-400' :
                                             'bg-teal-500/10 text-teal-400'
                                         }`}>
                                             <i className={`fa-solid ${
                                                 u.role === 'admin' ? 'fa-user-shield' :
                                                 u.role === 'godown_incharge' ? 'fa-warehouse' : 
+                                                u.role === 'accounts' ? 'fa-calculator' :
                                                 'fa-user-tag'
                                             } text-lg`}></i>
                                         </div>
@@ -658,6 +661,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                             <option value="admin">Admin</option>
                                             <option value="godown_incharge">Incharge</option>
                                             <option value="technician">Technician</option>
+                                            <option value="accounts">Accounts</option>
                                         </select>
                                          <button 
                                             onClick={() => handleResetPassword(u.email)}

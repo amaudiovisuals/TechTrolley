@@ -4293,12 +4293,14 @@ const App: React.FC = () => {
           >
             <i className="fa-solid fa-file-arrow-down" /> Template
           </button>
-          <button
-            onClick={() => { setUploadResult(null); fileInputRef.current?.click(); }}
-            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-slate-800 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-slate-700 transition flex items-center justify-center gap-2"
-          >
-            <i className="fa-solid fa-file-csv" /> Import
-          </button>
+          {user?.role !== 'accounts' && (
+            <button
+              onClick={() => { setUploadResult(null); fileInputRef.current?.click(); }}
+              className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-slate-800 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-slate-700 transition flex items-center justify-center gap-2"
+            >
+              <i className="fa-solid fa-file-csv" /> Import
+            </button>
+          )}
           <button
             onClick={() => handleExportInventory('master')}
             className="flex-1 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 hover:from-emerald-500/30 hover:to-teal-500/30 text-emerald-400 font-bold py-3 px-4 rounded-xl border border-emerald-500/20 hover:border-emerald-500/50 transition-all text-xs shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 group whitespace-nowrap"
@@ -4337,14 +4339,15 @@ const App: React.FC = () => {
           >
             <i className="fa-solid fa-cubes" /> Consumables
           </button>
-          <div className="flex gap-2">
-            <div className="relative" ref={registerDropdownRef}>
-              <button
-                onClick={() => setIsRegisterDropdownOpen(!isRegisterDropdownOpen)}
-                className="px-4 md:px-6 py-3 md:py-4 bg-emerald-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-400 transition flex items-center gap-2"
-              >
-                Register New <i className={`fa-solid fa-chevron-${isRegisterDropdownOpen ? 'up' : 'down'} text-[8px]`} />
-              </button>
+          {user?.role !== 'accounts' && (
+            <div className="flex gap-2">
+              <div className="relative" ref={registerDropdownRef}>
+                <button
+                  onClick={() => setIsRegisterDropdownOpen(!isRegisterDropdownOpen)}
+                  className="px-4 md:px-6 py-3 md:py-4 bg-emerald-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-emerald-400 transition flex items-center gap-2"
+                >
+                  Register New <i className={`fa-solid fa-chevron-${isRegisterDropdownOpen ? 'up' : 'down'} text-[8px]`} />
+                </button>
 
               {isRegisterDropdownOpen && (
                 <div className="absolute top-full right-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
@@ -4365,6 +4368,7 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
+        )}
         </div>
       </div>
 
@@ -4566,23 +4570,27 @@ const App: React.FC = () => {
                       </div>
                     )
                   ) : (
-                    <div className="flex gap-4">
-                      <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (asset.status !== AssetStatus.AVAILABLE) {
-                            alert(`🔒 Cannot delete "${asset.aliasName || asset.sku}" while it is In Use by an active event.`);
-                            return;
-                          }
-                          handleDeleteAsset(asset.id);
-                        }}
-                        className={asset.status !== AssetStatus.AVAILABLE ? "text-slate-600 cursor-not-allowed" : "text-red-400"}
-                        title={asset.status !== AssetStatus.AVAILABLE ? "Cannot delete asset while In Use" : "Delete Asset"}
-                      >
-                        <i className="fa-solid fa-trash"></i>
-                      </button>
-                    </div>
+                    user?.role !== 'accounts' ? (
+                      <div className="flex gap-4">
+                        <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (asset.status !== AssetStatus.AVAILABLE) {
+                              alert(`🔒 Cannot delete "${asset.aliasName || asset.sku}" while it is In Use by an active event.`);
+                              return;
+                            }
+                            handleDeleteAsset(asset.id);
+                          }}
+                          className={asset.status !== AssetStatus.AVAILABLE ? "text-slate-600 cursor-not-allowed" : "text-red-400"}
+                          title={asset.status !== AssetStatus.AVAILABLE ? "Cannot delete asset while In Use" : "Delete Asset"}
+                        >
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[9px] text-slate-600 font-black uppercase">View Only</span>
+                    )
                   )}
                 </div>
               </div>
@@ -4645,7 +4653,7 @@ const App: React.FC = () => {
                     </td>
                     <td className="px-6 py-6 text-center">
                       {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
-                        asset.status === AssetStatus.AVAILABLE ? (
+                        asset.status === AssetStatus.AVAILABLE && user?.role !== 'accounts' ? (
                           <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
@@ -4701,21 +4709,27 @@ const App: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-6 text-right space-x-4">
-                      <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (asset.status !== AssetStatus.AVAILABLE) {
-                            alert(`🔒 Cannot delete "${asset.aliasName || asset.sku}" while it is In Use by an active event.`);
-                            return;
-                          }
-                          handleDeleteAsset(asset.id);
-                        }}
-                        className={asset.status !== AssetStatus.AVAILABLE ? "text-slate-600 cursor-not-allowed" : "text-red-400 hover:text-white"}
-                        title={asset.status !== AssetStatus.AVAILABLE ? "Cannot delete asset while In Use" : "Delete Asset"}
-                      >
-                        <i className="fa-solid fa-trash"></i>
-                      </button>
+                      {user?.role !== 'accounts' ? (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); openEditAssetForm(asset); }} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (asset.status !== AssetStatus.AVAILABLE) {
+                                alert(`🔒 Cannot delete "${asset.aliasName || asset.sku}" while it is In Use by an active event.`);
+                                return;
+                              }
+                              handleDeleteAsset(asset.id);
+                            }}
+                            className={asset.status !== AssetStatus.AVAILABLE ? "text-slate-600 cursor-not-allowed" : "text-red-400 hover:text-white"}
+                            title={asset.status !== AssetStatus.AVAILABLE ? "Cannot delete asset while In Use" : "Delete Asset"}
+                          >
+                            <i className="fa-solid fa-trash"></i>
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-600 font-black uppercase tracking-wider">View Only</span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -5904,6 +5918,7 @@ const App: React.FC = () => {
           onUpdateConferenceValue={handleUpdateConferenceValue}
           onUpdateChallanNumber={handleUpdateChallanNumber}
           onSaveFullChallan={handleSaveFullChallan}
+          readOnly={user?.role === 'accounts'}
         />
         <style>{`
             @media print {
@@ -5947,7 +5962,7 @@ const App: React.FC = () => {
               ...((user?.is_staff || user?.role !== 'technician') ? [
                 { id: 'Dashboard', icon: 'fa-chart-pie', label: 'Dashboard' },
               ] : []),
-              ...((user?.is_staff || user?.role === 'godown_incharge') ? [
+              ...((user?.is_staff || user?.role === 'godown_incharge' || user?.role === 'accounts') ? [
                 { id: 'Assets', icon: 'fa-boxes-stacked', label: 'Inventory' },
               ] : []),
               { id: 'Conferences', icon: 'fa-user-md', label: 'Conference' },
@@ -8049,6 +8064,7 @@ const App: React.FC = () => {
                       onUpdateChallanNumber={handleUpdateChallanNumber}
                       onSaveFullChallan={handleSaveFullChallan}
                       subrentalTickets={confSubrentalTickets}
+                      readOnly={user?.role === 'accounts'}
                     onRemoveAssets={async (assetIds) => {
                       if (!selectedBookingForChallan) return;
                       const currentAssets = (selectedBookingForChallan.assets || []).map(String);

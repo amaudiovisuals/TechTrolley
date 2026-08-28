@@ -321,6 +321,7 @@ class UserProfile(models.Model):
         ('admin', 'Admin'),
         ('godown_incharge', 'Godown Incharge'),
         ('technician', 'Technician'),
+        ('accounts', 'Accounts'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='technician')
 

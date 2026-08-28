@@ -112,6 +112,7 @@ interface ChallanViewProps {
   onUpdateChallanNumber?: (conferenceId: string, challanNumber: string) => Promise<void>;
   onSaveFullChallan?: (conferenceId: string, assetIds: string[]) => Promise<void>;
   subrentalTickets?: any[];
+  readOnly?: boolean;
 }
 
 type ColumnKey = 'Seq' | 'SKU' | 'Asset' | 'Type' | 'Identifiers' | 'MAC' | 'IMEI' | 'Rate' | 'Qty' | 'Total' | 'Actions';
@@ -166,7 +167,7 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({
-  booking, client, assets, companySettings, challanTitle, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets
+  booking, client, assets, companySettings, challanTitle, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets, readOnly
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
@@ -179,7 +180,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       const stored = localStorage.getItem('challan_visible_columns');
       if (stored) return JSON.parse(stored);
     } catch (e) { }
-    return ['Seq', 'Asset', 'Qty', 'Total'];
+    return ['Seq', 'Asset', 'Type', 'Identifiers', 'Rate', 'Qty', 'Total'];
   });
 
   const [isEditMode, setIsEditMode] = React.useState(false);
@@ -199,6 +200,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     return booking.challanNumber || null;
   });
   const [isGrouped, setIsGrouped] = React.useState(true);
+  const [showEventContent, setShowEventContent] = React.useState(true);
+  const [showEventDate, setShowEventDate] = React.useState(true);
   // J-111: Print-only alias overrides — keyed by asset ID (or group key).
   // These are NEVER persisted to the DB. They only affect what prints on the challan.
   const [printAliasOverrides, setPrintAliasOverrides] = React.useState<Record<string, string>>({});
@@ -523,14 +526,16 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setIsEditMode(!isEditMode)}
-              className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isEditMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-            >
-              <i className={`fa-solid ${isEditMode ? 'fa-check' : 'fa-pen-to-square'} mr-2`}></i>
-              {isEditMode ? 'Close Edit Mode' : 'Edit Mode'}
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => setIsEditMode(!isEditMode)}
+                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isEditMode ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                <i className={`fa-solid ${isEditMode ? 'fa-check' : 'fa-pen-to-square'} mr-2`}></i>
+                {isEditMode ? 'Close Edit Mode' : 'Edit Mode'}
+              </button>
+            )}
             <button
               onClick={() => setIsGrouped(!isGrouped)}
               className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isGrouped ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -577,7 +582,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
           {ALL_COLUMNS.map(col => (
             <button
               key={col.key}
@@ -591,6 +596,33 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               {col.label}
             </button>
           ))}
+
+          {/* Section Visibility Toggles */}
+          <div className="h-5 w-[1px] bg-slate-200 mx-1 self-center" />
+          <button
+            onClick={() => setShowEventContent(prev => !prev)}
+            className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
+              showEventContent
+                ? 'bg-purple-50 border-purple-200 text-purple-600'
+                : 'bg-white border-slate-200 text-slate-400 opacity-60'
+            }`}
+            title="Show or hide Event Context & Place of Supply on Challan"
+          >
+            <i className={`fa-solid ${showEventContent ? 'fa-eye' : 'fa-eye-slash'} mr-1.5`} />
+            Event Content
+          </button>
+          <button
+            onClick={() => setShowEventDate(prev => !prev)}
+            className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
+              showEventDate
+                ? 'bg-purple-50 border-purple-200 text-purple-600'
+                : 'bg-white border-slate-200 text-slate-400 opacity-60'
+            }`}
+            title="Show or hide Event Date Range on Challan"
+          >
+            <i className={`fa-solid ${showEventDate ? 'fa-eye' : 'fa-eye-slash'} mr-1.5`} />
+            Event Date
+          </button>
         </div>
       </div>
 
@@ -653,6 +685,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             setChallanNoOverride={setChallanNoOverride}
             subrentalTickets={subrentalTickets}
             challanTitle={challanTitle}
+            showEventContent={showEventContent}
+            showEventDate={showEventDate}
           />
         </div>
       ))}
@@ -674,13 +708,15 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   setChallanNoOverride: (val: string | null) => void;
   subrentalTickets?: any[];
   challanTitle?: string;
+  showEventContent?: boolean;
+  showEventDate?: boolean;
 }
 
 const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   booking, client, assets, companySettings, copyLabel, bw,
   visibleColumns, isEditMode, onLocalUpdate, onRemoveRow,
   totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride,
-  subrentalTickets, challanTitle
+  subrentalTickets, challanTitle, showEventContent = true, showEventDate = true
 }) => {
   const accent = bw ? '#111111' : '#00AEEF';
   const orange = bw ? '#111111' : '#F15A24';
@@ -952,17 +988,23 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </div>
         <div className="text-right flex flex-col justify-between">
           <div>
-            <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Event Context</h4>
-            <p className="font-black text-gray-900 leading-tight text-[10px] tracking-tighter uppercase">{booking.conferenceName}</p>
-            <div className="mt-1 p-1.5 rounded-lg text-right" style={{ backgroundColor: venueBg, border: `1px dashed ${venueBrd}` }}>
-              <h5 className="text-[7px] font-black uppercase mb-0.5 tracking-[0.2em]" style={{ color: venueHd }}>Place of Supply</h5>
-              <p className="text-[9px] font-black leading-tight uppercase tracking-tighter" style={{ color: venueTxt }}>
-                {booking.transportAddress || booking.venue}
+            {showEventContent && (
+              <>
+                <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Event Context</h4>
+                <p className="font-black text-gray-900 leading-tight text-[10px] tracking-tighter uppercase">{booking.conferenceName}</p>
+                <div className="mt-1 p-1.5 rounded-lg text-right" style={{ backgroundColor: venueBg, border: `1px dashed ${venueBrd}` }}>
+                  <h5 className="text-[7px] font-black uppercase mb-0.5 tracking-[0.2em]" style={{ color: venueHd }}>Place of Supply</h5>
+                  <p className="text-[9px] font-black leading-tight uppercase tracking-tighter" style={{ color: venueTxt }}>
+                    {booking.transportAddress || booking.venue}
+                  </p>
+                </div>
+              </>
+            )}
+            {showEventDate && (
+              <p className="text-[9px] font-black mt-1 italic uppercase tracking-widest" style={{ color: orange }}>
+                {fmtDate(booking.startDate)} — {fmtDate(booking.endDate)}
               </p>
-            </div>
-            <p className="text-[9px] font-black mt-1 italic uppercase tracking-widest" style={{ color: orange }}>
-              {fmtDate(booking.startDate)} — {fmtDate(booking.endDate)}
-            </p>
+            )}
           </div>
         </div>
       </div>

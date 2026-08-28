@@ -153,7 +153,7 @@ export interface Employee {
   email: string;
   phone: string;
   joined_at: string;
-  role?: 'admin' | 'godown_incharge' | 'technician';
+  role?: 'admin' | 'godown_incharge' | 'technician' | 'accounts';
 }
 
 export interface Client {
