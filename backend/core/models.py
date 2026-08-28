@@ -200,6 +200,7 @@ class Conference(models.Model):
     gst_number = models.CharField(max_length=20, default='', blank=True)
     vehicle_number = models.CharField(max_length=50, default='', blank=True)
     driver_phone = models.CharField(max_length=20, default='', blank=True)
+    challan_date = models.DateField(null=True, blank=True)
     contact_person = models.CharField(max_length=100, default='', blank=True)
     contact_phone = models.CharField(max_length=15, default='', blank=True)
     contact_email = models.EmailField(default='', blank=True)

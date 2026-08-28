@@ -272,7 +272,7 @@ def generate_pdf_challan(request, conference_id):
     
     p.drawString(100, 800, f"DELIVERY CHALLAN - {conference.name}")
     p.drawString(100, 780, f"Client: {conference.association_name}")
-    p.drawString(100, 760, f"Date: {conference.start_date}")
+    p.drawString(100, 760, f"Date: {conference.challan_date or conference.start_date}")
     p.drawString(100, 740, "--------------------------------------------------")
     
     y = 720

@@ -889,7 +889,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <div className="mt-0.5 text-right">
               <p className="text-[9px] font-black text-gray-900 uppercase tracking-widest">
                 <span className="text-gray-900 mr-1"> CHALLAN Date:</span>
-                {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                {booking.challanDate
+                  ? fmtDate(booking.challanDate)
+                  : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </p>
             </div>
             <div className="mt-1 pt-1 text-right space-y-0.5" style={{ borderTop: `1px dashed #999` }}>

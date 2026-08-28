@@ -1239,6 +1239,7 @@ const App: React.FC = () => {
     gst_number: '',
     vehicle_number: '',
     driver_phone: '',
+    challan_date: '',
     contact_person: '',
     contact_phone: '',
     contact_email: '',
@@ -1292,6 +1293,7 @@ const App: React.FC = () => {
             gstNumber: c.gst_number,
             vehicleNumber: c.vehicle_number,
             driverPhone: c.driver_phone,
+            challanDate: c.challan_date || '',
             startDate: c.start_date,
             endDate: c.end_date,
             type: c.conference_type as any,
@@ -1586,6 +1588,7 @@ const App: React.FC = () => {
       ...conferenceFormData,
       start_date: conferenceFormData.start_date || null,
       end_date: conferenceFormData.end_date || null,
+      challan_date: conferenceFormData.challan_date || null,
       assets: (conferenceFormData.assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       requirements: (conferenceFormData.requirements || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
       staged_assets: (conferenceFormData.staged_assets || []).map((id: any) => parseInt(id, 10)).filter((id: number) => !isNaN(id)),
@@ -1602,7 +1605,7 @@ const App: React.FC = () => {
         if (key === 'pdf_document' && pdfFile) return; // Skip old URL string if we have a new file
         if (Array.isArray(value)) {
           value.forEach((v: any) => body.append(key, v));
-        } else if (value !== null && value !== undefined) {
+        } else if (value !== null && value !== undefined && value !== '') {
           body.append(key, value);
         }
       });
@@ -1627,7 +1630,7 @@ const App: React.FC = () => {
           setEditingConference(null);
           setConferenceFormData({
             name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
-            vehicle_number: '', driver_phone: '',
+            vehicle_number: '', driver_phone: '', challan_date: '',
             contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference', 
             assets: [], requirements: [], staged_assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
           });
@@ -1671,7 +1674,7 @@ const App: React.FC = () => {
   };
 
   const handleUpdateLogistics = async () => {
-    const { id, vehicle_number, driver_phone, assets: assetIds, requirements, crosscheck_assets, assigned_employees, staged_assets, pdf_document, consumable_data, ...restConferenceData } = conferenceFormData;
+    const { id, vehicle_number, driver_phone, challan_date, assets: assetIds, requirements, crosscheck_assets, assigned_employees, staged_assets, pdf_document, consumable_data, ...restConferenceData } = conferenceFormData;
     
     if (!id) {
       handleSaveConference();
@@ -1731,12 +1734,13 @@ const App: React.FC = () => {
         body = new FormData();
         body.append('vehicle_number', vehicle_number || '');
         body.append('driver_phone', driver_phone || '');
+        if (challan_date) body.append('challan_date', challan_date);
         body.append('pdf_document', pdfFile);
         body.append('consumable_data', JSON.stringify(updatedConsumableData));
         
         // Append remaining core text fields so edits don't get lost
         Object.entries(restConferenceData).forEach(([k, v]) => {
-          if (v !== undefined && v !== null) {
+          if (v !== undefined && v !== null && v !== '') {
             body.append(k, typeof v === 'string' ? v : JSON.stringify(v));
           }
         });
@@ -1753,6 +1757,7 @@ const App: React.FC = () => {
           end_date: restConferenceData.end_date || null,
           vehicle_number,
           driver_phone,
+          challan_date: challan_date || null,
           consumable_data: updatedConsumableData,
           assets: (assetIds || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
           requirements: (requirements || []).map((aid: any) => parseInt(aid, 10)).filter((aid: number) => !isNaN(aid)),
@@ -1890,7 +1895,7 @@ const App: React.FC = () => {
     setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Smart default tab
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
-      vehicle_number: '', driver_phone: '',
+      vehicle_number: '', driver_phone: '', challan_date: '',
       contact_person: '', contact_phone: '', contact_email: '', start_date: '', end_date: '', conference_type: 'Medical Conference',
       assets: [], requirements: [], staged_assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
     });
@@ -1914,6 +1919,7 @@ const App: React.FC = () => {
       gst_number: conf.gstNumber || '',
       vehicle_number: conf.vehicleNumber || '',
       driver_phone: conf.driverPhone || '',
+      challan_date: conf.challanDate || '',
       contact_person: conf.contactPerson || '',
       contact_phone: conf.contactPhone || '',
       contact_email: conf.contactEmail || '',
@@ -6455,6 +6461,15 @@ const App: React.FC = () => {
                           className="w-full bg-sky-50/50 border-none rounded-2xl px-6 py-5 text-sm font-black text-slate-800 focus:ring-2 focus:ring-sky-500/30 transition-shadow placeholder:text-slate-300"
                           placeholder="9021457863"
                           required
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Challan Date</label>
+                        <input 
+                          type="date"
+                          value={conferenceFormData.challan_date || ''} 
+                          onChange={e => setConferenceFormData({ ...conferenceFormData, challan_date: e.target.value })} 
+                          className="w-full bg-sky-50/50 border-none rounded-2xl px-6 py-5 text-sm font-black text-slate-800 focus:ring-2 focus:ring-sky-500/30 transition-shadow placeholder:text-slate-300"
                         />
                       </div>
 
