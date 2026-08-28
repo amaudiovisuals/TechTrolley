@@ -4072,7 +4072,7 @@ const App: React.FC = () => {
 
   const filteredConferences = useMemo(() => {
     let list = backendConferences;
-    if (!user?.is_staff && user?.role !== 'godown_incharge') {
+    if (!user?.is_staff && user?.role !== 'godown_incharge' && user?.role !== 'accounts') {
       list = list.filter(conf =>
         conf.assigned_employees?.includes(Number(user?.employee_id))
       );
@@ -4112,12 +4112,14 @@ const App: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex flex-col gap-2">
           {!user?.is_staff && (
-            <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 px-4 py-2 rounded-full mb-4 w-fit">
+            <div className={`inline-flex items-center gap-2 ${user?.role === 'accounts' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-orange-500/10 border-orange-500/20'} px-4 py-2 rounded-full mb-4 w-fit border`}>
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${user?.role === 'accounts' ? 'bg-purple-400' : 'bg-orange-400'} opacity-75`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${user?.role === 'accounts' ? 'bg-purple-500' : 'bg-orange-500'}`}></span>
               </span>
-              <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Employee Portal • Assigned Views</p>
+              <p className={`text-[9px] font-black ${user?.role === 'accounts' ? 'text-purple-400' : 'text-orange-400'} uppercase tracking-widest`}>
+                {user?.role === 'accounts' ? 'Accounts Portal • System Monitor' : 'Employee Portal • Assigned Views'}
+              </p>
             </div>
           )}
           <h2 className="text-6xl font-black text-orange-500 uppercase tracking-tighter shrink-0 mb-6">
@@ -4879,16 +4881,18 @@ const App: React.FC = () => {
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
         <h2 className="text-4xl md:text-5xl font-black text-sky-500 tracking-tighter uppercase">Subrentals</h2>
-        <button 
-          onClick={() => {
-            setEditingSubrentalId(null);
-            setSubrentalFormData({ name: '', address: '', gst_number: '' });
-            setIsSubrentalFormOpen(true);
-          }}
-          className="w-full lg:w-auto px-8 py-4 bg-sky-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-sky-400 transition"
-        >
-          Add Company
-        </button>
+        {user?.role !== 'accounts' && (
+          <button 
+            onClick={() => {
+              setEditingSubrentalId(null);
+              setSubrentalFormData({ name: '', address: '', gst_number: '' });
+              setIsSubrentalFormOpen(true);
+            }}
+            className="w-full lg:w-auto px-8 py-4 bg-sky-500 text-white rounded-xl md:rounded-2xl font-black uppercase text-[10px] md:text-xs hover:bg-sky-400 transition"
+          >
+            Add Company
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -4904,28 +4908,30 @@ const App: React.FC = () => {
               <div className="w-12 h-12 bg-sky-500/10 rounded-2xl flex items-center justify-center text-sky-400 text-xl border border-sky-500/20">
                 <i className="fa-solid fa-building"></i>
               </div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingSubrentalId(company.id);
-                    setSubrentalFormData({ name: company.name, address: company.address, gst_number: company.gst_number });
-                    setIsSubrentalFormOpen(true);
-                  }}
-                  className="w-8 h-8 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:text-sky-400 transition"
-                >
-                  <i className="fa-solid fa-pencil text-[10px]"></i>
-                </button>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteSubrentalCompany(company.id);
-                  }}
-                  className="w-8 h-8 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:text-red-400 transition"
-                >
-                  <i className="fa-solid fa-trash text-[10px]"></i>
-                </button>
-              </div>
+              {user?.role !== 'accounts' && (
+                <div className="flex gap-2">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingSubrentalId(company.id);
+                      setSubrentalFormData({ name: company.name, address: company.address, gst_number: company.gst_number });
+                      setIsSubrentalFormOpen(true);
+                    }}
+                    className="w-8 h-8 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:text-sky-400 transition"
+                  >
+                    <i className="fa-solid fa-pencil text-[10px]"></i>
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteSubrentalCompany(company.id);
+                    }}
+                    className="w-8 h-8 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:text-red-400 transition"
+                  >
+                    <i className="fa-solid fa-trash text-[10px]"></i>
+                  </button>
+                </div>
+              )}
             </div>
             <h3 className="text-xl font-black text-white uppercase mb-2 group-hover:text-sky-400 transition-colors">{company.name}</h3>
             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-4 line-clamp-1">{company.address || 'No Address'}</p>
@@ -5021,12 +5027,14 @@ const App: React.FC = () => {
             >
               <i className="fa-solid fa-boxes-stacked"></i> View Inventory
             </button>
-            <button 
-              onClick={() => setIsTicketFormOpen(true)}
-              className="px-8 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition"
-            >
-              Create Ticket
-            </button>
+            {user?.role !== 'accounts' && (
+              <button 
+                onClick={() => setIsTicketFormOpen(true)}
+                className="px-8 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition"
+              >
+                Create Ticket
+              </button>
+            )}
           </div>
         </div>
 
@@ -5152,12 +5160,14 @@ const App: React.FC = () => {
               <p className="text-[10px] text-sky-400 font-bold uppercase tracking-[0.2em] mt-1">Ticket #{ticket.id} • {selectedSubrentalCompany?.name}</p>
             </div>
           </div>
-          <button 
-            onClick={() => setIsAddingTicketItem(true)}
-            className="px-8 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition"
-          >
-            Add Items
-          </button>
+            {user?.role !== 'accounts' && (
+              <button 
+                onClick={() => setIsAddingTicketItem(true)}
+                className="px-8 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition"
+              >
+                Add Items
+              </button>
+            )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -5175,22 +5185,24 @@ const App: React.FC = () => {
                     <p className="text-lg font-black text-emerald-400">₹{(Number(item.rental_price) * item.quantity).toLocaleString()}</p>
                     <p className="text-[9px] text-slate-600 font-bold uppercase">Qty: {item.quantity}</p>
                   </div>
-                  <div className="flex flex-col gap-2 ml-6 pl-6 border-l border-slate-800/60">
-                    <button 
-                      onClick={() => handleEditTicketItem(item)}
-                      className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-sky-400 transition"
-                      title="Edit Item"
-                    >
-                      <i className="fa-solid fa-pen-to-square text-[10px]"></i>
-                    </button>
-                    <button 
-                      onClick={() => handleDeleteTicketItem(item.id)}
-                      className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-400 transition"
-                      title="Remove Item"
-                    >
-                      <i className="fa-solid fa-trash text-[10px]"></i>
-                    </button>
-                  </div>
+                  {user?.role !== 'accounts' && (
+                    <div className="flex flex-col gap-2 ml-6 pl-6 border-l border-slate-800/60">
+                      <button 
+                        onClick={() => handleEditTicketItem(item)}
+                        className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-sky-400 transition"
+                        title="Edit Item"
+                      >
+                        <i className="fa-solid fa-pen-to-square text-[10px]"></i>
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteTicketItem(item.id)}
+                        className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-400 transition"
+                        title="Remove Item"
+                      >
+                        <i className="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -5400,29 +5412,33 @@ const App: React.FC = () => {
           >
             <i className="fa-solid fa-download"></i> Template
           </button>
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="px-6 py-4 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-amber-400 transition flex items-center gap-2"
-          >
-            <i className="fa-solid fa-file-import"></i> Bulk Import
-          </button>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={(e) => handleFileUpload(e, selectedSubrentalCompany.id)} 
-            className="hidden" 
-            accept=".xlsx"
-          />
-          <button 
-            onClick={() => {
-              setAssetFormData({ ...assetFormData, subrental_company: selectedSubrentalCompany.id });
-              setAssetView('Form');
-              setCurrentPage('Assets');
-            }}
-            className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-emerald-400 transition"
-          >
-            Add Item
-          </button>
+          {user?.role !== 'accounts' && (
+            <>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="px-6 py-4 bg-amber-500 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-amber-400 transition flex items-center gap-2"
+              >
+                <i className="fa-solid fa-file-import"></i> Bulk Import
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={(e) => handleFileUpload(e, selectedSubrentalCompany.id)} 
+                className="hidden" 
+                accept=".xlsx"
+              />
+              <button 
+                onClick={() => {
+                  setAssetFormData({ ...assetFormData, subrental_company: selectedSubrentalCompany.id });
+                  setAssetView('Form');
+                  setCurrentPage('Assets');
+                }}
+                className="px-8 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-emerald-400 transition"
+              >
+                Add Item
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -5493,12 +5509,14 @@ const App: React.FC = () => {
                         }`}>{asset.status}</span>
                       </td>
                       <td className="px-6 py-6 text-right space-x-4">
-                         <button onClick={() => {
-                           setEditingAsset(asset);
-                           setAssetFormData({ ...asset, subrental_company: selectedSubrentalCompany.id });
-                           setAssetView('Form');
-                           setCurrentPage('Assets');
-                         }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
+                         {user?.role !== 'accounts' && (
+                           <button onClick={() => {
+                             setEditingAsset(asset);
+                             setAssetFormData({ ...asset, subrental_company: selectedSubrentalCompany.id });
+                             setAssetView('Form');
+                             setCurrentPage('Assets');
+                           }} className="text-sky-400"><i className="fa-solid fa-pen"></i></button>
+                         )}
                          <button onClick={() => setQrTarget({ sku: asset.sku, name: asset.aliasName || asset.sku, assetType: asset.type })} className="text-emerald-400">
                            <i className="fa-solid fa-qrcode"></i>
                          </button>
@@ -5967,7 +5985,9 @@ const App: React.FC = () => {
                         <button onClick={() => handleDeleteConference(conf.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
                       </>
                     ) : (
-                      <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white text-[10px] font-black uppercase tracking-widest pl-4">View Execution <i className="fa-solid fa-arrow-right ml-1"></i></button>
+                      <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white text-[10px] font-black uppercase tracking-widest pl-4">
+                        {user?.role === 'accounts' ? 'Monitor' : 'View Execution'} <i className="fa-solid fa-arrow-right ml-1"></i>
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -6570,7 +6590,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Administrative Top Section - Full Width / 2-Column for Identity & Billing */}
-              {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+              {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician' && user?.role !== 'accounts')) && (
                 <div className="space-y-10">
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
                     {/* Conference Identity & Schedule */}
@@ -6685,11 +6705,11 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                      {employees.length === 0 ? (
+                      {employees.filter(emp => emp.role !== 'accounts' && emp.department?.toLowerCase() !== 'accounts').length === 0 ? (
                         <div className="col-span-full py-6 text-center">
                           <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest italic">No Technicians Loaded. Try refreshing.</p>
                         </div>
-                      ) : employees.map(emp => {
+                      ) : employees.filter(emp => emp.role !== 'accounts' && emp.department?.toLowerCase() !== 'accounts').map(emp => {
                         // Use string comparison for robustness across different DB types
                         const isAssigned = (conferenceFormData.assigned_employees || []).some(id => String(id) === String(emp.id));
                         return (
@@ -6850,7 +6870,7 @@ const App: React.FC = () => {
                     <div className="space-y-6">
                       <div className="flex gap-1 p-1.5 bg-sky-50/50 rounded-2xl border border-sky-100/50">
                         {/* 1. SELECT TAB (Non-Admin Only) */}
-                        {(!user?.is_staff && (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
+                        {(!user?.is_staff && (user?.role !== 'godown_incharge' && user?.role !== 'technician' && user?.role !== 'accounts')) && (
                           <button
                             onClick={() => setAssetTab('available')}
                             className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'available' ? 'bg-white text-sky-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
@@ -6875,19 +6895,17 @@ const App: React.FC = () => {
                           Packup
                         </button>
 
-                        {/* 4. CROSSCHECK TAB (Admin/Godown Only) */}
-                        {(user?.is_staff || user?.role === 'godown_incharge' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
-                          <button
-                            onClick={() => setAssetTab('crosscheck')}
-                            className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'crosscheck' ? 'bg-white text-orange-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
-                          >
-                            Crosscheck
-                          </button>
-                        )}
+                        {/* 4. CROSSCHECK TAB (Admin/Godown/Accounts Monitor) */}
+                        <button
+                          onClick={() => setAssetTab('crosscheck')}
+                          className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${assetTab === 'crosscheck' ? 'bg-white text-orange-500 shadow-md shadow-sky-900/5' : 'text-slate-400 hover:text-slate-600 hover:bg-sky-100/30'}`}
+                        >
+                          Crosscheck
+                        </button>
                       </div>
 
                       {/* Scanner visibility logic per role */}
-                      {((assetTab === 'available') || 
+                      {user?.role !== 'accounts' && ((assetTab === 'available') || 
                         ((user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
                         (assetTab === 'packup') ||
                         ((user?.role === 'godown_incharge' || user?.is_staff) && assetTab === 'crosscheck')) && (
