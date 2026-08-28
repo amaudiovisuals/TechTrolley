@@ -521,7 +521,7 @@ const App: React.FC = () => {
     type: AssetCategory.OTHER,
     purchasedDate: '',
     itemPrice: 0,
-    depreciationPercentage: 0,
+    depreciationPercentage: 15,
     availableFrom: '',
     availableTill: '',
     status: AssetStatus.AVAILABLE,
@@ -1046,8 +1046,38 @@ const App: React.FC = () => {
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
   // J-118: Alias Filter State
   const [selectedAlias, setSelectedAlias] = useState<string>('All');
+  const [purchaseDateFrom, setPurchaseDateFrom] = useState<string>('');
+  const [purchaseDateTo, setPurchaseDateTo] = useState<string>('');
   const [inventoryPage, setInventoryPage] = useState(1);
   const itemsPerPage = 20; 
+
+  // Smart SKU batch sequencing algorithm
+  const generateBatchSkus = (baseSku: string, count: number): string[] => {
+    const trimmed = baseSku.trim();
+    if (count <= 1 || !trimmed) return [trimmed];
+
+    const skus: string[] = [];
+    const match = trimmed.match(/^(.*?)([-_])(\d+)$/);
+
+    if (match) {
+      const prefix = match[1];
+      const sep = match[2];
+      const numStr = match[3];
+      const startNum = parseInt(numStr, 10);
+      const padLen = numStr.length;
+
+      for (let i = 0; i < count; i++) {
+        const currentNum = (startNum + i).toString().padStart(padLen, '0');
+        skus.push(`${prefix}${sep}${currentNum}`);
+      }
+    } else {
+      for (let i = 0; i < count; i++) {
+        skus.push(`${trimmed}-${i + 1}`);
+      }
+    }
+
+    return skus;
+  }; 
 
   // Mapping Helper
   const getUICategory = (type: string): UICategory => {
@@ -1132,6 +1162,13 @@ const App: React.FC = () => {
         if (assetCat !== inventoryCategoryFilter) return false;
       }
 
+      if (purchaseDateFrom) {
+        if (!asset.purchasedDate || asset.purchasedDate < purchaseDateFrom) return false;
+      }
+      if (purchaseDateTo) {
+        if (!asset.purchasedDate || asset.purchasedDate > purchaseDateTo) return false;
+      }
+
       if (q) {
         const nameMatch = (asset.aliasName || '').toLowerCase().includes(q);
         const skuMatch = (asset.sku || '').toLowerCase().includes(q);
@@ -1153,7 +1190,7 @@ const App: React.FC = () => {
       const dateB = new Date(b.createdAt || 0).getTime() || 0;
       return dateB - dateA; // Descending
     });
-  }, [assets, inventoryCategoryFilter, selectedAlias, searchQuery]);
+  }, [assets, inventoryCategoryFilter, selectedAlias, searchQuery, purchaseDateFrom, purchaseDateTo]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     
@@ -1287,6 +1324,7 @@ const App: React.FC = () => {
   const [assetTab, setAssetTab] = useState<'available' | 'assigned' | 'packup' | 'crosscheck'>('available');
   const [conferenceSearchTerm, setConferenceSearchTerm] = useState("");
   const [conferenceStatusFilter, setConferenceStatusFilter] = useState("ALL");
+  const [conferenceTypeFilter, setConferenceTypeFilter] = useState<string>("ALL");
   const loadCachedArray = (key: string) => {
     try {
       const cached = localStorage.getItem(key);
@@ -3109,7 +3147,7 @@ const App: React.FC = () => {
       ? finalSku
       : assetFormData.serialNumber;
 
-    const payload = {
+    const basePayload = {
       sku: finalSku,
       alias_name: assetFormData.aliasName,
       mac_address: assetFormData.macAddress,
@@ -3135,6 +3173,33 @@ const App: React.FC = () => {
       subrental_company: assetFormData.subrental_company
     };
 
+    const count = (!isConsumable && isNew && (assetFormData.quantity || 1) > 1)
+      ? Number(assetFormData.quantity)
+      : 1;
+
+    let payload: any;
+    if (count > 1) {
+      const batchSkus = generateBatchSkus(finalSku, count);
+      const existingInPool = allAssetsRef.current.map(a => a.sku?.toLowerCase());
+      const conflict = batchSkus.find(s => existingInPool.includes(s.toLowerCase()));
+      if (conflict) {
+        alert(`Cannot create batch: SKU "${conflict}" already exists in inventory! Please choose a different starting number or prefix.`);
+        return;
+      }
+      payload = batchSkus.map(sku => ({
+        ...basePayload,
+        sku: sku,
+        serial_number: assetFormData.serialNumber ? `${assetFormData.serialNumber}-${sku}` : sku,
+        barcode: sku,
+        qr_code: sku,
+        quantity: 1
+      }));
+    } else {
+      payload = isConsumable 
+        ? { ...basePayload, quantity: assetFormData.quantity || 1 }
+        : basePayload;
+    }
+
     const url = editingAsset
       ? `${API_BASE}/api/assets/${editingAsset.id}/`
       : `${API_BASE}/api/assets/`;
@@ -3147,51 +3212,49 @@ const App: React.FC = () => {
     })
       .then(async res => {
         if (res.ok) {
-          // J-94: Read the created/updated asset from the response and immediately
-          // inject it into the shadow DB so the SKU auto-suggest is up-to-date
-          // for the NEXT item without requiring a page refresh.
           const savedData = await res.json();
+          const savedList: any[] = Array.isArray(savedData) ? savedData : [savedData];
 
-          // Mirror the exact mapping used in fetchAllAssetsForScan
-          const mappedAsset: Asset = {
-            ...savedData,
-            id: savedData.id.toString(),
-            aliasName: savedData.alias_name,
-            macAddress: savedData.mac_address,
-            imeiNumber1: savedData.imei_number_1,
-            imeiNumber2: savedData.imei_number_2,
-            serialNumber: savedData.serial_number,
-            isBarcodeAdded: savedData.is_barcode_added,
-            quantity: parseInt(savedData.quantity, 10) || 1,
-            itemPrice: parseFloat(savedData.item_price),
-            depreciationPercentage: parseFloat(savedData.depreciation_percentage),
-            purchasedDate: savedData.purchased_date,
-            availableFrom: savedData.available_from,
-            availableTill: savedData.available_till,
-            createdAt: savedData.created_at,
-            barcode: savedData.barcode,
-            barcodeType: savedData.barcode_type,
-            qrCode: savedData.qr_code,
-            lastMaintained: savedData.last_maintained,
-            isTemporary: savedData.is_temporary,
-            returnDate: savedData.return_date,
-            flag: savedData.flag || AssetFlag.NONE,
-            currentVenue: savedData.current_venue,
-            assigned_to: savedData.assigned_to,
-            assigned_to_name: savedData.assigned_to_name,
-            parent_asset: savedData.parent_asset,
-            current_conference_name: savedData.current_conference_name,
-            sub_assets: savedData.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
-          };
+          const mappedAssets: Asset[] = savedList.map(item => ({
+            ...item,
+            id: item.id.toString(),
+            aliasName: item.alias_name,
+            macAddress: item.mac_address,
+            imeiNumber1: item.imei_number_1,
+            imeiNumber2: item.imei_number_2,
+            serialNumber: item.serial_number,
+            isBarcodeAdded: item.is_barcode_added,
+            quantity: parseInt(item.quantity, 10) || 1,
+            itemPrice: parseFloat(item.item_price),
+            depreciationPercentage: parseFloat(item.depreciation_percentage),
+            purchasedDate: item.purchased_date,
+            availableFrom: item.available_from,
+            availableTill: item.available_till,
+            createdAt: item.created_at,
+            barcode: item.barcode,
+            barcodeType: item.barcode_type,
+            qrCode: item.qr_code,
+            lastMaintained: item.last_maintained,
+            isTemporary: item.is_temporary,
+            returnDate: item.return_date,
+            flag: item.flag || AssetFlag.NONE,
+            currentVenue: item.current_venue,
+            assigned_to: item.assigned_to,
+            assigned_to_name: item.assigned_to_name,
+            parent_asset: item.parent_asset,
+            current_conference_name: item.current_conference_name,
+            sub_assets: item.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+          }));
 
           if (isNew) {
-            // CREATE — prepend to both shadow DB and paginated state
-            allAssetsRef.current = [mappedAsset, ...allAssetsRef.current];
-            setAssets(prev => [mappedAsset, ...prev]);
+            allAssetsRef.current = [...mappedAssets, ...allAssetsRef.current];
+            setAssets(prev => [...mappedAssets, ...prev]);
+            showScanToast(`✅ Successfully registered ${mappedAssets.length} asset(s)!`, 'success');
           } else {
-            // UPDATE — replace the stale entry in place
-            allAssetsRef.current = allAssetsRef.current.map(a => a.id === mappedAsset.id ? mappedAsset : a);
-            setAssets(prev => prev.map(a => a.id === mappedAsset.id ? mappedAsset : a));
+            const updated = mappedAssets[0];
+            allAssetsRef.current = allAssetsRef.current.map(a => a.id === updated.id ? updated : a);
+            setAssets(prev => prev.map(a => a.id === updated.id ? updated : a));
+            showScanToast('✅ Asset updated successfully', 'success');
           }
 
           // Background refetch keeps pagination counts accurate
@@ -3201,7 +3264,7 @@ const App: React.FC = () => {
             setQrTarget({ sku: finalSku as string, name: assetFormData.aliasName || finalSku as string, assetType: assetFormData.type });
           }
           setEditingAsset(null);
-          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 0, availableFrom: '', available_till: '', status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined, subrental_company: undefined, generateQR: false });
+          setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 15, availableFrom: '', availableTill: '', status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined, subrental_company: undefined, generateQR: false });
           
           // If we were in a subrental inventory context, refresh its specific list
           if (selectedSubrentalCompany) {
@@ -3320,7 +3383,7 @@ const App: React.FC = () => {
       description: '',
       purchasedDate: new Date().toISOString().split('T')[0],
       itemPrice: 0,
-      depreciationPercentage: 0,
+      depreciationPercentage: 15,
       availableFrom: '',
       availableTill: '',
       status: AssetStatus.AVAILABLE,
@@ -4037,8 +4100,12 @@ const App: React.FC = () => {
       });
     }
 
+    if (conferenceTypeFilter !== 'ALL') {
+      list = list.filter(c => (c.conferenceType || c.type) === conferenceTypeFilter);
+    }
+
     return list.sort((a, b) => Number(b.id) - Number(a.id));
-  }, [backendConferences, user, conferenceSearchTerm, conferenceStatusFilter]);
+  }, [backendConferences, user, conferenceSearchTerm, conferenceStatusFilter, conferenceTypeFilter]);
 
   const renderDashboard = () => (
     <div className="space-y-12 animate-in fade-in duration-500">
@@ -4486,6 +4553,46 @@ const App: React.FC = () => {
                 </option>
               ))}
             </select>
+          </div>
+          {/* Purchase Date Range Filter */}
+          <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 md:py-0 text-white shrink-0">
+            <i className="fa-regular fa-calendar text-slate-500 text-xs" />
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap hidden lg:inline">Purchased:</span>
+            <input
+              type="date"
+              value={purchaseDateFrom}
+              onChange={(e) => {
+                setPurchaseDateFrom(e.target.value);
+                setInventoryPage(1);
+              }}
+              className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
+              title="Purchase Date From"
+            />
+            <span className="text-slate-600 text-xs">-</span>
+            <input
+              type="date"
+              value={purchaseDateTo}
+              onChange={(e) => {
+                setPurchaseDateTo(e.target.value);
+                setInventoryPage(1);
+              }}
+              className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
+              title="Purchase Date To"
+            />
+            {(purchaseDateFrom || purchaseDateTo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPurchaseDateFrom('');
+                  setPurchaseDateTo('');
+                  setInventoryPage(1);
+                }}
+                className="text-slate-500 hover:text-red-400 p-1 transition"
+                title="Clear Date Range"
+              >
+                <i className="fa-solid fa-xmark text-xs" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -5697,6 +5804,15 @@ const App: React.FC = () => {
             <option value="ONGOING">Ongoing</option>
             <option value="COMPLETED">Completed</option>
          </select>
+         <select
+            value={conferenceTypeFilter}
+            onChange={(e) => setConferenceTypeFilter(e.target.value)}
+            className="md:w-64 bg-slate-950/50 border border-slate-800 rounded-2xl px-6 py-4 text-white font-bold focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+         >
+            <option value="ALL">All Event Types</option>
+            <option value="Medical Conference">Medical Conference</option>
+            <option value="Personal Rental">Personal Rental</option>
+         </select>
       </div>
 
       {/* Mobile Card View for Conferences */}
@@ -5721,7 +5837,12 @@ const App: React.FC = () => {
                       <i className="fa-solid fa-eye text-[7px]" /> Audit Mode
                     </span>
                   )}
-                  <p className="text-[10px] text-slate-500 font-black uppercase mt-1">{conf.association}</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <p className="text-[10px] text-slate-500 font-black uppercase">{conf.association}</p>
+                    <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
+                      {conf.conferenceType || conf.type || 'Medical Conference'}
+                    </span>
+                  </div>
                   {conf.pdf_document && (
                     <a
                       href={`${API_BASE}/api/conferences/${conf.id}/download-pdf/`}
@@ -6068,6 +6189,8 @@ const App: React.FC = () => {
             
             const handleAliasChange = (e: React.ChangeEvent<HTMLInputElement>) => {
               const selectedAlias = e.target.value;
+              const isLaptop = /laptop|imac|macbook/i.test(selectedAlias);
+              const autoDepreciation = isLaptop ? 40 : 15;
 
               // J-96: Search the full shadow DB first so newly registered aliases
               // get their type auto-filled without requiring a page refresh.
@@ -6075,14 +6198,28 @@ const App: React.FC = () => {
               const matchedAsset = searchPool.find(a => a.aliasName === selectedAlias);
 
               if (matchedAsset) {
-                setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, type: matchedAsset.type }));
+                setAssetFormData(prev => ({
+                  ...prev,
+                  aliasName: selectedAlias,
+                  type: matchedAsset.type,
+                  depreciationPercentage: isEditing ? (prev.depreciationPercentage ?? 15) : autoDepreciation
+                }));
               } else {
                 // Secondary fallback: curated aliasDictionary (e.g. for pre-seeded type mappings)
                 const matchedItem = aliasDictionary.find(a => a.alias_name === selectedAlias);
                 if (matchedItem) {
-                  setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias, type: matchedItem.type }));
+                  setAssetFormData(prev => ({
+                    ...prev,
+                    aliasName: selectedAlias,
+                    type: matchedItem.type,
+                    depreciationPercentage: isEditing ? (prev.depreciationPercentage ?? 15) : autoDepreciation
+                  }));
                 } else {
-                  setAssetFormData(prev => ({ ...prev, aliasName: selectedAlias }));
+                  setAssetFormData(prev => ({
+                    ...prev,
+                    aliasName: selectedAlias,
+                    depreciationPercentage: isEditing ? (prev.depreciationPercentage ?? 15) : autoDepreciation
+                  }));
                 }
               }
             };
@@ -6267,7 +6404,7 @@ const App: React.FC = () => {
                       <textarea value={assetFormData.description} onChange={e => setAssetFormData({ ...assetFormData, description: e.target.value })} className="form-input-night h-24 resize-none" placeholder="Brand, Model, and other details..." />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Purchased Date</label>
                         <input type="date" value={assetFormData.purchasedDate} onChange={e => setAssetFormData({ ...assetFormData, purchasedDate: e.target.value })} className="form-input-night" />
@@ -6280,59 +6417,26 @@ const App: React.FC = () => {
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Depreciation %</label>
                         <input type="number" value={assetFormData.depreciationPercentage} onChange={e => setAssetFormData({ ...assetFormData, depreciationPercentage: parseFloat(e.target.value) })} className="form-input-night" />
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                       <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Available From</label>
-                        <input type="date" value={assetFormData.availableFrom} onChange={e => setAssetFormData({ ...assetFormData, availableFrom: e.target.value })} className="form-input-night" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Available Till</label>
-                        <input type="date" value={assetFormData.availableTill} onChange={e => setAssetFormData({ ...assetFormData, availableTill: e.target.value })} className="form-input-night" />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
-                        <div className="flex-1">
-                          <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">Barcode Status</label>
-                          <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Has a physical barcode sticker been added?</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAssetFormData({ ...assetFormData, isBarcodeAdded: !assetFormData.isBarcodeAdded })}
-                          className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.isBarcodeAdded ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}
-                        >
-                          {assetFormData.isBarcodeAdded ? 'Yes, Added' : 'Not Added'}
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-4 bg-slate-950/40 p-6 rounded-[1.5rem] border border-slate-800/50">
-                        <div className="flex-1">
-                          <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-1 block">QR Generation</label>
-                          <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">Show QR print modal after saving?</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setAssetFormData({ ...assetFormData, generateQR: !assetFormData.generateQR })}
-                          className={`px-6 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition ${assetFormData.generateQR ? 'bg-sky-500 text-white' : 'bg-slate-800 text-slate-500'}`}
-                        >
-                          {assetFormData.generateQR ? 'Yes, Generate' : 'No'}
-                        </button>
+                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">
+                          Quantity {!isEditing && (assetFormData.quantity || 1) > 1 ? `(Creates ${assetFormData.quantity} items)` : ''}
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          disabled={isEditing}
+                          value={assetFormData.quantity ?? 1}
+                          onChange={e => setAssetFormData({ ...assetFormData, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                          className={`form-input-night ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title={isEditing ? 'Editing existing single asset' : 'Number of separate items to create in inventory'}
+                        />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-                      <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">System Status</label>
-                        <select value={assetFormData.status} onChange={e => setAssetFormData({ ...assetFormData, status: e.target.value as AssetStatus })} className="form-input-night">
-                          {Object.values(AssetStatus).map(stat => <option key={stat} value={stat}>{stat}</option>)}
-                        </select>
-                      </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Internal Condition</label>
-                        <input value={assetFormData.condition} onChange={e => setAssetFormData({ ...assetFormData, condition: e.target.value })} className="form-input-night" />
+                        <input value={assetFormData.condition} onChange={e => setAssetFormData({ ...assetFormData, condition: e.target.value })} className="form-input-night" placeholder="e.g. Good, Like New..." />
                       </div>
                       <div>
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Asset Flag</label>

@@ -138,6 +138,13 @@ def asset_list(request):
                 Q(description__icontains=search_query)
             )
         
+        purchase_from = request.GET.get('purchase_from', '').strip()
+        if purchase_from:
+            assets = assets.filter(purchased_date__gte=purchase_from)
+        purchase_to = request.GET.get('purchase_to', '').strip()
+        if purchase_to:
+            assets = assets.filter(purchased_date__lte=purchase_to)
+        
         from rest_framework.pagination import PageNumberPagination
 
         if request.GET.get('all') == 'true':
@@ -150,7 +157,8 @@ def asset_list(request):
         serializer = AssetSerializer(paginated_assets, many=True)
         return paginator.get_paginated_response(serializer.data)
     elif request.method == 'POST':
-        serializer = AssetSerializer(data=request.data)
+        is_many = isinstance(request.data, list)
+        serializer = AssetSerializer(data=request.data, many=is_many)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=201)
