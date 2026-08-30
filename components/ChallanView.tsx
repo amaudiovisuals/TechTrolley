@@ -397,11 +397,14 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const addRow = () => {
-    const defaultSku = `ADHOC-${localAssets.length + 1}`;
+    // Generate globally unique SKU so it never clashes with historical ad-hoc items
+    const uniqueSuffix = `${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+    const defaultSku = `ADHOC-${uniqueSuffix}`;
+    const defaultName = `ADHOC-${localAssets.length + 1}`;
     const newItem: Asset = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sku: defaultSku,
-      aliasName: defaultSku,
+      aliasName: defaultName,
       serialNumber: '',
       type: 'Other',
       quantity: 1,

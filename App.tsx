@@ -1555,11 +1555,18 @@ const App: React.FC = () => {
   const handleAddAdhocChallanItem = async (item: Partial<Asset>) => {
     if (!selectedBookingForChallan) return;
     try {
+      // Safeguard: Ensure ad-hoc SKU is globally unique and doesn't collide with past conferences
+      let skuToUse = item.sku;
+      if (!skuToUse || /ADHOC-\d+$/i.test(skuToUse)) {
+        skuToUse = `ADHOC-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
+      }
+
       // 1. Create the asset
       const res = await apiFetch(`${API_BASE}/api/assets/`, {
         method: 'POST',
         body: JSON.stringify({
           ...item,
+          sku: skuToUse,
           status: 'Available', // Start as available, marking as 'In Use' happens via assignment
           is_temporary: true,
           condition: 'Good',
@@ -1587,24 +1594,31 @@ const App: React.FC = () => {
           // Update local state to reflect change in ChallanView
           setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: updatedChallanAssets } : null);
 
-          // Multi-truck: if trucks exist for this conference, automatically append new ad-hoc item to Truck 1
+          // Multi-truck: append new ad-hoc item to the currently active truck (or Truck 1 by default)
           if (selectedBookingForChallan.truckChallans && selectedBookingForChallan.truckChallans.length > 0) {
-            apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/trucks/add-to-truck1/`, {
-              method: 'POST',
-              body: JSON.stringify({ asset_ids: [parseInt(String(newAsset.id), 10)] })
-            }).then(() => {
-              setSelectedBookingForChallan(prev => {
-                if (!prev || !prev.truckChallans) return prev;
-                return {
-                  ...prev,
-                  truckChallans: prev.truckChallans.map(t =>
-                    t.truck_number === 1
-                      ? { ...t, assets: Array.from(new Set([...t.assets, String(newAsset.id)])) }
-                      : t
-                  )
-                };
-              });
-            }).catch(err => console.error("Could not sync new ad-hoc item to truck 1", err));
+            const targetTruck = (activeTruckChallanId && selectedBookingForChallan.truckChallans.find(t => t.id === activeTruckChallanId))
+              || selectedBookingForChallan.truckChallans.find(t => t.truck_number === 1)
+              || selectedBookingForChallan.truckChallans[0];
+
+            if (targetTruck) {
+              const updatedTruckAssets = Array.from(new Set([...targetTruck.assets, String(newAsset.id)]));
+              apiFetch(`${API_BASE}/api/truck-challans/${targetTruck.id}/`, {
+                method: 'PATCH',
+                body: JSON.stringify({ assets: updatedTruckAssets })
+              }).then(() => {
+                setSelectedBookingForChallan(prev => {
+                  if (!prev || !prev.truckChallans) return prev;
+                  return {
+                    ...prev,
+                    truckChallans: prev.truckChallans.map(t =>
+                      t.id === targetTruck.id
+                        ? { ...t, assets: updatedTruckAssets }
+                        : t
+                    )
+                  };
+                });
+              }).catch(err => console.error("Could not sync new ad-hoc item to truck", err));
+            }
           }
 
           const mappedNewAsset: Asset = {

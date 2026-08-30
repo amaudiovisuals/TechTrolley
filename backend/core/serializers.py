@@ -95,6 +95,9 @@ class AssetSerializer(serializers.ModelSerializer):
         """
         Enforce SKU uniqueness at the serializer layer (no migration required).
         Allows the same SKU on update (PUT) only if it belongs to the asset being edited.
+        If an ad-hoc or temporary asset SKU collides (e.g. ADHOC-106, is_temporary=True),
+        automatically resolve the collision by finding a unique SKU so that challan creation
+        and editing never crashes on ad-hoc items.
         """
         if not value:
             return value
@@ -103,6 +106,15 @@ class AssetSerializer(serializers.ModelSerializer):
         if self.instance is not None:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
+            is_temp = False
+            if hasattr(self, 'initial_data') and isinstance(self.initial_data, dict):
+                is_temp = bool(self.initial_data.get('is_temporary', False))
+            if str(value).upper().startswith('ADHOC-') or is_temp:
+                import time, random
+                candidate = value
+                while Asset.objects.filter(sku__iexact=candidate).exists():
+                    candidate = f"ADHOC-{int(time.time()) % 1000000}{random.randint(10, 99)}"
+                return candidate
             raise serializers.ValidationError("This SKU already exists. Please use a unique SKU.")
         return value
 
