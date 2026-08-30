@@ -396,6 +396,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                 'Condition': a.condition || '',
                 'Description': a.description || '',
                 'Purchased Date': a.purchasedDate || (a as any).purchased_date || '',
+                'QR Code Value': (a as any).qrCode || (a as any).qr_code || a.barcode || '',
             }));
             const confName = (selectedConference.conferenceName || (selectedConference as any).name || 'Conference').replace(/[^a-z0-9]/gi, '_');
             const dateStr = new Date().toISOString().slice(0, 10);
