@@ -376,6 +376,38 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
         const conferenceAssets = assets.filter(a => historicalAssetIds.map(String).includes(String(a.id)));
         const flagLog = (selectedConference as any).flag_log || [];
 
+        const exportConferenceToExcel = () => {
+            if (conferenceAssets.length === 0) {
+                alert('No assets found for this conference to export.');
+                return;
+            }
+            const data = conferenceAssets.map((a, idx) => ({
+                'Seq': idx + 1,
+                'SKU': a.sku || '',
+                'Alias Name': a.aliasName || a.sku || '',
+                'Type': a.type || '',
+                'Serial Number': a.serialNumber || '',
+                'MAC Address': (a as any).macAddress || (a as any).mac_address || '',
+                'IMEI 1': (a as any).imeiNumber1 || (a as any).imei_number1 || '',
+                'IMEI 2': (a as any).imeiNumber2 || (a as any).imei_number2 || '',
+                'Quantity': a.quantity ?? 1,
+                'Item Price (₹)': a.itemPrice ?? (a as any).item_price ?? '',
+                'Status': a.status || '',
+                'Condition': a.condition || '',
+                'Description': a.description || '',
+                'Purchased Date': a.purchasedDate || (a as any).purchased_date || '',
+            }));
+            const confName = (selectedConference.conferenceName || (selectedConference as any).name || 'Conference').replace(/[^a-z0-9]/gi, '_');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            const ws = XLSX.utils.json_to_sheet(data);
+            // Auto-fit column widths
+            const colWidths = Object.keys(data[0] || {}).map(k => ({ wch: Math.max(k.length, 16) }));
+            ws['!cols'] = colWidths;
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Assets');
+            XLSX.writeFile(wb, `${confName}_Assets_${dateStr}.xlsx`);
+        };
+
         return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10 animate-in fade-in zoom-in-95 duration-300">
                 <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setSelectedConference(null)}></div>
@@ -385,9 +417,19 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                             <h3 className="text-3xl font-black text-white uppercase tracking-tight">{selectedConference.conferenceName || (selectedConference as any).name}</h3>
                             <p className="text-slate-500 font-bold uppercase text-xs mt-1 tracking-widest">{selectedConference.associationName} • {selectedConference.startDate} to {selectedConference.endDate}</p>
                         </div>
-                        <button onClick={() => setSelectedConference(null)} className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition shadow-xl">
-                            <i className="fa-solid fa-xmark text-xl"></i>
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={exportConferenceToExcel}
+                                title={`Export all ${conferenceAssets.length} assets for this conference to Excel`}
+                                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-widest px-5 py-3 rounded-2xl transition-all shadow-lg shadow-emerald-500/20"
+                            >
+                                <i className="fa-solid fa-file-excel"></i>
+                                Export to Excel ({conferenceAssets.length})
+                            </button>
+                            <button onClick={() => setSelectedConference(null)} className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition shadow-xl">
+                                <i className="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar">
@@ -496,6 +538,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
     };
 
     if (loading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div></div>;
+
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">

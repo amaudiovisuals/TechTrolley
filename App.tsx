@@ -1421,11 +1421,20 @@ const App: React.FC = () => {
           }));
           setBackendConferences(mapped);
           
-          // Use functional updater to always target the current active conference and prevent stale closure reverting
+          // Use functional updater to always target the current active conference and prevent stale closure reverting.
+          // Defensive guard: if the server returns empty challanAssets but we already have them in memory
+          // (e.g. just saved), keep the in-memory ones — a slow/stale DB read must not blank out a just-saved list.
           setSelectedBookingForChallan(prev => {
             if (!prev) return null;
             const updatedActive = mapped.find(b => b.id === prev.id);
-            return updatedActive || prev;
+            if (!updatedActive) return prev;
+            const serverHasChallanAssets = updatedActive.challanAssets && updatedActive.challanAssets.length > 0;
+            const prevHasChallanAssets = prev.challanAssets && prev.challanAssets.length > 0;
+            if (!serverHasChallanAssets && prevHasChallanAssets) {
+              // Server returned empty challanAssets — preserve the in-memory ones to prevent visual reset
+              return { ...updatedActive, challanAssets: prev.challanAssets };
+            }
+            return updatedActive;
           });
 
           // If in print mode, set the selected booking immediately after fetching
@@ -1600,9 +1609,16 @@ const App: React.FC = () => {
       });
       if (res.ok) {
         showScanToast('✅ Challan State Frozen/Saved Successfully', 'success');
+        // Optimistically update local state immediately — this is the source of truth.
+        // Do NOT call fetchConferences() right away: the DB M2M commit may not yet be
+        // visible to a read that fires in the same instant, causing challanAssets to come
+        // back empty and overwrite the correct state. Delay the background refresh so the
+        // DB has fully committed the M2M relationship before we re-read it.
         setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: cleanIds.map(String) } : null);
-        await fetchConferences();
-        await fetchAssets();
+        setTimeout(() => {
+          fetchConferences();
+          fetchAssets();
+        }, 1500);
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to save full challan with status:", res.status, err);
