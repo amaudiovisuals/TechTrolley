@@ -393,7 +393,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       setIsEditMode(false);
       setTimeout(() => {
         isSavingRef.current = false;
-      }, 1000);
+      }, 4000);
     }
   };
 

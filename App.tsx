@@ -1660,7 +1660,7 @@ const App: React.FC = () => {
           fetchConferences();
           fetchAssets();
           fetchAllAssetsForScan();
-        }, 1500);
+        }, 3000);
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to save full challan with status:", res.status, err);
@@ -8452,7 +8452,6 @@ const App: React.FC = () => {
               // Return challan uses the same dispatched list as its base — edited/added items
               // should be present on the return too (transfers reduce it further if any).
               const returnIds = (conf.assets || []).map(String);
-
               const hasTransfers = (conf.transfer_log && conf.transfer_log.length > 0) ||
                 (dispatchIds.length !== returnIds.length || JSON.stringify([...dispatchIds].sort()) !== JSON.stringify([...returnIds].sort()));
 
@@ -8569,15 +8568,14 @@ const App: React.FC = () => {
                             {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) && (
                               <button
                                 onClick={() => {
-                                  if (confirm('Delete all trucks and revert back to normal single challan? Everything will go back to the single main challan.')) {
+                                  if (confirm('Are you sure you want to remove ALL truck splits and return to a single main challan?')) {
                                     handleDeleteAllTrucks(trucks[0].id, conf.id);
                                   }
                                 }}
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-red-500/30 transition-all"
-                                title="Clear all trucks and return to single challan"
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-red-500/30 transition-all shadow-sm"
                               >
-                                <i className="fa-solid fa-trash-can text-[9px]"></i>
-                                Reset Trucks
+                                <i className="fa-solid fa-trash text-[9px]"></i>
+                                Remove Split
                               </button>
                             )}
                           </div>
