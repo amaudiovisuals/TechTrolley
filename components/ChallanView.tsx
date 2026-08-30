@@ -366,12 +366,13 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       // 4. Save the full list of assets to "freeze" the challan state
       if (onSaveFullChallan) {
-        console.log("Saving full challan asset list...");
-        const finalAssetIds = localAssets
-          .filter(a => !String(a.id).startsWith('new-'))
-          .map(a => String(a.id));
+        const finalAssetIds = Array.from(new Set(
+          localAssets
+            .map(a => String(a.id))
+            .filter(id => !id.startsWith('new-'))
+        ));
         try {
-          await onSaveFullChallan(booking.id, [...finalAssetIds, ...newAdhocIds]);
+          await onSaveFullChallan(booking.id, finalAssetIds);
         } catch (err) {
           console.error("Failed to freeze/save full challan list:", err);
           errors.push("Failed to freeze/save full challan assets list");

@@ -1561,7 +1561,7 @@ const App: React.FC = () => {
         skuToUse = `ADHOC-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
       }
 
-      // 1. Create the asset
+      // 1. Create the asset in backend database
       const res = await apiFetch(`${API_BASE}/api/assets/`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1577,72 +1577,31 @@ const App: React.FC = () => {
       if (res.ok) {
         const newAsset = await res.json();
         showScanToast(`✅ New Ad-hoc Asset Created: ${newAsset.sku}`, 'success');
-        
-        // 2. Assign to conference (only to challan_assets, not main assets)
-        const currentChallanAssets = (selectedBookingForChallan.challanAssets || []).map(String);
-        const updatedChallanAssets = Array.from(new Set([...currentChallanAssets, String(newAsset.id)]));
-        
-        const confRes = await apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            challan_assets: updatedChallanAssets.map(id => parseInt(id, 10))
-          })
+
+        const mappedNewAsset: Asset = {
+          ...newAsset,
+          id: newAsset.id.toString(),
+          aliasName: newAsset.alias_name || item.aliasName || newAsset.sku,
+          serialNumber: newAsset.serial_number || item.serialNumber || '',
+          itemPrice: parseFloat(newAsset.item_price) || 0,
+          quantity: parseInt(newAsset.quantity, 10) || 1,
+          depreciationPercentage: parseFloat(newAsset.depreciation_percentage) || 0,
+          createdAt: newAsset.created_at || new Date().toISOString()
+        };
+
+        // Immediately register the asset in state and ref pool so it exists in memory for ChallanView
+        setAssets(prev => {
+          const exists = prev.some(a => String(a.id) === String(mappedNewAsset.id));
+          return exists ? prev : [...prev, mappedNewAsset];
         });
-
-        if (confRes.ok) {
-          showScanToast(`✅ Asset Assigned to Challan`, 'success');
-          // Update local state to reflect change in ChallanView
-          setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: updatedChallanAssets } : null);
-
-          // Multi-truck: append new ad-hoc item to the currently active truck (or Truck 1 by default)
-          if (selectedBookingForChallan.truckChallans && selectedBookingForChallan.truckChallans.length > 0) {
-            const targetTruck = (activeTruckChallanId && selectedBookingForChallan.truckChallans.find(t => t.id === activeTruckChallanId))
-              || selectedBookingForChallan.truckChallans.find(t => t.truck_number === 1)
-              || selectedBookingForChallan.truckChallans[0];
-
-            if (targetTruck) {
-              const updatedTruckAssets = Array.from(new Set([...targetTruck.assets, String(newAsset.id)]));
-              apiFetch(`${API_BASE}/api/truck-challans/${targetTruck.id}/`, {
-                method: 'PATCH',
-                body: JSON.stringify({ assets: updatedTruckAssets })
-              }).then(() => {
-                setSelectedBookingForChallan(prev => {
-                  if (!prev || !prev.truckChallans) return prev;
-                  return {
-                    ...prev,
-                    truckChallans: prev.truckChallans.map(t =>
-                      t.id === targetTruck.id
-                        ? { ...t, assets: updatedTruckAssets }
-                        : t
-                    )
-                  };
-                });
-              }).catch(err => console.error("Could not sync new ad-hoc item to truck", err));
-            }
-          }
-
-          const mappedNewAsset: Asset = {
-            ...newAsset,
-            id: newAsset.id.toString(),
-            aliasName: newAsset.alias_name,
-            serialNumber: newAsset.serial_number,
-            itemPrice: parseFloat(newAsset.item_price) || 0,
-            quantity: parseInt(newAsset.quantity, 10) || 1,
-            depreciationPercentage: parseFloat(newAsset.depreciation_percentage) || 0,
-            createdAt: newAsset.created_at || new Date().toISOString()
-          };
-          setAssets(prev => [...prev, mappedNewAsset]);
-          if (allAssetsRef.current) {
+        if (allAssetsRef.current) {
+          const existsInRef = allAssetsRef.current.some(a => String(a.id) === String(mappedNewAsset.id));
+          if (!existsInRef) {
             allAssetsRef.current = [...allAssetsRef.current, mappedNewAsset];
           }
-          await fetchAssets();
-          await fetchConferences();
-          return String(newAsset.id);
-        } else {
-          const err = await confRes.json().catch(() => ({}));
-          console.error("Failed to assign ad-hoc item to conference:", err);
-          throw new Error("Failed to assign ad-hoc item to conference");
         }
+
+        return String(newAsset.id);
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to create ad-hoc item:", err);
@@ -1700,6 +1659,7 @@ const App: React.FC = () => {
         setTimeout(() => {
           fetchConferences();
           fetchAssets();
+          fetchAllAssetsForScan();
         }, 1500);
       } else {
         const err = await res.json().catch(() => ({}));
@@ -8968,11 +8928,36 @@ const App: React.FC = () => {
                       onUpdateConferenceValue={handleUpdateConferenceValue}
                       onUpdateChallanNumber={handleUpdateChallanNumber}
                       onSaveFullChallan={async (confId, assetIds) => {
+                        const cleanIds: number[] = Array.from(new Set<number>(assetIds.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id))));
                         if (activeTruck) {
-                          await handleUpdateTruck(activeTruck.id, { assets: assetIds as any });
+                          // 1. Update this specific truck's assets on the backend
+                          await handleUpdateTruck(activeTruck.id, { assets: cleanIds });
+
+                          // 2. Also ensure master challan (conference.challan_assets) includes all assets from this truck
+                          const currentMasterChallan: number[] = (selectedBookingForChallan?.challanAssets || []).map(id => parseInt(String(id), 10)).filter(id => !isNaN(id));
+                          const mergedMasterChallan: number[] = Array.from(new Set<number>([...currentMasterChallan, ...cleanIds]));
+
+                          await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({ challan_assets: mergedMasterChallan })
+                          });
+
+                          setSelectedBookingForChallan(prev => prev ? {
+                            ...prev,
+                            challanAssets: mergedMasterChallan.map(String),
+                            truckChallans: prev.truckChallans?.map(t =>
+                              t.id === activeTruck.id ? { ...t, assets: cleanIds.map(String) } : t
+                            )
+                          } : null);
+
                           showScanToast(`✅ ${activeTruck.label} Saved Successfully`, 'success');
+
+                          setTimeout(() => {
+                            fetchConferences();
+                            fetchAllAssetsForScan();
+                          }, 1500);
                         } else {
-                          await handleSaveFullChallan(confId, assetIds);
+                          await handleSaveFullChallan(confId, cleanIds.map(String));
                         }
                       }}
                       subrentalTickets={confSubrentalTickets}
