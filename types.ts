@@ -198,6 +198,18 @@ export interface Booking {
   approximate_value?: number;
   isAudit?: boolean; // J-109: When true, assets in this conference do not lock other events
   transfer_log?: any[];
+  truckChallans?: TruckChallan[];
+}
+
+export interface TruckChallan {
+  id: string;
+  conference: string;
+  truck_number: number;
+  label: string;
+  vehicle_number: string;
+  driver_phone: string;
+  assets: string[];  // asset IDs as strings
+  created_at: string;
 }
 
 export interface DeliveryChallanRecord {

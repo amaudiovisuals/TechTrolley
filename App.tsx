@@ -14,7 +14,8 @@ import {
   AssetFlag,
   SubrentalCompany,
   SubrentalTicket,
-  SubrentalTicketItem
+  SubrentalTicketItem,
+  TruckChallan
 } from './types';
 import QRCode from 'qrcode';
 import * as XLSX from 'xlsx';
@@ -175,7 +176,6 @@ import { ReportsView } from './components/ReportsView';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { QRLabelModal } from './components/QRLabelModal';
 import jsPDF from 'jspdf';
-import * as XLSX from 'xlsx';
 
 type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings' | 'Subrentals';
 type AssetView = 'List' | 'Form' | 'Details';
@@ -500,6 +500,13 @@ const App: React.FC = () => {
   // Print Selection & Challan Detail View state
   const [printSelectConf, setPrintSelectConf] = useState<Booking | null>(null);
   const [challanDetailTab, setChallanDetailTab] = useState<'dispatch' | 'return'>('dispatch');
+
+  // Multi-Truck Challan State
+  const [activeTruckChallanId, setActiveTruckChallanId] = useState<string | null>(null);
+  const [showTruckTransferModal, setShowTruckTransferModal] = useState<{fromTruckId: string, toTruckId: string} | null>(null);
+  const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
+  const [truckEditValues, setTruckEditValues] = useState<{vehicle_number: string, driver_phone: string}>({vehicle_number: '', driver_phone: ''});
+  const [truckTransferSelection, setTruckTransferSelection] = useState<string[]>([]);
 
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
@@ -1417,7 +1424,16 @@ const App: React.FC = () => {
             pdf_document: c.pdf_document,
             isAudit: c.is_audit || false,  // J-109: propagate audit flag into backendConferences
             transfer_log: c.transfer_log || [],  // Asset transfer audit trail
-
+            truckChallans: (c.truck_challans_data || []).map((t: any) => ({
+              id: String(t.id),
+              conference: String(t.conference),
+              truck_number: t.truck_number,
+              label: t.label || `Truck ${t.truck_number}`,
+              vehicle_number: t.vehicle_number || '',
+              driver_phone: t.driver_phone || '',
+              assets: (t.assets || []).map(String),
+              created_at: t.created_at || '',
+            })),
           }));
           setBackendConferences(mapped);
           
@@ -1430,11 +1446,17 @@ const App: React.FC = () => {
             if (!updatedActive) return prev;
             const serverHasChallanAssets = updatedActive.challanAssets && updatedActive.challanAssets.length > 0;
             const prevHasChallanAssets = prev.challanAssets && prev.challanAssets.length > 0;
+            
+            let merged = { ...updatedActive };
             if (!serverHasChallanAssets && prevHasChallanAssets) {
               // Server returned empty challanAssets — preserve the in-memory ones to prevent visual reset
-              return { ...updatedActive, challanAssets: prev.challanAssets };
+              merged.challanAssets = prev.challanAssets;
             }
-            return updatedActive;
+            // Preserve in-memory truckChallans if server returned empty during background sync
+            if ((!updatedActive.truckChallans || updatedActive.truckChallans.length === 0) && (prev.truckChallans && prev.truckChallans.length > 0)) {
+              merged.truckChallans = prev.truckChallans;
+            }
+            return merged;
           });
 
           // If in print mode, set the selected booking immediately after fetching
@@ -1564,6 +1586,27 @@ const App: React.FC = () => {
           showScanToast(`✅ Asset Assigned to Challan`, 'success');
           // Update local state to reflect change in ChallanView
           setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: updatedChallanAssets } : null);
+
+          // Multi-truck: if trucks exist for this conference, automatically append new ad-hoc item to Truck 1
+          if (selectedBookingForChallan.truckChallans && selectedBookingForChallan.truckChallans.length > 0) {
+            apiFetch(`${API_BASE}/api/conferences/${selectedBookingForChallan.id}/trucks/add-to-truck1/`, {
+              method: 'POST',
+              body: JSON.stringify({ asset_ids: [parseInt(String(newAsset.id), 10)] })
+            }).then(() => {
+              setSelectedBookingForChallan(prev => {
+                if (!prev || !prev.truckChallans) return prev;
+                return {
+                  ...prev,
+                  truckChallans: prev.truckChallans.map(t =>
+                    t.truck_number === 1
+                      ? { ...t, assets: Array.from(new Set([...t.assets, String(newAsset.id)])) }
+                      : t
+                  )
+                };
+              });
+            }).catch(err => console.error("Could not sync new ad-hoc item to truck 1", err));
+          }
+
           const mappedNewAsset: Asset = {
             ...newAsset,
             id: newAsset.id.toString(),
@@ -1615,6 +1658,31 @@ const App: React.FC = () => {
         // back empty and overwrite the correct state. Delay the background refresh so the
         // DB has fully committed the M2M relationship before we re-read it.
         setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: cleanIds.map(String) } : null);
+
+        // Multi-truck: ensure any newly added assets not yet in any truck get added to Truck 1
+        if (selectedBookingForChallan?.truckChallans && selectedBookingForChallan.truckChallans.length > 0) {
+          const allTruckAssetIds = new Set(selectedBookingForChallan.truckChallans.flatMap(t => t.assets));
+          const unassignedToAnyTruck = cleanIds.filter(id => !allTruckAssetIds.has(String(id)));
+          if (unassignedToAnyTruck.length > 0) {
+            apiFetch(`${API_BASE}/api/conferences/${conferenceId}/trucks/add-to-truck1/`, {
+              method: 'POST',
+              body: JSON.stringify({ asset_ids: unassignedToAnyTruck })
+            }).then(() => {
+              setSelectedBookingForChallan(prev => {
+                if (!prev || !prev.truckChallans) return prev;
+                return {
+                  ...prev,
+                  truckChallans: prev.truckChallans.map(t =>
+                    t.truck_number === 1
+                      ? { ...t, assets: Array.from(new Set([...t.assets, ...unassignedToAnyTruck.map(String)])) }
+                      : t
+                  )
+                };
+              });
+            }).catch(err => console.error("Could not sync unassigned items to truck 1", err));
+          }
+        }
+
         setTimeout(() => {
           fetchConferences();
           fetchAssets();
@@ -1645,6 +1713,122 @@ const App: React.FC = () => {
       }
     } catch (err) {
       console.error("Failed to update conference value", err);
+    }
+  };
+
+  // ─── Multi-Truck Challan Handlers ──────────────────────────────
+  const handleAddTruck = async (conferenceId: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/trucks/`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mappedTrucks: TruckChallan[] = (data || []).map((t: any) => ({
+          id: String(t.id),
+          conference: String(t.conference),
+          truck_number: t.truck_number,
+          label: t.label || `Truck ${t.truck_number}`,
+          vehicle_number: t.vehicle_number || '',
+          driver_phone: t.driver_phone || '',
+          assets: (t.assets || []).map(String),
+          created_at: t.created_at || '',
+        }));
+        setSelectedBookingForChallan(prev => prev ? { ...prev, truckChallans: mappedTrucks } : null);
+        showScanToast('✅ Truck added successfully', 'success');
+        fetchConferences();
+      } else {
+        showScanToast('❌ Failed to add truck', 'error');
+      }
+    } catch (err) {
+      console.error("Failed to add truck", err);
+      showScanToast('❌ Network error adding truck', 'error');
+    }
+  };
+
+  const handleDeleteAllTrucks = async (anyTruckId: string, conferenceId: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/truck-challans/${anyTruckId}/`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        showScanToast('✅ Trucks cleared — back to single main challan', 'success');
+        setSelectedBookingForChallan(prev => prev ? { ...prev, truckChallans: [] } : null);
+        setActiveTruckChallanId(null);
+        fetchConferences();
+      } else {
+        showScanToast('❌ Failed to delete trucks', 'error');
+      }
+    } catch (err) {
+      console.error("Failed to delete trucks", err);
+      showScanToast('❌ Network error deleting trucks', 'error');
+    }
+  };
+
+  const handleUpdateTruck = async (truckId: string, updates: { vehicle_number?: string; driver_phone?: string; label?: string; assets?: string[] | number[] }) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/truck-challans/${truckId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelectedBookingForChallan(prev => {
+          if (!prev || !prev.truckChallans) return prev;
+          return {
+            ...prev,
+            truckChallans: prev.truckChallans.map(t =>
+              t.id === truckId
+                ? {
+                    ...t,
+                    vehicle_number: updated.vehicle_number !== undefined ? updated.vehicle_number : t.vehicle_number,
+                    driver_phone: updated.driver_phone !== undefined ? updated.driver_phone : t.driver_phone,
+                    label: updated.label || t.label,
+                    assets: updated.assets ? (updated.assets || []).map(String) : t.assets,
+                  }
+                : t
+            ),
+          };
+        });
+        showScanToast('✅ Truck details updated', 'success');
+      } else {
+        showScanToast('❌ Failed to update truck details', 'error');
+      }
+    } catch (err) {
+      console.error("Failed to update truck details", err);
+      showScanToast('❌ Network error updating truck', 'error');
+    }
+  };
+
+  const handleTransferToTruck = async (fromTruckId: string, toTruckId: string, assetIds: string[]) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/api/truck-challans/${fromTruckId}/transfer/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          to_truck_id: parseInt(toTruckId, 10),
+          asset_ids: assetIds.map(id => parseInt(id, 10)),
+        }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setSelectedBookingForChallan(prev => {
+          if (!prev || !prev.truckChallans) return prev;
+          return {
+            ...prev,
+            truckChallans: prev.truckChallans.map(t => {
+              if (t.id === fromTruckId) return { ...t, assets: (result.source.assets || []).map(String) };
+              if (t.id === toTruckId) return { ...t, assets: (result.dest.assets || []).map(String) };
+              return t;
+            }),
+          };
+        });
+        showScanToast('✅ Items transferred successfully', 'success');
+      } else {
+        showScanToast('❌ Failed to transfer items', 'error');
+      }
+    } catch (err) {
+      console.error("Failed to transfer items", err);
+      showScanToast('❌ Network error transferring items', 'error');
     }
   };
 
@@ -5673,7 +5857,12 @@ const App: React.FC = () => {
     </div>
   );
 
-  const handlePrintChallan = (conf: Booking | null, mode: 'dispatch' | 'return' = 'dispatch', forceChoice = false) => {
+  const handlePrintChallan = (
+    conf: Booking | null,
+    mode: 'dispatch' | 'return' = 'dispatch',
+    forceChoice = false,
+    truckChallan?: TruckChallan | null
+  ) => {
     // BUG J-1: Guard against null conference (e.g. unsaved editing state)
     if (!conf) {
       alert('Please save the conference first before printing the challan.');
@@ -5685,19 +5874,33 @@ const App: React.FC = () => {
        (conf.challanAssets.length !== (conf.assets?.length || 0) ||
         JSON.stringify([...conf.challanAssets].sort()) !== JSON.stringify([...(conf.assets || [])].sort())));
 
-    if (hasTransfers && forceChoice) {
+    if (hasTransfers && forceChoice && !truckChallan) {
       setPrintSelectConf(conf);
       return;
     }
 
-    // Store locally to persist exact current state across the new tab boundary
-    localStorage.setItem('print_conf_data', JSON.stringify(conf));
-    localStorage.setItem('print_challan_title', mode === 'return' ? 'RETURN CHALLAN' : 'DELIVERY CHALLAN');
+    const hasTrucks = (conf.truckChallans || []).length > 0;
+    // Prepare conf object for printing:
+    // If a specific truck is selected, print with that truck's vehicle and driver.
+    // If master challan is selected and trucks exist, vehicle/driver is blank per user specification.
+    const printConfObj: Booking = truckChallan
+      ? {
+          ...conf,
+          vehicleNumber: truckChallan.vehicle_number || '',
+          driverPhone: truckChallan.driver_phone || '',
+        }
+      : (hasTrucks ? { ...conf, vehicleNumber: '', driverPhone: '' } : conf);
+
+    // Store locally to persist exact current state across the new tab boundary. Always DELIVERY CHALLAN.
+    localStorage.setItem('print_conf_data', JSON.stringify(printConfObj));
+    localStorage.setItem('print_challan_title', 'DELIVERY CHALLAN');
 
     const challanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
     let targetAssetIds: string[] = [];
 
-    if (mode === 'return') {
+    if (truckChallan) {
+      targetAssetIds = (truckChallan.assets || []).map(String);
+    } else if (mode === 'return') {
       targetAssetIds = (conf.assets || []).map(String);
     } else {
       targetAssetIds = (conf.challanAssets && conf.challanAssets.length > 0)
@@ -5791,6 +5994,28 @@ const App: React.FC = () => {
                       <td className="px-10 py-6">
                         <p className="font-bold text-white text-xs uppercase">{conf.conferenceName}</p>
                         <p className="text-[10px] text-slate-500 uppercase mt-1">{conf.associationName}</p>
+                        {(conf.truckChallans || []).length > 0 && (
+                          <div className="flex gap-1.5 mt-2 flex-wrap">
+                            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase rounded-md">
+                              <i className="fa-solid fa-truck text-[8px] mr-1"></i>
+                              {(conf.truckChallans || []).length} Trucks
+                            </span>
+                            {(conf.truckChallans || []).map(t => (
+                              <button
+                                key={t.id}
+                                onClick={() => {
+                                  setSelectedBookingForChallan(conf);
+                                  setActiveTruckChallanId(t.id);
+                                  setChallanViewMode('Detail');
+                                }}
+                                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[8px] font-bold uppercase rounded-md transition"
+                                title={`View ${t.label} (${t.assets.length} items)`}
+                              >
+                                {t.label} ({t.assets.length})
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="px-10 py-6">
                         <p className={`text-[10px] font-black uppercase ${hasAssets ? 'text-emerald-400' : 'text-slate-600'}`}>
@@ -5859,6 +6084,27 @@ const App: React.FC = () => {
                     <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Conference</p>
                     <p className="font-bold text-white text-xs uppercase break-words">{conf.conferenceName}</p>
                     <p className="text-[10px] text-slate-400 uppercase mt-0.5">{conf.associationName}</p>
+                    {(conf.truckChallans || []).length > 0 && (
+                      <div className="flex gap-1.5 mt-2 flex-wrap">
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-black uppercase rounded-md">
+                          <i className="fa-solid fa-truck text-[8px] mr-1"></i>
+                          {(conf.truckChallans || []).length} Trucks
+                        </span>
+                        {(conf.truckChallans || []).map(t => (
+                          <button
+                            key={t.id}
+                            onClick={() => {
+                              setSelectedBookingForChallan(conf);
+                              setActiveTruckChallanId(t.id);
+                              setChallanViewMode('Detail');
+                            }}
+                            className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[8px] font-bold uppercase rounded-md transition"
+                          >
+                            {t.label} ({t.assets.length})
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-between items-center pt-3 border-t border-slate-800/40">
@@ -8241,10 +8487,29 @@ const App: React.FC = () => {
               const detailTitle = 'DELIVERY CHALLAN';
               const detailAssets = pool.filter(a => activeAssetIds.includes(String(a.id)));
 
+              const trucks = conf.truckChallans || [];
+              const hasTrucks = trucks.length > 0;
+              const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
+
+              // If an active truck is selected, show that truck's assets. Otherwise show detailAssets (all items).
+              const effectiveAssets = activeTruck
+                ? pool.filter(a => activeTruck.assets.includes(String(a.id)))
+                : detailAssets;
+
+              // Per user requirement: if multi-trucks exist, master challan has blank vehicle and driver.
+              // If an active truck is selected, show that truck's vehicle and driver.
+              const effectiveBooking: Booking = activeTruck
+                ? {
+                    ...conf,
+                    vehicleNumber: activeTruck.vehicle_number || '',
+                    driverPhone: activeTruck.driver_phone || '',
+                  }
+                : (hasTrucks ? { ...conf, vehicleNumber: '', driverPhone: '' } : conf);
+
               return (
                 <div className="animate-in fade-in zoom-in duration-300">
                   <div className="no-print p-8 flex flex-col md:flex-row justify-between items-center gap-4 container mx-auto">
-                    <button onClick={() => setChallanViewMode('List')} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold uppercase text-xs">
+                    <button onClick={() => { setActiveTruckChallanId(null); setChallanViewMode('List'); }} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold uppercase text-xs">
                       ← Back to List
                     </button>
 
@@ -8276,20 +8541,411 @@ const App: React.FC = () => {
 
                     <div className="flex gap-4">
                       <button
-                        onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch')}
+                        onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch', false, activeTruck)}
                         className="px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold uppercase text-xs shadow-lg shadow-sky-500/20 transition-all flex items-center gap-2"
                       >
                         <i className="fa-solid fa-print"></i>
-                        Print {hasTransfers ? (challanDetailTab === 'return' ? 'Return Challan' : 'Dispatch Challan') : 'Challan'}
+                        Print {activeTruck ? activeTruck.label : (hasTransfers ? (challanDetailTab === 'return' ? 'Return Challan' : 'Dispatch Challan') : 'Challan')}
                       </button>
                     </div>
                   </div>
 
+                  {/* ── MULTI-TRUCK BAR ────────────────────────────────────── */}
+                  <div className="no-print container mx-auto px-8 pb-6">
+                    {!hasTrucks ? (
+                      <div className="flex items-center justify-between bg-slate-900/60 p-4 md:p-5 rounded-2xl border border-slate-800 flex-wrap gap-4">
+                        <div>
+                          <p className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                            <i className="fa-solid fa-truck-fast text-emerald-400"></i>
+                            Multi-Truck Logistics
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Need to split this event across multiple trucks? Create individual truck challans with distinct vehicles, drivers, and items.</p>
+                        </div>
+                        {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) && (
+                          <button
+                            onClick={() => handleAddTruck(conf.id)}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-emerald-500/20"
+                          >
+                            <i className="fa-solid fa-truck"></i>
+                            + Add Truck 2 (Split Challans)
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-4 bg-slate-900/60 p-5 rounded-3xl border border-slate-800">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-black text-sky-400 uppercase tracking-widest bg-sky-500/10 px-3 py-1 rounded-lg border border-sky-500/20 flex items-center gap-1.5">
+                              <i className="fa-solid fa-truck-fast"></i> Multi-Truck Dispatch
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-bold">
+                              {trucks.length} Trucks Active • Main Challan preserves all {dispatchIds.length} items
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) && (
+                              <button
+                                onClick={() => handleAddTruck(conf.id)}
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-emerald-500/30 transition-all shadow-sm"
+                              >
+                                <i className="fa-solid fa-plus text-[9px]"></i>
+                                Add Truck {trucks.length + 1}
+                              </button>
+                            )}
+                            {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) && (
+                              <button
+                                onClick={() => {
+                                  if (confirm('Delete all trucks and revert back to normal single challan? Everything will go back to the single main challan.')) {
+                                    handleDeleteAllTrucks(trucks[0].id, conf.id);
+                                  }
+                                }}
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-black uppercase tracking-widest rounded-xl border border-red-500/30 transition-all"
+                                title="Clear all trucks and return to single challan"
+                              >
+                                <i className="fa-solid fa-trash-can text-[9px]"></i>
+                                Reset Trucks
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Truck Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          {/* Main Master Card */}
+                          <div
+                            onClick={() => setActiveTruckChallanId(null)}
+                            className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                              activeTruckChallanId === null
+                                ? 'bg-sky-500/15 border-sky-500/60 shadow-lg shadow-sky-500/10 ring-1 ring-sky-500/50'
+                                : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-[10px] font-black text-sky-400 uppercase tracking-widest">Main Challan</span>
+                              <span className="px-2 py-0.5 bg-sky-500/20 text-sky-300 text-[9px] font-black rounded-md">
+                                {dispatchIds.length} Items
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-bold text-white uppercase">Master Manifest</p>
+                            <p className="text-[9px] text-slate-400 mt-1">Full conference manifest (all items)</p>
+                            <div className="mt-3 pt-2 border-t border-slate-800/60">
+                              <span className={`inline-block w-full py-1 text-center text-[9px] font-black uppercase rounded-lg ${
+                                activeTruckChallanId === null ? 'bg-sky-500 text-white font-black' : 'bg-slate-800 text-slate-400'
+                              }`}>
+                                {activeTruckChallanId === null ? 'Viewing Master' : 'View Master'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Individual Truck Cards */}
+                          {trucks.map(truck => {
+                            const isActive = activeTruckChallanId === truck.id;
+                            const isEditing = editingTruckId === truck.id;
+
+                            return (
+                              <div
+                                key={truck.id}
+                                className={`p-4 rounded-2xl border transition-all ${
+                                  isActive
+                                    ? 'bg-emerald-500/15 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/50'
+                                    : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{truck.label}</span>
+                                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[9px] font-black rounded-md">
+                                    {truck.assets.length} Items
+                                  </span>
+                                </div>
+
+                                {isEditing ? (
+                                  <div className="space-y-2 mt-2" onClick={e => e.stopPropagation()}>
+                                    <input
+                                      type="text"
+                                      placeholder="Vehicle Number"
+                                      value={truckEditValues.vehicle_number}
+                                      onChange={e => setTruckEditValues(v => ({ ...v, vehicle_number: e.target.value }))}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-white rounded-lg text-[10px] font-mono uppercase"
+                                    />
+                                    <input
+                                      type="text"
+                                      placeholder="Driver Phone"
+                                      value={truckEditValues.driver_phone}
+                                      onChange={e => setTruckEditValues(v => ({ ...v, driver_phone: e.target.value }))}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 text-white rounded-lg text-[10px] font-mono"
+                                    />
+                                    <div className="flex gap-1.5 pt-1">
+                                      <button
+                                        onClick={async () => {
+                                          await handleUpdateTruck(truck.id, truckEditValues);
+                                          setEditingTruckId(null);
+                                        }}
+                                        className="flex-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black uppercase rounded-lg transition"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingTruckId(null)}
+                                        className="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[9px] font-black uppercase rounded-lg transition"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div
+                                      onClick={() => setActiveTruckChallanId(truck.id)}
+                                      className="cursor-pointer space-y-0.5 my-2"
+                                    >
+                                      <p className="text-[11px] font-mono font-bold text-white uppercase truncate">
+                                        {truck.vehicle_number || <span className="text-slate-500 font-normal italic">No Vehicle Set</span>}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 font-mono truncate">
+                                        {truck.driver_phone ? `📞 ${truck.driver_phone}` : <span className="text-slate-500 italic">No Driver Phone</span>}
+                                      </p>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-800/60">
+                                      <button
+                                        onClick={() => setActiveTruckChallanId(truck.id)}
+                                        className={`flex-1 py-1 text-[9px] font-black uppercase tracking-wider rounded-lg transition ${
+                                          isActive ? 'bg-emerald-500 text-slate-950 font-extrabold' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                                        }`}
+                                      >
+                                        {isActive ? 'Active' : 'View'}
+                                      </button>
+                                      {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) && (
+                                        <>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingTruckId(truck.id);
+                                              setTruckEditValues({ vehicle_number: truck.vehicle_number, driver_phone: truck.driver_phone });
+                                            }}
+                                            className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition"
+                                            title="Edit Vehicle/Driver"
+                                          >
+                                            <i className="fa-solid fa-pen"></i>
+                                          </button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const other = trucks.find(t => t.id !== truck.id) || truck;
+                                              setShowTruckTransferModal({ fromTruckId: other.id, toTruckId: truck.id });
+                                              setTruckTransferSelection([]);
+                                            }}
+                                            className="px-2 py-1 bg-sky-500/20 hover:bg-sky-500/30 text-sky-400 rounded-lg text-[9px] font-black uppercase tracking-wider transition"
+                                            title="Transfer / Manage Items"
+                                          >
+                                            <i className="fa-solid fa-right-left mr-1"></i> Items
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── TRUCK TRANSFER MODAL ───────────────────────────────── */}
+                  {showTruckTransferModal && (() => {
+                    const { fromTruckId, toTruckId } = showTruckTransferModal;
+                    const fromTruck = trucks.find(t => t.id === fromTruckId);
+                    const toTruck = trucks.find(t => t.id === toTruckId);
+                    if (!fromTruck || !toTruck) return null;
+
+                    const fromAssets = pool.filter(a => fromTruck.assets.includes(String(a.id)));
+                    const toAssets = pool.filter(a => toTruck.assets.includes(String(a.id)));
+
+                    return (
+                      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                        <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setShowTruckTransferModal(null)}></div>
+                        <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[85vh] pointer-events-auto">
+                          {/* Header */}
+                          <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+                            <div>
+                              <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-2">
+                                <i className="fa-solid fa-truck-ramp-box text-emerald-400"></i>
+                                Transfer Items Between Trucks
+                              </h3>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">
+                                Move items from <span className="text-amber-400 font-bold">{fromTruck.label}</span> into <span className="text-emerald-400 font-bold">{toTruck.label}</span>
+                              </p>
+                            </div>
+                            <button onClick={() => setShowTruckTransferModal(null)} className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition">
+                              <i className="fa-solid fa-xmark text-lg"></i>
+                            </button>
+                          </div>
+
+                          {/* Truck Selectors Bar */}
+                          <div className="p-4 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Source Truck:</span>
+                              <select
+                                value={fromTruckId}
+                                onChange={e => {
+                                  setShowTruckTransferModal(prev => prev ? { ...prev, fromTruckId: e.target.value } : null);
+                                  setTruckTransferSelection([]);
+                                }}
+                                className="bg-slate-900 border border-slate-700 text-white font-bold text-xs rounded-xl px-3 py-1.5"
+                              >
+                                {trucks.map(t => (
+                                  <option key={t.id} value={t.id} disabled={t.id === toTruckId}>
+                                    {t.label} ({t.assets.length} items)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <i className="fa-solid fa-arrow-right text-slate-500 hidden md:block"></i>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Destination Truck:</span>
+                              <select
+                                value={toTruckId}
+                                onChange={e => {
+                                  setShowTruckTransferModal(prev => prev ? { ...prev, toTruckId: e.target.value } : null);
+                                }}
+                                className="bg-slate-900 border border-slate-700 text-white font-bold text-xs rounded-xl px-3 py-1.5"
+                              >
+                                {trucks.map(t => (
+                                  <option key={t.id} value={t.id} disabled={t.id === fromTruckId}>
+                                    {t.label} ({t.assets.length} items)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Two Panels */}
+                          <div className="flex flex-1 overflow-hidden divide-x divide-slate-800">
+                            {/* Left Panel — Source Truck Items */}
+                            <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/30">
+                              <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/20">
+                                <div>
+                                  <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                                    {fromTruck.label} Items ({fromAssets.length})
+                                  </p>
+                                  <p className="text-[9px] text-slate-500">Check items to transfer</p>
+                                </div>
+                                {fromAssets.length > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      if (truckTransferSelection.length === fromAssets.length) {
+                                        setTruckTransferSelection([]);
+                                      } else {
+                                        setTruckTransferSelection(fromAssets.map(a => String(a.id)));
+                                      }
+                                    }}
+                                    className="text-[9px] font-black uppercase text-sky-400 hover:text-white transition"
+                                  >
+                                    {truckTransferSelection.length === fromAssets.length ? 'Deselect All' : 'Select All'}
+                                  </button>
+                                )}
+                              </div>
+                              <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                                {fromAssets.length === 0 ? (
+                                  <div className="text-center py-12 text-slate-600 text-xs italic">
+                                    No items currently in {fromTruck.label}
+                                  </div>
+                                ) : (
+                                  fromAssets.map(a => {
+                                    const isChecked = truckTransferSelection.includes(String(a.id));
+                                    return (
+                                      <label
+                                        key={a.id}
+                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                                          isChecked
+                                            ? 'bg-sky-500/15 border-sky-500/40 text-white'
+                                            : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={e => {
+                                            const aid = String(a.id);
+                                            setTruckTransferSelection(prev =>
+                                              e.target.checked ? [...prev, aid] : prev.filter(x => x !== aid)
+                                            );
+                                          }}
+                                          className="w-4 h-4 rounded accent-sky-500"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-xs font-bold uppercase truncate">{a.aliasName || a.sku}</p>
+                                          <p className="text-[9px] font-mono text-slate-500">{a.sku} • Qty: {a.quantity || 1}</p>
+                                        </div>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                              {truckTransferSelection.length > 0 && (
+                                <div className="p-4 border-t border-slate-800 bg-slate-950/50">
+                                  <button
+                                    onClick={async () => {
+                                      await handleTransferToTruck(fromTruckId, toTruckId, truckTransferSelection);
+                                      setTruckTransferSelection([]);
+                                    }}
+                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                                  >
+                                    <i className="fa-solid fa-arrow-right"></i>
+                                    Move {truckTransferSelection.length} Item{truckTransferSelection.length > 1 ? 's' : ''} to {toTruck.label}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Right Panel — Destination Truck Items */}
+                            <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/30">
+                              <div className="p-4 border-b border-slate-800 bg-slate-950/20">
+                                <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                                  {toTruck.label} Items ({toAssets.length})
+                                </p>
+                                <p className="text-[9px] text-slate-500">Currently loaded into {toTruck.label}</p>
+                              </div>
+                              <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                                {toAssets.length === 0 ? (
+                                  <div className="text-center py-12 text-slate-600 text-xs italic">
+                                    {toTruck.label} has no items assigned yet.
+                                  </div>
+                                ) : (
+                                  toAssets.map(a => (
+                                    <div
+                                      key={a.id}
+                                      className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/40 border border-slate-800"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-bold text-white uppercase truncate">{a.aliasName || a.sku}</p>
+                                        <p className="text-[9px] font-mono text-slate-500">{a.sku} • Qty: {a.quantity || 1}</p>
+                                      </div>
+                                      <button
+                                        onClick={() => handleTransferToTruck(toTruckId, fromTruckId, [String(a.id)])}
+                                        className="px-2 py-1 bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/30 rounded-lg text-[9px] font-black uppercase transition flex items-center gap-1"
+                                        title={`Move back to ${fromTruck.label}`}
+                                      >
+                                        <i className="fa-solid fa-arrow-left"></i> Return
+                                      </button>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
                     <ChallanView
-                      booking={conf}
+                      booking={effectiveBooking}
                       client={MOCK_CLIENTS[0]}
-                      assets={detailAssets}
+                      assets={effectiveAssets}
                       challanTitle={detailTitle}
                       companySettings={companySettings}
                       onUpdateAsset={handleChallanAssetUpdate}
@@ -8297,10 +8953,22 @@ const App: React.FC = () => {
                       showScanToast={showScanToast}
                       onUpdateConferenceValue={handleUpdateConferenceValue}
                       onUpdateChallanNumber={handleUpdateChallanNumber}
-                      onSaveFullChallan={handleSaveFullChallan}
+                      onSaveFullChallan={async (confId, assetIds) => {
+                        if (activeTruck) {
+                          await handleUpdateTruck(activeTruck.id, { assets: assetIds as any });
+                          showScanToast(`✅ ${activeTruck.label} Saved Successfully`, 'success');
+                        } else {
+                          await handleSaveFullChallan(confId, assetIds);
+                        }
+                      }}
                       subrentalTickets={confSubrentalTickets}
                       readOnly={user?.role === 'accounts'}
                     onRemoveAssets={async (assetIds) => {
+                      if (activeTruck) {
+                        const updatedTruckAssets = activeTruck.assets.filter(id => !assetIds.includes(String(id)));
+                        await handleUpdateTruck(activeTruck.id, { assets: updatedTruckAssets as any });
+                        return;
+                      }
                       if (!selectedBookingForChallan) return;
                       const currentAssets = (selectedBookingForChallan.assets || []).map(String);
                       const currentChallanAssets = (selectedBookingForChallan.challanAssets || []).map(String);

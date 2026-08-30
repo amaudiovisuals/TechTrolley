@@ -7,6 +7,7 @@ from . import profile_view
 from . import subrental_views
 from . import subrental_ticket_views
 from . import transfer_views
+from . import truck_views
 
 urlpatterns = [
     # API endpoints or views
@@ -21,6 +22,10 @@ urlpatterns = [
     path('conferences/', conference_views.conference_list, name='conference_list'),
     path('conferences/<int:pk>/', conference_views.conference_detail, name='conference_detail'),
     path('conferences/<int:pk>/transfer-assets/', transfer_views.asset_transfer, name='asset_transfer'),
+    path('conferences/<int:pk>/trucks/', truck_views.conference_trucks, name='conference_trucks'),
+    path('conferences/<int:pk>/trucks/add-to-truck1/', truck_views.add_asset_to_truck1, name='add_asset_to_truck1'),
+    path('truck-challans/<int:truck_pk>/', truck_views.truck_challan_detail, name='truck_challan_detail'),
+    path('truck-challans/<int:truck_pk>/transfer/', truck_views.truck_transfer_assets, name='truck_transfer_assets'),
     
     path('dashboard/', views.dashboard, name='dashboard'),
     path('asset-stats/', views.asset_stats, name='asset_stats'),

@@ -263,6 +263,26 @@ class Conference(models.Model):
     def __str__(self):
         return self.name
 
+class TruckChallan(models.Model):
+    conference = models.ForeignKey(
+        Conference, on_delete=models.CASCADE, related_name='truck_challans'
+    )
+    truck_number = models.PositiveIntegerField(default=1)
+    label = models.CharField(max_length=50, default='', blank=True)
+    vehicle_number = models.CharField(max_length=50, default='', blank=True)
+    driver_phone = models.CharField(max_length=20, default='', blank=True)
+    assets = models.ManyToManyField(
+        Asset, blank=True, related_name='truck_challans'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['truck_number']
+        unique_together = [('conference', 'truck_number')]
+
+    def __str__(self):
+        return f"Truck {self.truck_number} - {self.conference.name}"
+
 class DeliveryChallan(models.Model):
     challan_number = models.CharField(max_length=50, unique=True)
     conference = models.ForeignKey(Conference, on_delete=models.CASCADE)

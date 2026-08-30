@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.db import OperationalError
 from rest_framework import serializers
 
-from .models import Asset, Employee, Conference, CompanySettings, SubrentalCompany, SubrentalTicket, SubrentalTicketItem
+from .models import Asset, Employee, Conference, CompanySettings, SubrentalCompany, SubrentalTicket, SubrentalTicketItem, TruckChallan
 
 class SubrentalCompanySerializer(serializers.ModelSerializer):
     class Meta:
@@ -17,6 +17,14 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
+
+class TruckChallanSerializer(serializers.ModelSerializer):
+    assets = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Asset.objects.all()
+    )
+    class Meta:
+        model = TruckChallan
+        fields = ['id', 'conference', 'truck_number', 'label', 'vehicle_number', 'driver_phone', 'assets', 'created_at']
 
 class SubAssetSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
@@ -107,8 +115,9 @@ class ConferenceSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         # Professional Database Shield: If new tables are missing from the DB (e.g. after a git pull 
         # but before running migrations), we dynamically strip those fields to prevent an API crash.
+        data = None
         try:
-            return super().to_representation(instance)
+            data = super().to_representation(instance)
         except OperationalError as e:
             error_str = str(e)
             missing_fields = []
@@ -122,10 +131,32 @@ class ConferenceSerializer(serializers.ModelSerializer):
                 try:
                     data = super().to_representation(instance)
                     for f in missing_fields: data[f] = [] # Return empty arrays instead of error
-                    return data
                 finally:
                     self.fields = original_fields
-            raise e
+            else:
+                raise e
+
+        # Inject truck challans data gracefully
+        if data is not None:
+            try:
+                trucks = instance.truck_challans.prefetch_related('assets').order_by('truck_number')
+                data['truck_challans_data'] = [
+                    {
+                        'id': t.pk,
+                        'conference': instance.pk,
+                        'truck_number': t.truck_number,
+                        'label': t.label or f"Truck {t.truck_number}",
+                        'vehicle_number': t.vehicle_number or '',
+                        'driver_phone': t.driver_phone or '',
+                        'assets': list(t.assets.values_list('pk', flat=True)),
+                        'created_at': t.created_at.isoformat() if t.created_at else '',
+                    }
+                    for t in trucks
+                ]
+            except Exception:
+                data['truck_challans_data'] = []
+
+        return data
 
     def create(self, validated_data):
         assets_data = validated_data.pop('assets', [])
