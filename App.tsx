@@ -8229,13 +8229,16 @@ const App: React.FC = () => {
               const dispatchIds = (conf.challanAssets && conf.challanAssets.length > 0)
                 ? conf.challanAssets.map(String)
                 : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
+              // Return challan uses the same dispatched list as its base — edited/added items
+              // should be present on the return too (transfers reduce it further if any).
               const returnIds = (conf.assets || []).map(String);
 
               const hasTransfers = (conf.transfer_log && conf.transfer_log.length > 0) ||
                 (dispatchIds.length !== returnIds.length || JSON.stringify([...dispatchIds].sort()) !== JSON.stringify([...returnIds].sort()));
 
               const activeAssetIds = (hasTransfers && challanDetailTab === 'return') ? returnIds : dispatchIds;
-              const detailTitle = (hasTransfers && challanDetailTab === 'return') ? 'RETURN CHALLAN' : 'DELIVERY CHALLAN';
+              // The printed challan PDF always says "DELIVERY CHALLAN" — "Return" is just our internal tab label.
+              const detailTitle = 'DELIVERY CHALLAN';
               const detailAssets = pool.filter(a => activeAssetIds.includes(String(a.id)));
 
               return (
