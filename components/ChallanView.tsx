@@ -113,6 +113,9 @@ interface ChallanViewProps {
   onSaveFullChallan?: (conferenceId: string, assetIds: string[]) => Promise<void>;
   subrentalTickets?: any[];
   readOnly?: boolean;
+  /** Optional suffix appended to localStorage cache keys for per-truck total/challan-number isolation.
+   *  booking.id is always the real conference ID — this prop only affects localStorage namespacing. */
+  localStorageSuffix?: string;
 }
 
 type ColumnKey = 'Seq' | 'SKU' | 'Asset' | 'Type' | 'Identifiers' | 'MAC' | 'IMEI' | 'Rate' | 'Qty' | 'Total' | 'Actions';
@@ -167,13 +170,17 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({
-  booking, client, assets, companySettings, challanTitle, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets, readOnly
+  booking, client, assets, companySettings, challanTitle, onUpdateAsset, onAddAdhocItem, showScanToast, onUpdateConferenceValue, onRemoveAssets, onUpdateChallanNumber, onSaveFullChallan, subrentalTickets, readOnly, localStorageSuffix
 }) => {
   const copies = [
     { label: 'Original for Recipient', key: 'ORIG' },
     { label: 'Duplicate for Transporter', key: 'TRANS' },
     { label: 'Triplicate for Supplier', key: 'SUPP' }
   ];
+
+  // cacheKey: booking.id is always the real conference ID.
+  // localStorageSuffix allows per-truck isolation (e.g. "__truck1") without mutating booking.id.
+  const cacheKey = `${booking.id}${localStorageSuffix || ''}`;
 
   const [visibleColumns, setVisibleColumns] = React.useState<ColumnKey[]>(() => {
     try {
@@ -187,14 +194,14 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   const [localAssets, setLocalAssets] = React.useState<Asset[]>(assets);
   const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(() => {
     try {
-      const stored = localStorage.getItem(`cache_total_val_${booking.id}`);
+      const stored = localStorage.getItem(`cache_total_val_${cacheKey}`);
       if (stored) return parseFloat(stored);
     } catch (e) { }
     return booking.approximate_value || null;
   });
   const [challanNoOverride, setChallanNoOverride] = React.useState<string | null>(() => {
     try {
-      const stored = localStorage.getItem(`cache_challan_no_${booking.id}`);
+      const stored = localStorage.getItem(`cache_challan_no_${cacheKey}`);
       if (stored) return stored;
     } catch (e) { }
     return booking.challanNumber || null;
@@ -338,7 +345,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       // 2. Save approximate goods value override if changed
       if (totalValueOverride !== null && totalValueOverride !== booking.approximate_value) {
-        localStorage.setItem(`cache_total_val_${booking.id}`, totalValueOverride.toString());
+        localStorage.setItem(`cache_total_val_${cacheKey}`, totalValueOverride.toString());
         if (onUpdateConferenceValue) {
           console.log("Saving conference value override:", totalValueOverride);
           try {
@@ -352,7 +359,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       // 3. Save challan number if changed
       if (challanNoOverride !== null && challanNoOverride !== booking.challanNumber) {
-        localStorage.setItem(`cache_challan_no_${booking.id}`, challanNoOverride);
+        localStorage.setItem(`cache_challan_no_${cacheKey}`, challanNoOverride);
         if (onUpdateChallanNumber) {
           console.log("Saving challan number override:", challanNoOverride);
           try {
@@ -393,7 +400,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       setIsEditMode(false);
       setTimeout(() => {
         isSavingRef.current = false;
-      }, 4000);
+      }, 5000);
     }
   };
 

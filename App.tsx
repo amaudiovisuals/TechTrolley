@@ -1682,8 +1682,11 @@ const App: React.FC = () => {
       });
       if (res.ok) {
         showScanToast(`✅ Goods Value Updated: ₹${value.toLocaleString()}`, 'success');
-        fetchConferences();
+        // Optimistic update immediately; delayed background refresh prevents stale overwrite
         setSelectedBookingForChallan(prev => prev ? { ...prev, approximate_value: value } : null);
+        setTimeout(() => {
+          fetchConferences();
+        }, 3000);
       }
     } catch (err) {
       console.error("Failed to update conference value", err);
@@ -6309,6 +6312,31 @@ const App: React.FC = () => {
                     {user?.role !== 'godown_incharge' && (
                       <button onClick={() => handlePrintChallan(conf)} className="text-emerald-400 hover:text-white" title="Print Challan"><i className="fa-solid fa-print"></i></button>
                     )}
+                    {conf.isAudit && (user?.role === 'admin' || user?.is_staff) && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm('Release all assets locked by this audit conference? Only assets NOT held by any other active conference will be released.')) return;
+                          try {
+                            const res = await apiFetch(`${API_BASE}/api/conferences/${conf.id}/release-audit-locks/`, { method: 'POST' });
+                            const data = await res.json();
+                            if (res.ok) {
+                              showScanToast(`✅ Released ${data.released} asset(s) from audit lock`, 'success');
+                              fetchAssets();
+                              fetchConferences();
+                            } else {
+                              showScanToast(`❌ ${data.error || 'Failed to release locks'}`, 'error');
+                            }
+                          } catch {
+                            showScanToast('❌ Network error releasing locks', 'error');
+                          }
+                        }}
+                        className="text-amber-400 hover:text-white text-[10px] font-black uppercase"
+                        title="Release audit conference asset locks"
+                      >
+                        <i className="fa-solid fa-lock-open"></i>
+                      </button>
+                    )}
                     {user?.is_staff ? (
                       <>
                         <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
@@ -8471,6 +8499,7 @@ const App: React.FC = () => {
 
               // Per user requirement: if multi-trucks exist, master challan has blank vehicle and driver.
               // If an active truck is selected, show that truck's vehicle and driver.
+              // IMPORTANT: effectiveBooking.id is ALWAYS conf.id — never mutated.
               const effectiveBooking: Booking = activeTruck
                 ? {
                     ...conf,
@@ -8925,7 +8954,10 @@ const App: React.FC = () => {
                       showScanToast={showScanToast}
                       onUpdateConferenceValue={handleUpdateConferenceValue}
                       onUpdateChallanNumber={handleUpdateChallanNumber}
-                      onSaveFullChallan={async (confId, assetIds) => {
+                      localStorageSuffix={activeTruck ? `__truck${activeTruck.truck_number}` : undefined}
+                      onSaveFullChallan={async (_confId, assetIds) => {
+                        // NOTE: We always use conf.id (the real conference ID) for all API calls.
+                        // _confId === conf.id always, since effectiveBooking.id is never mutated.
                         const cleanIds: number[] = Array.from(new Set<number>(assetIds.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id))));
                         if (activeTruck) {
                           // 1. Update this specific truck's assets on the backend
@@ -8935,7 +8967,7 @@ const App: React.FC = () => {
                           const currentMasterChallan: number[] = (selectedBookingForChallan?.challanAssets || []).map(id => parseInt(String(id), 10)).filter(id => !isNaN(id));
                           const mergedMasterChallan: number[] = Array.from(new Set<number>([...currentMasterChallan, ...cleanIds]));
 
-                          await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+                          await apiFetch(`${API_BASE}/api/conferences/${conf.id}/`, {
                             method: 'PATCH',
                             body: JSON.stringify({ challan_assets: mergedMasterChallan })
                           });
@@ -8953,9 +8985,10 @@ const App: React.FC = () => {
                           setTimeout(() => {
                             fetchConferences();
                             fetchAllAssetsForScan();
-                          }, 1500);
+                          }, 3000);
                         } else {
-                          await handleSaveFullChallan(confId, cleanIds.map(String));
+                          // Master challan: use conf.id explicitly
+                          await handleSaveFullChallan(conf.id, cleanIds.map(String));
                         }
                       }}
                       subrentalTickets={confSubrentalTickets}

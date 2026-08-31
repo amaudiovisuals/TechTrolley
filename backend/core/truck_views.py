@@ -164,3 +164,70 @@ def add_asset_to_truck1(request, pk):
         truck1.assets.add(*clean_asset_ids)
         return Response({'status': 'added', 'truck_id': truck1.pk})
     return Response({'status': 'no_truck1_or_no_assets'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def release_audit_conference_locks(request, pk):
+    """
+    POST /api/conferences/{pk}/release-audit-locks/
+
+    For an audit conference (is_audit=True), releases all assets that are
+    still marked as 'In Use' in the DB but are not held by any other
+    non-audit conference.
+
+    This is safe to call multiple times — it is idempotent.
+    Returns a count of assets released.
+    """
+    conference = get_object_or_404(Conference, pk=pk)
+
+    if not conference.is_audit:
+        return Response(
+            {'error': 'This conference is not marked as an audit conference.'},
+            status=400
+        )
+
+    # All assets in this audit conference (assets M2M)
+    audit_asset_ids = set(conference.assets.values_list('pk', flat=True))
+    # Also include challan_assets — they may have been stamped In Use before is_audit was set
+    challan_asset_ids = set(conference.challan_assets.values_list('pk', flat=True))
+    all_candidate_ids = audit_asset_ids | challan_asset_ids
+
+    if not all_candidate_ids:
+        return Response({'released': 0, 'message': 'No assets found in this audit conference.'})
+
+    # Find assets held by other NON-audit conferences via assets or crosscheck_assets
+    locked_by_others = set(
+        Conference.objects
+        .exclude(pk=conference.pk)
+        .exclude(is_audit=True)
+        .filter(assets__in=all_candidate_ids)
+        .values_list('assets__id', flat=True)
+    )
+    crosscheck_locked = set(
+        Conference.objects
+        .exclude(pk=conference.pk)
+        .filter(crosscheck_assets__in=all_candidate_ids)
+        .values_list('crosscheck_assets__id', flat=True)
+    )
+    genuinely_locked = locked_by_others | crosscheck_locked
+
+    # Safe to release: in audit conf but NOT locked by anyone else, and currently In Use
+    safe_to_release = [
+        aid for aid in all_candidate_ids
+        if aid not in genuinely_locked
+    ]
+
+    released_count = 0
+    if safe_to_release:
+        released_count = Asset.objects.filter(
+            pk__in=safe_to_release,
+            status='In Use'
+        ).update(status='Available')
+
+    return Response({
+        'released': released_count,
+        'total_candidates': len(all_candidate_ids),
+        'skipped_still_locked_elsewhere': len(genuinely_locked & all_candidate_ids),
+        'message': f'Successfully released {released_count} asset(s) from audit conference lock.'
+    })

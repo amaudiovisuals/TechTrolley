@@ -24,6 +24,7 @@ urlpatterns = [
     path('conferences/<int:pk>/transfer-assets/', transfer_views.asset_transfer, name='asset_transfer'),
     path('conferences/<int:pk>/trucks/', truck_views.conference_trucks, name='conference_trucks'),
     path('conferences/<int:pk>/trucks/add-to-truck1/', truck_views.add_asset_to_truck1, name='add_asset_to_truck1'),
+    path('conferences/<int:pk>/release-audit-locks/', truck_views.release_audit_conference_locks, name='release_audit_locks'),
     path('truck-challans/<int:truck_pk>/', truck_views.truck_challan_detail, name='truck_challan_detail'),
     path('truck-challans/<int:truck_pk>/transfer/', truck_views.truck_transfer_assets, name='truck_transfer_assets'),
     
