@@ -387,19 +387,36 @@ def company_settings(request):
         settings_obj, created = CompanySettings.objects.get_or_create(pk=1)
 
         if request.method == 'GET':
-            # Auto-sync next_challan_number if it's lagging behind existing conferences
+            # J-112: Auto-sync next_challan_number — handles both old plain format ("1234")
+            # and new structured format ("26-27/AMDL-00122"). Extract the trailing integer.
             try:
-                from .models import Conference
-                highest = 999
+                import re
+                from .models import Conference, get_current_financial_year
+                highest = 0
+                current_fy = get_current_financial_year()
+                # Only sync against challans from the current financial year to avoid
+                # cross-year pollution when the counter has been reset.
                 for conf in Conference.objects.all():
-                    val = conf.challan_number or (str(1000 + conf.id) if conf.id else '')
-                    if str(val).isdigit():
-                        num = int(val)
+                    val = conf.challan_number or ''
+                    if not val:
+                        continue
+                    # If it's the new format, only count challans from the same FY
+                    if '/' in val:
+                        fy_part = val.split('/')[0]
+                        if fy_part != current_fy:
+                            continue  # different financial year — skip
+                    match = re.search(r'(\d+)$', val)
+                    if match:
+                        num = int(match.group(1))
                         if num > highest:
                             highest = num
-                if highest >= settings_obj.next_challan_number:
+                stored_fy = (settings_obj.challan_fy or '').strip()
+                if stored_fy == current_fy and highest >= settings_obj.next_challan_number:
                     settings_obj.next_challan_number = highest + 1
                     settings_obj.save(update_fields=['next_challan_number'])
+                elif stored_fy != current_fy:
+                    # New FY not yet recorded — set it but don't touch counter if manually set
+                    pass  # generate_challan_number handles FY reset on next create
             except Exception as ex:
                 print("Auto-sync challan number warning:", ex)
 

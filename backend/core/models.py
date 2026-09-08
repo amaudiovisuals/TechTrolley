@@ -305,7 +305,12 @@ class CompanySettings(models.Model):
     theme_template = models.CharField(max_length=20, default='blue', choices=[('blue', 'Blue'), ('green', 'Green')])
     print_label_width = models.IntegerField(default=50, help_text="Label width in mm")
     print_label_height = models.IntegerField(default=25, help_text="Label height in mm")
-    next_challan_number = models.IntegerField(default=1000, help_text="Next auto-generated challan number")
+    next_challan_number = models.IntegerField(default=1, help_text="Next sequential challan number within the current financial year")
+    # J-112: Structured challan number (e.g. "26-27/AMDL-00122")
+    challan_prefix = models.CharField(max_length=20, default='AMDL', blank=True,
+        help_text="Fixed prefix in challan number (e.g. 'AMDL' → '26-27/AMDL-00122')")
+    challan_fy = models.CharField(max_length=10, default='', blank=True,
+        help_text="Financial year the current sequence counter belongs to (e.g. '26-27'). Auto-resets on April 1.")
 
     def __str__(self):
         return self.name
@@ -327,9 +332,48 @@ class CompanySettings(models.Model):
             existing.print_label_width = self.print_label_width
             existing.print_label_height = self.print_label_height
             existing.next_challan_number = self.next_challan_number
+            existing.challan_prefix = self.challan_prefix
+            existing.challan_fy = self.challan_fy
             existing.save()
             return
         super(CompanySettings, self).save(*args, **kwargs)
+
+
+def get_current_financial_year() -> str:
+    """
+    Returns the Indian financial year as "YY-YY" (e.g. "26-27").
+    FY runs April 1 – March 31.
+    """
+    from datetime import date
+    today = date.today()
+    if today.month >= 4:  # April onwards = start of new FY
+        return f"{str(today.year)[2:]}-{str(today.year + 1)[2:]}"
+    else:
+        return f"{str(today.year - 1)[2:]}-{str(today.year)[2:]}"
+
+
+def generate_challan_number(settings_obj) -> str:
+    """
+    Generates a challan number in the format "26-27/AMDL-00122".
+    Automatically resets the counter to 1 when a new financial year begins.
+    Increments next_challan_number and saves settings_obj in one atomic call.
+    """
+    current_fy = get_current_financial_year()
+    prefix = (settings_obj.challan_prefix or 'AMDL').strip()
+
+    stored_fy = (settings_obj.challan_fy or '').strip()
+    if stored_fy != current_fy:
+        # New financial year detected — reset counter to 1
+        settings_obj.challan_fy = current_fy
+        settings_obj.next_challan_number = 1
+
+    seq = settings_obj.next_challan_number
+    challan_number = f"{current_fy}/{prefix}-{seq:05d}"
+
+    settings_obj.next_challan_number += 1
+    settings_obj.save(update_fields=['next_challan_number', 'challan_fy', 'challan_prefix'])
+
+    return challan_number
 
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save

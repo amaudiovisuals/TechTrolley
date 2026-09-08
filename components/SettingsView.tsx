@@ -27,7 +27,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         logo: null, powered_by_name: 'am audiovisuals',
         dashboard_config: {}, theme_template: 'blue',
         print_label_width: 50, print_label_height: 25,
-        next_challan_number: 1000
+        next_challan_number: 1,
+        challan_prefix: 'AMDL',
+        challan_fy: '',
     });
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -111,6 +113,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             formData.append('print_label_height', companySettings.print_label_height.toString());
             if (companySettings.next_challan_number !== undefined) {
                 formData.append('next_challan_number', companySettings.next_challan_number.toString());
+            }
+            if (companySettings.challan_prefix !== undefined) {
+                formData.append('challan_prefix', companySettings.challan_prefix);
             }
 
             if (logoFile) {
@@ -464,23 +469,73 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                             </div>
                         </div>
 
-                        <div className="p-6 bg-amber-500/5 rounded-2xl border border-amber-500/20 space-y-2">
+                        <div className="p-6 bg-amber-500/5 rounded-2xl border border-amber-500/20 space-y-5">
                             <label className="text-[10px] uppercase font-black text-amber-400 tracking-widest block">
-                                <i className="fa-solid fa-file-invoice mr-1.5"></i> Next Challan Number (Auto Sequence)
+                                <i className="fa-solid fa-file-invoice mr-1.5"></i> Challan Number Settings
                             </label>
-                            <div className="flex items-center gap-4">
-                                <input 
-                                    type="number" 
-                                    disabled={!isEditing} 
-                                    value={companySettings.next_challan_number ?? 1000} 
-                                    onChange={e => setCompanySettings({ ...companySettings, next_challan_number: parseInt(e.target.value) || 0 })} 
-                                    className={`w-full max-w-xs bg-[#0f172a] border ${isEditing ? 'border-amber-500/50 focus:border-amber-400' : 'border-transparent text-amber-400'} rounded-xl p-4 font-black text-lg transition-all`} 
-                                />
-                                <div className="text-[10px] text-slate-400 font-medium">
-                                    <p className="font-bold text-amber-400/90 uppercase">Current Sequence Counter</p>
-                                    <p>The next created delivery challan will automatically get this number (e.g. #{companySettings.next_challan_number ?? 1000}).</p>
+
+                            {/* Live Preview */}
+                            {(() => {
+                                const fy = (() => {
+                                    const now = new Date();
+                                    const m = now.getMonth() + 1; // 1-based
+                                    const y = now.getFullYear();
+                                    if (m >= 4) return `${String(y).slice(2)}-${String(y + 1).slice(2)}`;
+                                    return `${String(y - 1).slice(2)}-${String(y).slice(2)}`;
+                                })();
+                                const prefix = (companySettings.challan_prefix || 'AMDL').trim();
+                                const seq = companySettings.next_challan_number ?? 1;
+                                const preview = `${fy}/${prefix}-${String(seq).padStart(5, '0')}`;
+                                return (
+                                    <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-5 py-3">
+                                        <i className="fa-solid fa-tag text-amber-400 text-sm"></i>
+                                        <div>
+                                            <p className="text-[9px] text-amber-400/70 uppercase font-black tracking-widest">Next Challan Will Be</p>
+                                            <p className="text-amber-400 font-black text-xl tracking-wider">{preview}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Prefix */}
+                                <div>
+                                    <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest mb-2 block">
+                                        Company Code / Prefix
+                                    </label>
+                                    <input
+                                        type="text"
+                                        disabled={!isEditing}
+                                        value={companySettings.challan_prefix ?? 'AMDL'}
+                                        onChange={e => setCompanySettings({ ...companySettings, challan_prefix: e.target.value.toUpperCase() })}
+                                        maxLength={10}
+                                        placeholder="AMDL"
+                                        className={`w-full bg-[#0f172a] border ${isEditing ? 'border-amber-500/50 focus:border-amber-400' : 'border-transparent text-amber-400'} rounded-xl p-4 font-black text-base transition-all uppercase tracking-widest`}
+                                    />
+                                    <p className="text-[9px] text-slate-500 mt-1.5">Fixed code after the financial year (e.g. AMDL)</p>
+                                </div>
+                                {/* Sequence Counter */}
+                                <div>
+                                    <label className="text-[9px] uppercase font-black text-slate-500 tracking-widest mb-2 block">
+                                        Next Sequence Number
+                                    </label>
+                                    <input
+                                        type="number"
+                                        disabled={!isEditing}
+                                        min={1}
+                                        value={companySettings.next_challan_number ?? 1}
+                                        onChange={e => setCompanySettings({ ...companySettings, next_challan_number: parseInt(e.target.value) || 1 })}
+                                        className={`w-full bg-[#0f172a] border ${isEditing ? 'border-amber-500/50 focus:border-amber-400' : 'border-transparent text-amber-400'} rounded-xl p-4 font-black text-base transition-all`}
+                                    />
+                                    <p className="text-[9px] text-slate-500 mt-1.5">
+                                        Resets to <span className="text-amber-400/80">00001</span> automatically every April 1st (new financial year)
+                                    </p>
                                 </div>
                             </div>
+
+                            <p className="text-[9px] text-slate-500">
+                                Financial year (<span className="text-amber-400/80">26-27</span>) is calculated automatically from today's date — April 1 to March 31.
+                            </p>
                         </div>
                         <div className="pt-8 border-t border-slate-800/50 space-y-8">
                             <div>

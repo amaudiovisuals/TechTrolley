@@ -237,6 +237,10 @@ export interface CompanySettings {
   print_label_width: number;
   print_label_height: number;
   next_challan_number?: number;
+  /** Fixed prefix in challan number (e.g. "AMDL" → "26-27/AMDL-00122") */
+  challan_prefix?: string;
+  /** Financial year the current counter belongs to (e.g. "26-27"). Auto-managed. */
+  challan_fy?: string;
 }
 
 export interface SubrentalTicketItem {

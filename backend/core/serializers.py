@@ -181,13 +181,13 @@ class ConferenceSerializer(serializers.ModelSerializer):
         pdf_doc = validated_data.get('pdf_document')
         if isinstance(pdf_doc, str): validated_data.pop('pdf_document')
 
-        # Auto-assign next_challan_number if not specified or blank
+        # J-112: Auto-assign challan number in structured format e.g. "26-27/AMDL-00122"
+        # generate_challan_number() handles FY detection, per-FY reset, and counter increment atomically.
         if not validated_data.get('challan_number'):
             settings_obj = CompanySettings.objects.first()
             if settings_obj:
-                validated_data['challan_number'] = str(settings_obj.next_challan_number)
-                settings_obj.next_challan_number += 1
-                settings_obj.save(update_fields=['next_challan_number'])
+                from .models import generate_challan_number
+                validated_data['challan_number'] = generate_challan_number(settings_obj)
             
         conference = Conference.objects.create(**validated_data)
         

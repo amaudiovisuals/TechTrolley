@@ -5915,17 +5915,14 @@ const App: React.FC = () => {
       return d;
     };
 
-    // Sort challans by number descending
+    // Sort challans by ID descending (newest created = top)
     const sortedChallans = [...filteredConferences]
       .filter(conf => !challanSearchQuery ||
         (conf.challanNumber && conf.challanNumber.toString().toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
         (conf.conferenceName && conf.conferenceName.toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
         (conf.associationName && conf.associationName.toLowerCase().includes(challanSearchQuery.toLowerCase()))
       )
-      // BUG J-29: parseInt can return NaN for empty challanNumber; use fallback '0'
-      .sort((a, b) =>
-        parseInt(b.challanNumber || '0') - parseInt(a.challanNumber || '0')
-      );
+      .sort((a, b) => parseInt(b.id) - parseInt(a.id));
 
     return (
       <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
@@ -5963,7 +5960,7 @@ const App: React.FC = () => {
                   return (
                     <tr key={conf.id} className="hover:bg-slate-800/10 transition">
                       <td className="px-10 py-6">
-                        <p className="font-black text-white text-base uppercase">#{conf.challanNumber}</p>
+                        <p className="font-black text-white text-base uppercase">{conf.challanNumber}</p>
                       </td>
                       <td className="px-10 py-6">
                         <p className="text-xs text-slate-300 font-bold uppercase">{challanDateDisplay}</p>
@@ -6046,7 +6043,7 @@ const App: React.FC = () => {
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Challan #</p>
-                      <p className="font-black text-white text-lg">#{conf.challanNumber}</p>
+                      <p className="font-black text-white text-lg">{conf.challanNumber}</p>
                       <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
                         <i className="fa-regular fa-calendar text-[9px] mr-1 text-sky-400"></i>
                         {challanDateDisplay}
