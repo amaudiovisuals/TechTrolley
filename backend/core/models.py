@@ -271,6 +271,9 @@ class TruckChallan(models.Model):
     label = models.CharField(max_length=50, default='', blank=True)
     vehicle_number = models.CharField(max_length=50, default='', blank=True)
     driver_phone = models.CharField(max_length=20, default='', blank=True)
+    # J-113: Each truck challan gets its own unique challan number from the sequence
+    challan_number = models.CharField(max_length=50, default='', blank=True,
+        help_text="Auto-assigned unique challan number for this truck (e.g. '26-27/AMDL-00123')")
     assets = models.ManyToManyField(
         Asset, blank=True, related_name='truck_challans'
     )

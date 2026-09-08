@@ -505,7 +505,7 @@ const App: React.FC = () => {
   const [activeTruckChallanId, setActiveTruckChallanId] = useState<string | null>(null);
   const [showTruckTransferModal, setShowTruckTransferModal] = useState<{fromTruckId: string, toTruckId: string} | null>(null);
   const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
-  const [truckEditValues, setTruckEditValues] = useState<{vehicle_number: string, driver_phone: string}>({vehicle_number: '', driver_phone: ''});
+  const [truckEditValues, setTruckEditValues] = useState<{vehicle_number: string, driver_phone: string, challan_number?: string}>({vehicle_number: '', driver_phone: '', challan_number: ''});
   const [truckTransferSelection, setTruckTransferSelection] = useState<string[]>([]);
 
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
@@ -1431,6 +1431,7 @@ const App: React.FC = () => {
               label: t.label || `Truck ${t.truck_number}`,
               vehicle_number: t.vehicle_number || '',
               driver_phone: t.driver_phone || '',
+              challan_number: t.challan_number || '',
               assets: (t.assets || []).map(String),
               created_at: t.created_at || '',
             })),
@@ -1708,6 +1709,7 @@ const App: React.FC = () => {
           label: t.label || `Truck ${t.truck_number}`,
           vehicle_number: t.vehicle_number || '',
           driver_phone: t.driver_phone || '',
+          challan_number: t.challan_number || '',
           assets: (t.assets || []).map(String),
           created_at: t.created_at || '',
         }));
@@ -1742,7 +1744,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateTruck = async (truckId: string, updates: { vehicle_number?: string; driver_phone?: string; label?: string; assets?: string[] | number[] }) => {
+  const handleUpdateTruck = async (truckId: string, updates: { vehicle_number?: string; driver_phone?: string; label?: string; assets?: string[] | number[]; challan_number?: string }) => {
     try {
       const res = await apiFetch(`${API_BASE}/api/truck-challans/${truckId}/`, {
         method: 'PATCH',
@@ -1761,6 +1763,7 @@ const App: React.FC = () => {
                     vehicle_number: updated.vehicle_number !== undefined ? updated.vehicle_number : t.vehicle_number,
                     driver_phone: updated.driver_phone !== undefined ? updated.driver_phone : t.driver_phone,
                     label: updated.label || t.label,
+                    challan_number: updated.challan_number !== undefined ? updated.challan_number : t.challan_number,
                     assets: updated.assets ? (updated.assets || []).map(String) : t.assets,
                   }
                 : t
@@ -5863,6 +5866,7 @@ const App: React.FC = () => {
     const printConfObj: Booking = truckChallan
       ? {
           ...conf,
+          challanNumber: truckChallan.challan_number || (truckChallan.truck_number === 1 ? conf.challanNumber : ''),
           vehicleNumber: truckChallan.vehicle_number || '',
           driverPhone: truckChallan.driver_phone || '',
         }
@@ -8500,6 +8504,7 @@ const App: React.FC = () => {
               const effectiveBooking: Booking = activeTruck
                 ? {
                     ...conf,
+                    challanNumber: activeTruck.challan_number || (activeTruck.truck_number === 1 ? conf.challanNumber : ''),
                     vehicleNumber: activeTruck.vehicle_number || '',
                     driverPhone: activeTruck.driver_phone || '',
                   }
@@ -8660,6 +8665,13 @@ const App: React.FC = () => {
                                   <div className="space-y-2 mt-2" onClick={e => e.stopPropagation()}>
                                     <input
                                       type="text"
+                                      placeholder="Challan Number"
+                                      value={truckEditValues.challan_number ?? ''}
+                                      onChange={e => setTruckEditValues(v => ({ ...v, challan_number: e.target.value }))}
+                                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-amber-500/40 text-amber-400 rounded-lg text-[10px] font-mono"
+                                    />
+                                    <input
+                                      type="text"
                                       placeholder="Vehicle Number"
                                       value={truckEditValues.vehicle_number}
                                       onChange={e => setTruckEditValues(v => ({ ...v, vehicle_number: e.target.value }))}
@@ -8696,6 +8708,11 @@ const App: React.FC = () => {
                                       onClick={() => setActiveTruckChallanId(truck.id)}
                                       className="cursor-pointer space-y-0.5 my-2"
                                     >
+                                      {truck.challan_number && (
+                                        <p className="text-[10px] font-mono font-black text-amber-400 truncate">
+                                          {truck.challan_number}
+                                        </p>
+                                      )}
                                       <p className="text-[11px] font-mono font-bold text-white uppercase truncate">
                                         {truck.vehicle_number || <span className="text-slate-500 font-normal italic">No Vehicle Set</span>}
                                       </p>
@@ -8719,10 +8736,10 @@ const App: React.FC = () => {
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setEditingTruckId(truck.id);
-                                              setTruckEditValues({ vehicle_number: truck.vehicle_number, driver_phone: truck.driver_phone });
+                                              setTruckEditValues({ vehicle_number: truck.vehicle_number, driver_phone: truck.driver_phone, challan_number: truck.challan_number || '' });
                                             }}
                                             className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-[9px] font-black uppercase transition"
-                                            title="Edit Vehicle/Driver"
+                                            title="Edit Truck Details"
                                           >
                                             <i className="fa-solid fa-pen"></i>
                                           </button>
@@ -8941,6 +8958,7 @@ const App: React.FC = () => {
 
                   <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
                     <ChallanView
+                      key={`${conf.id}_${activeTruck ? activeTruck.id : 'master'}`}
                       booking={effectiveBooking}
                       client={MOCK_CLIENTS[0]}
                       assets={effectiveAssets}
@@ -8950,7 +8968,14 @@ const App: React.FC = () => {
                       onAddAdhocItem={handleAddAdhocChallanItem}
                       showScanToast={showScanToast}
                       onUpdateConferenceValue={handleUpdateConferenceValue}
-                      onUpdateChallanNumber={handleUpdateChallanNumber}
+                      onUpdateChallanNumber={async (_confId, newChallanNumber) => {
+                        if (activeTruck) {
+                          await handleUpdateTruck(activeTruck.id, { challan_number: newChallanNumber });
+                          showScanToast(`✅ ${activeTruck.label} Challan No Updated: ${newChallanNumber}`, 'success');
+                        } else {
+                          await handleUpdateChallanNumber(conf.id, newChallanNumber);
+                        }
+                      }}
                       localStorageSuffix={activeTruck ? `__truck${activeTruck.truck_number}` : undefined}
                       onSaveFullChallan={async (_confId, assetIds) => {
                         // NOTE: We always use conf.id (the real conference ID) for all API calls.

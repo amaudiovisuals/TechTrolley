@@ -947,7 +947,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
               {isEditMode ? (
                 <input
                   type="text"
-                  className="bg-white border text-gray-900 border-slate-200 rounded px-1 w-24 text-right print:hidden"
+                  className="bg-white border text-gray-900 border-slate-200 rounded px-1.5 py-0.5 w-48 text-right font-mono text-[9px] print:hidden"
                   value={challanNoOverride || ''}
                   onChange={e => setChallanNoOverride(e.target.value)}
                 />

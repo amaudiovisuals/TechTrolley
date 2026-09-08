@@ -152,19 +152,30 @@ class ConferenceSerializer(serializers.ModelSerializer):
         if data is not None:
             try:
                 trucks = instance.truck_challans.prefetch_related('assets').order_by('truck_number')
-                data['truck_challans_data'] = [
-                    {
+                trucks_data = []
+                for t in trucks:
+                    if not t.challan_number:
+                        from .models import CompanySettings, generate_challan_number
+                        if t.truck_number == 1 and instance.challan_number:
+                            t.challan_number = instance.challan_number
+                        else:
+                            settings_obj = CompanySettings.objects.first()
+                            if settings_obj:
+                                t.challan_number = generate_challan_number(settings_obj)
+                        if t.challan_number:
+                            t.save(update_fields=['challan_number'])
+                    trucks_data.append({
                         'id': t.pk,
                         'conference': instance.pk,
                         'truck_number': t.truck_number,
                         'label': t.label or f"Truck {t.truck_number}",
                         'vehicle_number': t.vehicle_number or '',
                         'driver_phone': t.driver_phone or '',
+                        'challan_number': t.challan_number or '',
                         'assets': list(t.assets.values_list('pk', flat=True)),
                         'created_at': t.created_at.isoformat() if t.created_at else '',
-                    }
-                    for t in trucks
-                ]
+                    })
+                data['truck_challans_data'] = trucks_data
             except Exception:
                 data['truck_challans_data'] = []
 

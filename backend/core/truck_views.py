@@ -16,9 +16,23 @@ def _serialize_truck(t):
         'label': t.label or f"Truck {t.truck_number}",
         'vehicle_number': t.vehicle_number or '',
         'driver_phone': t.driver_phone or '',
+        # J-113: Each truck has its own challan number
+        'challan_number': t.challan_number or '',
         'assets': list(t.assets.values_list('pk', flat=True)),
         'created_at': t.created_at.isoformat() if t.created_at else '',
     }
+
+
+def _get_next_challan_number():
+    """Auto-generate a challan number from CompanySettings. Returns '' on failure."""
+    try:
+        from .models import CompanySettings, generate_challan_number
+        settings_obj = CompanySettings.objects.first()
+        if settings_obj:
+            return generate_challan_number(settings_obj)
+    except Exception as ex:
+        print("Warning: could not generate truck challan number:", ex)
+    return ''
 
 
 @api_view(['GET', 'POST'])
@@ -32,19 +46,30 @@ def conference_trucks(request, pk):
 
     if request.method == 'GET':
         trucks = TruckChallan.objects.filter(conference=conference).prefetch_related('assets').order_by('truck_number')
+        for t in trucks:
+            if not t.challan_number:
+                if t.truck_number == 1 and conference.challan_number:
+                    t.challan_number = conference.challan_number
+                else:
+                    t.challan_number = _get_next_challan_number()
+                if t.challan_number:
+                    t.save(update_fields=['challan_number'])
         return Response([_serialize_truck(t) for t in trucks])
 
     elif request.method == 'POST':
         existing = list(TruckChallan.objects.filter(conference=conference).order_by('truck_number'))
 
         if not existing:
-            # First time: create Truck 1 with all current challan_assets, and Truck 2 empty
+            # First time: create Truck 1 with all current challan_assets, and Truck 2 empty.
+            # Truck 1 inherits the conference's existing challan_number.
+            # Truck 2 gets a fresh new challan number from the sequence.
             truck1 = TruckChallan.objects.create(
                 conference=conference,
                 truck_number=1,
                 label='Truck 1',
                 vehicle_number=conference.vehicle_number or '',
                 driver_phone=conference.driver_phone or '',
+                challan_number=conference.challan_number or _get_next_challan_number(),
             )
             # Initialize Truck 1 with all challan_assets (or assets if challan_assets is empty)
             challan_ids = list(conference.challan_assets.values_list('pk', flat=True))
@@ -53,13 +78,14 @@ def conference_trucks(request, pk):
             if challan_ids:
                 truck1.assets.set(challan_ids)
 
-            # Create Truck 2 (empty)
+            # Create Truck 2 (empty) with its own next challan number
             TruckChallan.objects.create(
                 conference=conference,
                 truck_number=2,
                 label='Truck 2',
                 vehicle_number='',
                 driver_phone='',
+                challan_number=_get_next_challan_number(),
             )
         else:
             next_num = max(t.truck_number for t in existing) + 1
@@ -69,6 +95,7 @@ def conference_trucks(request, pk):
                 label=f'Truck {next_num}',
                 vehicle_number='',
                 driver_phone='',
+                challan_number=_get_next_challan_number(),
             )
 
         trucks = TruckChallan.objects.filter(conference=conference).prefetch_related('assets').order_by('truck_number')
@@ -79,7 +106,7 @@ def conference_trucks(request, pk):
 @permission_classes([IsAuthenticated])
 def truck_challan_detail(request, truck_pk):
     """
-    PATCH  /api/truck-challans/{truck_pk}/  - update vehicle/driver/label/assets
+    PATCH  /api/truck-challans/{truck_pk}/  - update vehicle/driver/label/assets/challan_number
     DELETE /api/truck-challans/{truck_pk}/  - delete ALL trucks for this conference (resets to main challan)
     """
     truck = get_object_or_404(TruckChallan, pk=truck_pk)
@@ -92,6 +119,9 @@ def truck_challan_detail(request, truck_pk):
             truck.driver_phone = str(data['driver_phone']).strip()
         if 'label' in data:
             truck.label = str(data['label']).strip()
+        # J-113: Allow patching the truck's own challan number independently
+        if 'challan_number' in data:
+            truck.challan_number = str(data['challan_number']).strip()
         truck.save()
 
         if 'assets' in data:

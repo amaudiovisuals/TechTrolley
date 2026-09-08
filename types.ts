@@ -208,6 +208,8 @@ export interface TruckChallan {
   label: string;
   vehicle_number: string;
   driver_phone: string;
+  /** Each truck's own unique challan number, separate from the master challan */
+  challan_number: string;
   assets: string[];  // asset IDs as strings
   created_at: string;
 }
