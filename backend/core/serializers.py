@@ -14,9 +14,33 @@ class SubrentalCompanySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class EmployeeSerializer(serializers.ModelSerializer):
+    employee_id = serializers.CharField(required=False, allow_blank=True)
+    department = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    role = serializers.CharField(required=False, allow_blank=True)
+
     class Meta:
         model = Employee
         fields = '__all__'
+
+    def create(self, validated_data):
+        import time
+        if not validated_data.get('employee_id'):
+            validated_data['employee_id'] = f"EMP-{int(time.time() * 1000)}"
+        if not validated_data.get('role'):
+            validated_data['role'] = 'technician'
+        if not validated_data.get('department'):
+            role = validated_data.get('role', 'technician')
+            dept_map = {
+                'admin': 'Management',
+                'godown_incharge': 'Warehouse',
+                'accounts': 'Accounts',
+                'technician': 'Operations'
+            }
+            validated_data['department'] = dept_map.get(role, 'User')
+        if not validated_data.get('phone'):
+            validated_data['phone'] = 'N/A'
+        return super().create(validated_data)
 
 class TruckChallanSerializer(serializers.ModelSerializer):
     assets = serializers.PrimaryKeyRelatedField(

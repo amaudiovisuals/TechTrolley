@@ -52,6 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     const [newEmployeeName, setNewEmployeeName] = useState('');
     const [newEmployeeEmail, setNewEmployeeEmail] = useState('');
     const [newEmployeePassword, setNewEmployeePassword] = useState('');
+    const [newEmployeeRole, setNewEmployeeRole] = useState<'technician' | 'godown_incharge' | 'accounts' | 'admin'>('technician');
     const [addEmployeeMsg, setAddEmployeeMsg] = useState({ type: '', text: '' });
 
     useEffect(() => {
@@ -214,9 +215,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         const trimmedPassword = newEmployeePassword.trim();
 
         if (!trimmedEmail) {
-            setAddEmployeeMsg({ type: 'error', text: 'Email is required.' });
+            setAddEmployeeMsg({ type: 'error', text: 'Login ID / Email is required.' });
             return;
         }
+
+        const roleLabels: Record<string, string> = {
+            admin: 'Admin',
+            godown_incharge: 'Incharge',
+            accounts: 'Accounts',
+            technician: 'Technician'
+        };
+        const roleDept: Record<string, string> = {
+            admin: 'Management',
+            godown_incharge: 'Warehouse',
+            accounts: 'Accounts',
+            technician: 'Operations'
+        };
 
         try {
             const res = await apiFetch(`${API_BASE}/api/employees/`, {
@@ -226,22 +240,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                     name: trimmedName,
                     email: trimmedEmail,
                     password: trimmedPassword,
-                    role: 'technician',
-                    designation: 'Technician'
+                    role: newEmployeeRole,
+                    designation: roleLabels[newEmployeeRole] || 'Technician',
+                    employee_id: `EMP-${Date.now()}`,
+                    department: roleDept[newEmployeeRole] || 'User',
+                    phone: 'N/A'
                 })
             });
 
             const data = await res.json().catch(() => ({}));
 
             if (res.ok) {
-                setAddEmployeeMsg({ type: 'success', text: `User ${trimmedName || trimmedEmail} registered successfully!` });
+                setAddEmployeeMsg({ 
+                    type: 'success', 
+                    text: `User ${trimmedName || trimmedEmail} registered successfully as ${roleLabels[newEmployeeRole] || newEmployeeRole}!` 
+                });
                 setNewEmployeeName('');
                 setNewEmployeeEmail('');
                 setNewEmployeePassword('');
+                setNewEmployeeRole('technician');
                 fetchEmployees();
+                fetchUsers();
             } else if (res.status !== 401) {
-                const errorText = data.error || data.detail || (typeof data === 'object' ? Object.values(data).flat().join(', ') : 'Failed to add user.');
-                setAddEmployeeMsg({ type: 'error', text: errorText });
+                let errorText = data.error || data.detail;
+                if (!errorText && typeof data === 'object') {
+                    errorText = Object.entries(data)
+                        .map(([field, errs]) => `${field}: ${Array.isArray(errs) ? errs.join(' ') : errs}`)
+                        .join(' | ');
+                }
+                setAddEmployeeMsg({ type: 'error', text: errorText || 'Failed to add user.' });
             }
         } catch (err) {
             setAddEmployeeMsg({ type: 'error', text: 'Connection error.' });
@@ -770,6 +797,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                 <div>
                                     <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Login ID / Email</label>
                                     <input type="text" value={newEmployeeEmail} onChange={e => setNewEmployeeEmail(e.target.value)} className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold text-xs focus:border-teal-500 outline-none transition-all" placeholder="name@company.com" required />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">System Role</label>
+                                    <select
+                                        value={newEmployeeRole}
+                                        onChange={e => setNewEmployeeRole(e.target.value as any)}
+                                        className="w-full bg-[#0f172a] border border-slate-800 rounded-xl p-4 text-white font-bold text-xs focus:border-teal-500 outline-none transition-all cursor-pointer uppercase"
+                                    >
+                                        <option value="technician">Technician</option>
+                                        <option value="godown_incharge">Incharge (Godown Incharge)</option>
+                                        <option value="accounts">Accounts</option>
+                                        <option value="admin">Admin</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Initial Password</label>

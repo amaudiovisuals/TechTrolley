@@ -342,16 +342,67 @@ def employee_list(request):
         serializer = EmployeeSerializer(employees, many=True)
         return Response(serializer.data)
     elif request.method == 'POST':
-        serializer = EmployeeSerializer(data=request.data)
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        
+        email = (data.get('email') or '').strip()
+        if not email:
+            return Response({'email': ['Login ID / Email is required.']}, status=400)
+
+        from django.contrib.auth.models import User
+        if User.objects.filter(username__iexact=email).exists() or User.objects.filter(email__iexact=email).exists():
+            return Response({'email': ['A user with this login ID / email already exists.']}, status=400)
+        if Employee.objects.filter(email__iexact=email).exists():
+            return Response({'email': ['An employee record with this email already exists.']}, status=400)
+
+        # Ensure required fields have valid defaults
+        role = data.get('role', 'technician')
+        if not data.get('employee_id'):
+            import time
+            data['employee_id'] = f"EMP-{int(time.time() * 1000)}"
+        if not data.get('department'):
+            dept_map = {
+                'admin': 'Management',
+                'godown_incharge': 'Warehouse',
+                'accounts': 'Accounts',
+                'technician': 'Operations'
+            }
+            data['department'] = dept_map.get(role, 'User')
+        if not data.get('phone'):
+            data['phone'] = 'N/A'
+
+        serializer = EmployeeSerializer(data=data)
         if serializer.is_valid():
             employee = serializer.save()
             
             # Check if an auth.User needs to be provisioned for this Employee
-            password = request.data.get('password')
-            if password and employee.email:
-                from django.contrib.auth.models import User
-                if not User.objects.filter(username=employee.email).exists():
-                    User.objects.create_user(username=employee.email, email=employee.email, password=password, is_staff=False)
+            password = data.get('password') or 'amoffice'
+            if employee.email:
+                from .models import UserProfile
+                user_obj = User.objects.filter(username__iexact=employee.email).first()
+                if not user_obj:
+                    user_obj = User.objects.filter(email__iexact=employee.email).first()
+                
+                is_admin = (employee.role == 'admin')
+                if not user_obj:
+                    user_obj = User.objects.create_user(
+                        username=employee.email,
+                        email=employee.email,
+                        password=password,
+                        is_staff=is_admin,
+                        is_superuser=is_admin
+                    )
+                else:
+                    if password:
+                        user_obj.set_password(password)
+                    if is_admin:
+                        user_obj.is_staff = True
+                        user_obj.is_superuser = True
+                    user_obj.save()
+                
+                # Sync UserProfile role
+                profile, _ = UserProfile.objects.get_or_create(user=user_obj)
+                profile.role = employee.role or 'technician'
+                profile.save()
                     
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
@@ -373,6 +424,10 @@ def employee_detail(request, pk):
         return Response(serializer.errors, status=400)
 
     elif request.method == 'DELETE':
+        from django.contrib.auth.models import User
+        if employee.email and request.user.email.lower() != employee.email.lower():
+            User.objects.filter(username__iexact=employee.email).exclude(is_superuser=True).delete()
+            User.objects.filter(email__iexact=employee.email).exclude(is_superuser=True).delete()
         employee.delete()
         return Response(status=204)
 
