@@ -15,7 +15,8 @@ import { CompanySettings, Employee } from '../types';
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) => {
     const API_BASE = '';
-    const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'users'>(user?.is_staff ? 'general' : 'profile');
+    const isAdmin = user?.is_staff || user?.role === 'admin';
+    const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'users'>(isAdmin ? 'general' : 'profile');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -102,7 +103,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             formData.append('email', companySettings.email);
             formData.append('gst_number', companySettings.gst_number);
             formData.append('website', companySettings.website);
-            formData.append('powered_by_name', companySettings.powered_by_name || 'am audiovisuals');
+            formData.append('powered_by_name', companySettings.powered_by_name);
             if (companySettings.dashboard_config) {
                 formData.append('dashboard_config', JSON.stringify(companySettings.dashboard_config));
             }
@@ -127,32 +128,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                 body: formData
             });
 
-            let data: any = {};
-            const contentType = res.headers.get("content-type");
-            if (contentType && contentType.indexOf("application/json") !== -1) {
-                data = await res.json();
-            } else {
-                const text = await res.text();
-                console.error('Non-JSON response:', text);
-                throw new Error(`Server returned non-JSON response: ${res.status} ${res.statusText}`);
-            }
-
             if (res.ok) {
+                const data = await res.json().catch(() => ({}));
                 setSettingsMsg({ type: 'success', text: 'Company settings saved successfully!' });
-                setCompanySettings(data);
-                if (data.logo) setLogoPreview(data.logo);
-                setLogoFile(null);
+                if (data && Object.keys(data).length > 0) setCompanySettings(data);
                 setIsEditing(false);
                 window.location.reload();
-            } else if (res.status !== 401) {
+            } else {
+                const data = await res.json().catch(() => ({}));
                 const errorMsg = typeof data === 'object'
                     ? Object.entries(data).map(([k, v]) => `${k}: ${v}`).join(', ')
-                    : 'Failed to save settings.';
+                    : 'Failed to update settings.';
                 setSettingsMsg({ type: 'error', text: errorMsg });
             }
         } catch (e: any) {
-            console.error('Settings save error:', e);
-            setSettingsMsg({ type: 'error', text: e.message || 'Connection error.' });
+            setSettingsMsg({ type: 'error', text: e.message || 'Connection error while saving settings.' });
         }
     };
 
@@ -177,40 +167,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                 method: 'POST',
                 body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
             });
-            const data = await res.json();
+
             if (res.ok) {
-                setPasswordMsg({ type: 'success', text: 'Password updated successfully!' });
+                setPasswordMsg({ type: 'success', text: 'Password successfully updated.' });
                 setOldPassword('');
                 setNewPassword('');
-            } else if (res.status !== 401) {
+            } else {
+                const data = await res.json();
                 setPasswordMsg({ type: 'error', text: data.error || 'Failed to update password.' });
             }
-        } catch (err) {
-            setPasswordMsg({ type: 'error', text: 'Connection error.' });
+        } catch (e) {
+            setPasswordMsg({ type: 'error', text: 'Connection error while updating password.' });
         }
     };
 
     const handleAddUser = async (e: React.FormEvent) => {
         e.preventDefault();
-        setAddUserMsg({ type: '', text: '' });
+        setAddEmployeeMsg({ type: '', text: '' });
 
         try {
             const res = await apiFetch(`${API_BASE}/api/system-users/`, {
                 method: 'POST',
-                body: JSON.stringify({ email: newUserEmail, password: newUserPassword })
+                body: JSON.stringify({ email: newEmployeeEmail, password: newEmployeePassword })
             });
-            const data = await res.json();
+
             if (res.ok) {
-                setAddUserMsg({ type: 'success', text: 'User added successfully!' });
-                setNewUserEmail('');
-                setNewUserPassword('');
+                setAddEmployeeMsg({ type: 'success', text: 'Administrator added successfully.' });
+                setNewEmployeeEmail('');
+                setNewEmployeePassword('');
                 fetchUsers();
-            } else if (res.status !== 401) {
-                const errorText = data.error || data.detail || (typeof data === 'object' ? Object.values(data).flat().join(', ') : 'Failed to add user.');
-                setAddUserMsg({ type: 'error', text: errorText });
+            } else {
+                const data = await res.json();
+                setAddEmployeeMsg({ type: 'error', text: data.error || 'Failed to add user.' });
             }
-        } catch (err) {
-            setAddUserMsg({ type: 'error', text: 'Connection error.' });
+        } catch (e) {
+            setAddEmployeeMsg({ type: 'error', text: 'Connection error.' });
         }
     };
 
@@ -218,23 +209,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
         e.preventDefault();
         setAddEmployeeMsg({ type: '', text: '' });
 
-        const mockId = `EMP-${new Date().getTime()}`;
+        const trimmedEmail = newEmployeeEmail.trim();
+        const trimmedName = newEmployeeName.trim();
+        const trimmedPassword = newEmployeePassword.trim();
+
+        if (!trimmedEmail) {
+            setAddEmployeeMsg({ type: 'error', text: 'Email is required.' });
+            return;
+        }
 
         try {
             const res = await apiFetch(`${API_BASE}/api/employees/`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    name: newEmployeeName,
-                    email: newEmployeeEmail,
-                    password: newEmployeePassword,
-                    employee_id: mockId,
-                    department: 'User',
-                    phone: 'N/A'
+                    name: trimmedName,
+                    email: trimmedEmail,
+                    password: trimmedPassword,
+                    role: 'technician',
+                    designation: 'Technician'
                 })
             });
-            const data = await res.json();
+
+            const data = await res.json().catch(() => ({}));
+
             if (res.ok) {
-                setAddEmployeeMsg({ type: 'success', text: 'User added successfully!' });
+                setAddEmployeeMsg({ type: 'success', text: `User ${trimmedName || trimmedEmail} registered successfully!` });
                 setNewEmployeeName('');
                 setNewEmployeeEmail('');
                 setNewEmployeePassword('');
@@ -249,15 +249,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     };
 
     const handleUpdateRole = async (email: string, role: string) => {
-        // BUG J-10: Prevent admin from demoting their own account (self-lockout)
-        if (email === user?.email && role === 'technician') {
+        // Prevent admin from demoting their own account (self-lockout)
+        if (email.toLowerCase() === user?.email?.toLowerCase() && role !== 'admin') {
             alert('You cannot demote your own admin account.');
             fetchEmployees();
             fetchUsers();
             return;
         }
         if (!window.confirm(`Are you sure you want to change the role for ${email} to ${role.toUpperCase()}?`)) {
-            // Re-fetch to reset dropdown if they cancel (optional but good)
+            // Re-fetch to reset dropdown if they cancel
             fetchEmployees();
             fetchUsers();
             return;
@@ -272,10 +272,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                 fetchUsers();
             } else {
                 const data = await res.json().catch(() => ({}));
-                alert(`Failed to update role. ${data.error || 'Please ensure you have permission.'}`);
+                const errMsg = data.error || data.detail || 'Please ensure you have administrator permissions.';
+                alert(`Failed to update role. ${errMsg}`);
+                fetchEmployees();
+                fetchUsers();
             }
         } catch (e) {
             alert('Connection error while updating role.');
+            fetchEmployees();
+            fetchUsers();
         }
     };
 
@@ -370,7 +375,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
             <h2 className="text-5xl font-black text-orange-500 uppercase">System Settings</h2>
 
             <div className="flex gap-4 border-b border-slate-800 pb-1">
-                {user?.is_staff && (
+                {isAdmin && (
                     <button onClick={() => setActiveTab('general')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'general' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
                         General
                     </button>
@@ -378,7 +383,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                 <button onClick={() => setActiveTab('profile')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'profile' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
                     My Account
                 </button>
-                {user?.is_staff && (
+                {isAdmin && (
                     <>
                         <button onClick={() => setActiveTab('users')} className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all ${activeTab === 'users' ? 'text-sky-500 border-b-2 border-sky-500' : 'text-slate-500 hover:text-white'}`}>
                             Users

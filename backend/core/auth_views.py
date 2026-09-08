@@ -41,13 +41,21 @@ def custom_login(request):
         if emp:
             employee_id = emp.id
 
+    role = user.profile.role if hasattr(user, 'profile') else ('admin' if user.is_staff else 'technician')
+    if role == 'admin' and not user.is_staff:
+        user.is_staff = True
+        user.is_superuser = True
+        user.save(update_fields=['is_staff', 'is_superuser'])
+
+    is_staff = user.is_staff or role == 'admin'
+
     return Response({
         'token': token.key,
         'user_id': user.pk,
         'username': user.username,
         'email': user.email,
         'full_name': f"{user.first_name} {user.last_name}".strip() or user.username,
-        'is_staff': user.is_staff,
+        'is_staff': is_staff,
         'employee_id': employee_id,
-        'role': user.profile.role if hasattr(user, 'profile') else ('admin' if user.is_staff else 'technician')
+        'role': role
     })
