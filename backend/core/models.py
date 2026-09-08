@@ -221,6 +221,7 @@ class Conference(models.Model):
     transfer_log = models.JSONField(default=list, blank=True, help_text="Audit log of all asset transfers: [{'timestamp': '...', 'direction': 'outgoing'|'incoming', 'transferred_asset_ids': [], 'asset_names': [], 'to/from_conference_id': X, 'to/from_conference_name': '...', 'from_address': '...', 'transferred_by': '...'}]")
     # J-109: Audit Mode — when True, assets in this conference do not lock other live events
     is_audit = models.BooleanField(default=False, help_text="If True, this conference is a non-blocking audit list. Its assets will not lock availability for other conferences.")
+    is_invoiced = models.BooleanField(default=False, help_text="Track if challan has been marked invoiced by accounts")
 
     def recalculate_related_asset_statuses(self):
         pk_set = set(self.assets.values_list('pk', flat=True))

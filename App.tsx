@@ -462,6 +462,7 @@ const App: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
+  const [invoicingId, setInvoicingId] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<any>({});
 
   // Pending assignment state for sub-assets
@@ -1423,6 +1424,8 @@ const App: React.FC = () => {
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
             pdf_document: c.pdf_document,
             isAudit: c.is_audit || false,  // J-109: propagate audit flag into backendConferences
+            is_invoiced: Boolean(c.is_invoiced),
+            isInvoiced: Boolean(c.is_invoiced),
             transfer_log: c.transfer_log || [],  // Asset transfer audit trail
             truckChallans: (c.truck_challans_data || []).map((t: any) => ({
               id: String(t.id),
@@ -1986,6 +1989,35 @@ const App: React.FC = () => {
         alert("Failed to delete challan.");
       }
     });
+  };
+
+  const handleToggleInvoiced = async (confId: string, currentStatus: boolean) => {
+    if (invoicingId === confId) return;
+    setInvoicingId(confId);
+    const newStatus = !currentStatus;
+
+    // Optimistic UI update
+    setBackendConferences(prev => prev.map(c => c.id === confId ? { ...c, is_invoiced: newStatus, isInvoiced: newStatus } : c));
+    setSelectedBookingForChallan(prev => prev && prev.id === confId ? { ...prev, is_invoiced: newStatus, isInvoiced: newStatus } : prev);
+
+    try {
+      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_invoiced: newStatus })
+      });
+      if (!res.ok) {
+        throw new Error(`Server responded with status ${res.status}`);
+      }
+    } catch (err) {
+      console.error('Error toggling invoice status:', err);
+      // Revert optimistic update
+      setBackendConferences(prev => prev.map(c => c.id === confId ? { ...c, is_invoiced: currentStatus, isInvoiced: currentStatus } : c));
+      setSelectedBookingForChallan(prev => prev && prev.id === confId ? { ...prev, is_invoiced: currentStatus, isInvoiced: currentStatus } : prev);
+      alert('Failed to update invoice status. Please check your network connection and try again.');
+    } finally {
+      setInvoicingId(null);
+    }
   };
 
   const handleUpdateLogistics = async () => {
@@ -5930,8 +5962,21 @@ const App: React.FC = () => {
 
     return (
       <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
-        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <h2 className="text-4xl md:text-5xl font-black text-orange-500 tracking-tighter uppercase">Delivery Challans</h2>
+          {user?.role === 'accounts' && (
+            <div className="flex items-center gap-3.5 px-5 py-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 shadow-lg shadow-amber-500/5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400">
+                <i className="fa-solid fa-file-invoice text-lg"></i>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Invoice Overview</p>
+                <p className="text-sm font-black uppercase tracking-wider text-amber-400">
+                  Invoice Pending : <span className="text-white text-base font-black ml-1">{backendConferences.filter(c => !c.is_invoiced && !c.isInvoiced).length}</span>
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
           <div className="p-4 md:p-8 border-b border-slate-800/40">
@@ -5952,6 +5997,9 @@ const App: React.FC = () => {
                   <th className="px-6 py-6">Conference</th>
                   <th className="px-6 py-6">Assets</th>
                   <th className="px-6 py-6 text-center">Status</th>
+                  {user?.role === 'accounts' && (
+                    <th className="px-6 py-6 text-center">Invoice Status</th>
+                  )}
                   <th className="px-6 py-6 text-right">Actions</th>
                 </tr>
               </thead>
@@ -6005,6 +6053,27 @@ const App: React.FC = () => {
                           {hasAssets ? 'Generated' : 'Draft'}
                         </span>
                       </td>
+                      {user?.role === 'accounts' && (
+                        <td className="px-6 py-6 text-center">
+                          <button
+                            disabled={invoicingId === conf.id}
+                            onClick={() => handleToggleInvoiced(conf.id, !!(conf.is_invoiced || conf.isInvoiced))}
+                            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                              (conf.is_invoiced || conf.isInvoiced)
+                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 shadow-sm shadow-emerald-500/10'
+                                : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25 shadow-sm shadow-amber-500/10'
+                            } ${invoicingId === conf.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
+                            title={(conf.is_invoiced || conf.isInvoiced) ? 'Click to mark as Pending Invoice' : 'Click to mark as Invoiced'}
+                          >
+                            {invoicingId === conf.id ? (
+                              <i className="fa-solid fa-spinner fa-spin text-xs"></i>
+                            ) : (
+                              <i className={`fa-solid ${(conf.is_invoiced || conf.isInvoiced) ? 'fa-circle-check text-emerald-400' : 'fa-clock text-amber-400'}`}></i>
+                            )}
+                            {(conf.is_invoiced || conf.isInvoiced) ? 'Invoiced' : 'Pending Invoice'}
+                          </button>
+                        </td>
+                      )}
                       <td className="px-10 py-6 text-right space-x-4">
                         <button
                           onClick={() => { setSelectedBookingForChallan(conf); setChallanViewMode('Detail'); }}
@@ -6084,6 +6153,28 @@ const App: React.FC = () => {
                       </div>
                     )}
                   </div>
+
+                  {user?.role === 'accounts' && (
+                    <div className="flex justify-between items-center pt-3 border-t border-slate-800/40">
+                      <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Invoice Status</span>
+                      <button
+                        disabled={invoicingId === conf.id}
+                        onClick={() => handleToggleInvoiced(conf.id, !!(conf.is_invoiced || conf.isInvoiced))}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                          (conf.is_invoiced || conf.isInvoiced)
+                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                            : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
+                        } ${invoicingId === conf.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
+                      >
+                        {invoicingId === conf.id ? (
+                          <i className="fa-solid fa-spinner fa-spin text-xs"></i>
+                        ) : (
+                          <i className={`fa-solid ${(conf.is_invoiced || conf.isInvoiced) ? 'fa-circle-check text-emerald-400' : 'fa-clock text-amber-400'}`}></i>
+                        )}
+                        {(conf.is_invoiced || conf.isInvoiced) ? 'Invoiced' : 'Pending Invoice'}
+                      </button>
+                    </div>
+                  )}
 
                   <div className="flex justify-between items-center pt-3 border-t border-slate-800/40">
                     <div>
@@ -8544,6 +8635,25 @@ const App: React.FC = () => {
                     )}
 
                     <div className="flex gap-4">
+                      {user?.role === 'accounts' && (
+                        <button
+                          disabled={invoicingId === conf.id}
+                          onClick={() => handleToggleInvoiced(conf.id, !!(conf.is_invoiced || conf.isInvoiced))}
+                          className={`px-5 py-3 rounded-xl font-bold uppercase text-xs shadow-lg transition-all flex items-center gap-2 border ${
+                            (conf.is_invoiced || conf.isInvoiced)
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 shadow-emerald-500/10'
+                              : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25 shadow-amber-500/10'
+                          } ${invoicingId === conf.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
+                          title={(conf.is_invoiced || conf.isInvoiced) ? 'Click to mark as Pending Invoice' : 'Click to mark as Invoiced'}
+                        >
+                          {invoicingId === conf.id ? (
+                            <i className="fa-solid fa-spinner fa-spin text-xs"></i>
+                          ) : (
+                            <i className={`fa-solid ${(conf.is_invoiced || conf.isInvoiced) ? 'fa-circle-check text-emerald-400' : 'fa-clock text-amber-400'}`}></i>
+                          )}
+                          {(conf.is_invoiced || conf.isInvoiced) ? 'Invoiced' : 'Pending Invoice'}
+                        </button>
+                      )}
                       <button
                         onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch', false, activeTruck)}
                         className="px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold uppercase text-xs shadow-lg shadow-sky-500/20 transition-all flex items-center gap-2"
