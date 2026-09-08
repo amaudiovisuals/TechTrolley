@@ -387,38 +387,12 @@ def company_settings(request):
         settings_obj, created = CompanySettings.objects.get_or_create(pk=1)
 
         if request.method == 'GET':
-            # J-112: Auto-sync next_challan_number — handles both old plain format ("1234")
-            # and new structured format ("26-27/AMDL-00122"). Extract the trailing integer.
-            try:
-                import re
-                from .models import Conference, get_current_financial_year
-                highest = 0
-                current_fy = get_current_financial_year()
-                # Only sync against challans from the current financial year to avoid
-                # cross-year pollution when the counter has been reset.
-                for conf in Conference.objects.all():
-                    val = conf.challan_number or ''
-                    if not val:
-                        continue
-                    # If it's the new format, only count challans from the same FY
-                    if '/' in val:
-                        fy_part = val.split('/')[0]
-                        if fy_part != current_fy:
-                            continue  # different financial year — skip
-                    match = re.search(r'(\d+)$', val)
-                    if match:
-                        num = int(match.group(1))
-                        if num > highest:
-                            highest = num
-                stored_fy = (settings_obj.challan_fy or '').strip()
-                if stored_fy == current_fy and highest >= settings_obj.next_challan_number:
-                    settings_obj.next_challan_number = highest + 1
-                    settings_obj.save(update_fields=['next_challan_number'])
-                elif stored_fy != current_fy:
-                    # New FY not yet recorded — set it but don't touch counter if manually set
-                    pass  # generate_challan_number handles FY reset on next create
-            except Exception as ex:
-                print("Auto-sync challan number warning:", ex)
+            from .models import get_current_financial_year
+            current_fy = get_current_financial_year()
+            stored_fy = (settings_obj.challan_fy or '').strip()
+            if not stored_fy:
+                settings_obj.challan_fy = current_fy
+                settings_obj.save(update_fields=['challan_fy'])
 
             serializer = CompanySettingsSerializer(settings_obj, context={'request': request})
             return Response(serializer.data)

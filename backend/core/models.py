@@ -371,12 +371,17 @@ def generate_challan_number(settings_obj) -> str:
         settings_obj.next_challan_number = 1
 
     seq = settings_obj.next_challan_number
-    challan_number = f"{current_fy}/{prefix}-{seq:05d}"
+    candidate = f"{current_fy}/{prefix}-{seq:05d}"
 
-    settings_obj.next_challan_number += 1
+    # Ensure no collision with existing conferences or trucks in this FY
+    while Conference.objects.filter(challan_number=candidate).exists() or TruckChallan.objects.filter(challan_number=candidate).exists():
+        seq += 1
+        candidate = f"{current_fy}/{prefix}-{seq:05d}"
+
+    settings_obj.next_challan_number = seq + 1
     settings_obj.save(update_fields=['next_challan_number', 'challan_fy', 'challan_prefix'])
 
-    return challan_number
+    return candidate
 
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
