@@ -191,7 +191,18 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   });
 
   const [isEditMode, setIsEditMode] = React.useState(false);
-  const [localAssets, setLocalAssets] = React.useState<Asset[]>(assets);
+  const [localAssets, setLocalAssets] = React.useState<Asset[]>(() => {
+    try {
+      const cached = localStorage.getItem(`cache_challan_items_${cacheKey}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length >= assets.length && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) { }
+    return assets;
+  });
   const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(() => {
     try {
       const stored = localStorage.getItem(`cache_total_val_${cacheKey}`);
@@ -225,14 +236,31 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   }, [visibleColumns]);
 
   const lastBookingIdRef = React.useRef<string>(booking.id);
+  const lastTruckKeyRef = React.useRef<string>(localStorageSuffix || '');
+  const savedAssetIdsRef = React.useRef<Set<string>>(new Set());
   const isSavingRef = React.useRef<boolean>(false);
 
   React.useEffect(() => {
-    // Only reset localAssets if switching to a different booking,
-    // or if external assets changed and we are NOT currently in edit mode or saving
     const bookingChanged = lastBookingIdRef.current !== booking.id;
-    if (bookingChanged) {
+    const truckChanged = lastTruckKeyRef.current !== (localStorageSuffix || '');
+
+    if (bookingChanged || truckChanged) {
       lastBookingIdRef.current = booking.id;
+      lastTruckKeyRef.current = localStorageSuffix || '';
+      savedAssetIdsRef.current = new Set(assets.map(a => String(a.id)));
+
+      // Check indestructible localStorage cache
+      const cached = localStorage.getItem(`cache_challan_items_${cacheKey}`);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length >= assets.length && parsed.length > 0) {
+            setLocalAssets(parsed);
+            return;
+          }
+        } catch (e) { }
+      }
+
       setLocalAssets(assets.map(a => ({
         ...a,
         aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
@@ -241,12 +269,32 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     }
 
     if (!isEditMode && !isSavingRef.current) {
-      setLocalAssets(assets.map(a => ({
-        ...a,
-        aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
-      })));
+      // Indestructible Guard: Never allow an empty or truncated assets prop to wipe out localAssets
+      if (assets.length === 0 && localAssets.length > 0) {
+        return;
+      }
+
+      const incomingIds = new Set(assets.map(a => String(a.id)));
+      const hasAllSaved = Array.from(savedAssetIdsRef.current).every(id => incomingIds.has(id));
+
+      if (hasAllSaved || localAssets.length <= assets.length) {
+        setLocalAssets(assets.map(a => ({
+          ...a,
+          aliasName: (a.aliasName !== null && a.aliasName !== undefined) ? a.aliasName : a.sku
+        })));
+      } else {
+        // Incoming assets is missing some saved items — merge them so nothing disappears!
+        const mergedMap = new Map<string, Asset>();
+        assets.forEach(a => mergedMap.set(String(a.id), a));
+        localAssets.forEach(a => {
+          if (!mergedMap.has(String(a.id))) {
+            mergedMap.set(String(a.id), a);
+          }
+        });
+        setLocalAssets(Array.from(mergedMap.values()));
+      }
     }
-  }, [assets, booking.id]);
+  }, [assets, booking.id, localStorageSuffix]);
 
   const toggleColumn = (key: ColumnKey) => {
     setVisibleColumns(prev =>
@@ -266,24 +314,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     isSavingRef.current = true;
     const errors: string[] = [];
     try {
-      // 1. Process removals in batch
-      const originalIds = assets.map(a => String(a.id));
-      const currentIds = localAssets.map(a => String(a.id));
-      const removedIds = originalIds.filter(id => !currentIds.includes(id));
+      let updatedList = [...localAssets];
 
-      if (removedIds.length > 0 && onRemoveAssets) {
-        console.log("Removing assets from conference:", removedIds);
-        try {
-          await onRemoveAssets(removedIds);
-        } catch (err) {
-          console.error("Failed to remove assets:", err);
-          errors.push("Failed to remove deleted assets from server");
-        }
-      }
-
-      const newAdhocIds: string[] = [];
-
-      for (const asset of localAssets) {
+      for (let i = 0; i < updatedList.length; i++) {
+        const asset = { ...updatedList[i] };
         const isNew = String(asset.id).startsWith('new-');
 
         if (isNew) {
@@ -301,9 +335,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
                 type: asset.type,
               } as any);
               if (returnedId) {
-                newAdhocIds.push(returnedId as string);
-                // Update local asset id from temp to real id
-                asset.id = returnedId as string;
+                asset.id = String(returnedId);
+                updatedList[i] = asset;
               }
             } catch (err) {
               console.error(`Failed to add ad-hoc item ${asset.sku}:`, err);
@@ -343,6 +376,9 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         }
       }
 
+      // Synchronize localAssets immediately so newly assigned database IDs are active
+      setLocalAssets(updatedList);
+
       // 2. Save approximate goods value override if changed
       if (totalValueOverride !== null && totalValueOverride !== booking.approximate_value) {
         localStorage.setItem(`cache_total_val_${cacheKey}`, totalValueOverride.toString());
@@ -372,12 +408,19 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       }
 
       // 4. Save the full list of assets to "freeze" the challan state
+      const finalAssetIds = Array.from(new Set(
+        updatedList
+          .map(a => String(a.id))
+          .filter(id => !id.startsWith('new-'))
+      ));
+      savedAssetIdsRef.current = new Set(finalAssetIds);
+
+      // Save to indestructible localStorage cache
+      try {
+        localStorage.setItem(`cache_challan_items_${cacheKey}`, JSON.stringify(updatedList));
+      } catch (e) { }
+
       if (onSaveFullChallan) {
-        const finalAssetIds = Array.from(new Set(
-          localAssets
-            .map(a => String(a.id))
-            .filter(id => !id.startsWith('new-'))
-        ));
         try {
           await onSaveFullChallan(booking.id, finalAssetIds);
         } catch (err) {
@@ -398,9 +441,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       alert("Failed to save some changes. Check console for details.");
     } finally {
       setIsEditMode(false);
-      setTimeout(() => {
-        isSavingRef.current = false;
-      }, 5000);
+      isSavingRef.current = false;
     }
   };
 

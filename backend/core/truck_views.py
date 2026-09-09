@@ -9,6 +9,7 @@ from .models import Conference, TruckChallan, Asset
 
 
 def _serialize_truck(t):
+    from .serializers import AssetSerializer
     return {
         'id': t.pk,
         'conference': t.conference_id,
@@ -19,6 +20,7 @@ def _serialize_truck(t):
         # J-113: Each truck has its own challan number
         'challan_number': t.challan_number or '',
         'assets': list(t.assets.values_list('pk', flat=True)),
+        'assets_details': AssetSerializer(t.assets.all(), many=True).data,
         'created_at': t.created_at.isoformat() if t.created_at else '',
     }
 
@@ -163,16 +165,19 @@ def truck_transfer_assets(request, truck_pk):
     source_truck.assets.remove(*asset_ids)
     dest_truck.assets.add(*asset_ids)
 
+    from .serializers import AssetSerializer
     return Response({
         'source': {
             'id': source_truck.pk,
             'truck_number': source_truck.truck_number,
             'assets': list(source_truck.assets.values_list('pk', flat=True)),
+            'assets_details': AssetSerializer(source_truck.assets.all(), many=True).data,
         },
         'dest': {
             'id': dest_truck.pk,
             'truck_number': dest_truck.truck_number,
             'assets': list(dest_truck.assets.values_list('pk', flat=True)),
+            'assets_details': AssetSerializer(dest_truck.assets.all(), many=True).data,
         },
     })
 

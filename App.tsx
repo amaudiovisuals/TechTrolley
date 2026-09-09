@@ -459,6 +459,54 @@ const App: React.FC = () => {
 
   // Status for scanner
   const [assets, setAssets] = useState<Asset[]>([]);
+  // Persistent scan-index and known assets cache across entire application lifecycle
+  const allAssetsRef = useRef<Asset[]>([]);
+  const knownAssetsMapRef = useRef<Map<string, Asset>>(new Map());
+
+  // Helper to normalize any raw asset object from backend to frontend Asset model
+  const mapRawAsset = useCallback((asset: any): Asset => ({
+    ...asset,
+    id: asset.id ? asset.id.toString() : '',
+    aliasName: asset.alias_name || asset.aliasName || asset.sku,
+    macAddress: asset.mac_address || asset.macAddress || '',
+    imeiNumber1: asset.imei_number_1 || asset.imeiNumber1 || '',
+    imeiNumber2: asset.imei_number_2 || asset.imeiNumber2 || '',
+    serialNumber: asset.serial_number || asset.serialNumber || '',
+    isBarcodeAdded: asset.is_barcode_added !== undefined ? asset.is_barcode_added : asset.isBarcodeAdded,
+    quantity: parseInt(asset.quantity, 10) || 1,
+    itemPrice: parseFloat(asset.item_price !== undefined ? asset.item_price : asset.itemPrice) || 0,
+    depreciationPercentage: parseFloat(asset.depreciation_percentage !== undefined ? asset.depreciation_percentage : asset.depreciationPercentage) || 0,
+    purchasedDate: asset.purchased_date || asset.purchasedDate || '',
+    availableFrom: asset.available_from || asset.availableFrom || '',
+    availableTill: asset.available_till || asset.availableTill || '',
+    createdAt: asset.created_at || asset.createdAt || new Date().toISOString(),
+    barcode: asset.barcode || '',
+    barcodeType: asset.barcode_type || asset.barcodeType || '',
+    qrCode: asset.qr_code || asset.qrCode || '',
+    lastMaintained: asset.last_maintained || asset.lastMaintained || '',
+    isTemporary: asset.is_temporary !== undefined ? asset.is_temporary : asset.isTemporary,
+    returnDate: asset.return_date || asset.returnDate || '',
+    flag: asset.flag || AssetFlag.NONE,
+    currentVenue: asset.current_venue || asset.currentVenue || '',
+    assigned_to: asset.assigned_to,
+    assigned_to_name: asset.assigned_to_name,
+    parent_asset: asset.parent_asset,
+    current_conference_name: asset.current_conference_name,
+    sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
+  }), []);
+
+  const registerKnownAssets = useCallback((assetList: any[]) => {
+    if (!Array.isArray(assetList)) return;
+    assetList.forEach(raw => {
+      if (!raw || !raw.id) return;
+      const mapped = mapRawAsset(raw);
+      knownAssetsMapRef.current.set(String(mapped.id), mapped);
+      try {
+        localStorage.setItem(`cache_asset_${mapped.id}`, JSON.stringify(mapped));
+      } catch (e) { }
+    });
+  }, [mapRawAsset]);
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
@@ -658,10 +706,20 @@ const App: React.FC = () => {
             current_conference_name: asset.current_conference_name,
             sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
           }));
-          // Atomic overwrite — no partial state, no blinking
+          // Register incoming assets
+          registerKnownAssets(mappedAssets);
+          // Preserve any known assets in allAssetsRef so nothing disappears
+          const existingMap = new Map<string, Asset>();
+          mappedAssets.forEach(a => existingMap.set(String(a.id), a));
+          knownAssetsMapRef.current.forEach((a, id) => {
+            if (!existingMap.has(id)) {
+              existingMap.set(id, a);
+            }
+          });
+          const fullPool = Array.from(existingMap.values());
+
           setAssets(mappedAssets);
-          // Also keep the scan-index in sync (no extra network request needed)
-          allAssetsRef.current = mappedAssets;
+          allAssetsRef.current = fullPool;
           setIsBackgroundSyncing(false);
           return mappedAssets;
         } else if (res.status !== 401) {
@@ -848,7 +906,7 @@ const App: React.FC = () => {
         if (!res.ok) return;
         const data = await res.json();
         const results: any[] = Array.isArray(data) ? data : (data.results ?? []);
-        allAssetsRef.current = results.map((asset: any) => ({
+        const mappedResults: Asset[] = results.map((asset: any) => ({
           ...asset,
           id: asset.id.toString(),
           aliasName: asset.alias_name,
@@ -878,6 +936,17 @@ const App: React.FC = () => {
           current_conference_name: asset.current_conference_name,
           sub_assets: asset.sub_assets?.map((s: any) => ({ ...s, id: s.id.toString() }))
         }));
+
+        registerKnownAssets(mappedResults);
+
+        const scanMap = new Map<string, Asset>();
+        mappedResults.forEach(a => scanMap.set(String(a.id), a));
+        knownAssetsMapRef.current.forEach((a, id) => {
+          if (!scanMap.has(id)) {
+            scanMap.set(id, a);
+          }
+        });
+        allAssetsRef.current = Array.from(scanMap.values());
       })
       .catch(err => console.error('Scan index refresh failed:', err));
   };
@@ -1250,11 +1319,6 @@ const App: React.FC = () => {
   const lastScannedCode = useRef('');
   const lastScannedTime = useRef(0);
 
-  // SCAN INDEX: Complete asset list kept in a ref (no re-renders).
-  // Used exclusively by findAssetFromScan so scanning works on ALL pages
-  // regardless of which 50-item page is currently displayed in the inventory.
-  const allAssetsRef = useRef<Asset[]>([]);
-
   // Compute true item quantity sum for a conference challan (including multi-quantity assets & consumables)
   const getChallanTotalItemsCount = useCallback((conf: Booking): number => {
     const targetAssetIds = (conf.challanAssets && conf.challanAssets.length > 0)
@@ -1392,6 +1456,20 @@ const App: React.FC = () => {
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
+          // Register all embedded asset details from conferences and trucks
+          data.forEach((c: any) => {
+            if (c.challan_assets_details) {
+              registerKnownAssets(c.challan_assets_details);
+            }
+            if (c.truck_challans_data) {
+              c.truck_challans_data.forEach((t: any) => {
+                if (t.assets_details) {
+                  registerKnownAssets(t.assets_details);
+                }
+              });
+            }
+          });
+
           const mapped = data.map((c: any) => ({
             id: c.id.toString(),
             name: c.name, // Keep for legacy
@@ -1421,6 +1499,7 @@ const App: React.FC = () => {
             staged_assets: (c.staged_assets || []).map((id: any) => id.toString()),
             crosscheckAssets: (c.crosscheck_assets || []).map((id: any) => id.toString()),
             challanAssets: (c.challan_assets || []).map((id: any) => id.toString()),
+            challan_assets_details: c.challan_assets_details || [],
             assigned_employees: (c.assigned_employees || []).map((id: any) => parseInt(id, 10)),
             pdf_document: c.pdf_document,
             isAudit: c.is_audit || false,  // J-109: propagate audit flag into backendConferences
@@ -1436,14 +1515,15 @@ const App: React.FC = () => {
               driver_phone: t.driver_phone || '',
               challan_number: t.challan_number || '',
               assets: (t.assets || []).map(String),
+              assets_details: t.assets_details || [],
               created_at: t.created_at || '',
             })),
           }));
           setBackendConferences(mapped);
           
           // Use functional updater to always target the current active conference and prevent stale closure reverting.
-          // Defensive guard: if the server returns empty challanAssets but we already have them in memory
-          // (e.g. just saved), keep the in-memory ones — a slow/stale DB read must not blank out a just-saved list.
+          // Defensive guard: if the server returns empty or truncated challanAssets but we already have them in memory
+          // (e.g. just saved or in-flight DB commit), preserve the in-memory ones to prevent visual disappearance.
           setSelectedBookingForChallan(prev => {
             if (!prev) return null;
             const updatedActive = mapped.find(b => b.id === prev.id);
@@ -1452,13 +1532,22 @@ const App: React.FC = () => {
             const prevHasChallanAssets = prev.challanAssets && prev.challanAssets.length > 0;
             
             let merged = { ...updatedActive };
-            if (!serverHasChallanAssets && prevHasChallanAssets) {
-              // Server returned empty challanAssets — preserve the in-memory ones to prevent visual reset
+            if (prevHasChallanAssets && (!serverHasChallanAssets || updatedActive.challanAssets.length < prev.challanAssets.length)) {
               merged.challanAssets = prev.challanAssets;
             }
-            // Preserve in-memory truckChallans if server returned empty during background sync
-            if ((!updatedActive.truckChallans || updatedActive.truckChallans.length === 0) && (prev.truckChallans && prev.truckChallans.length > 0)) {
-              merged.truckChallans = prev.truckChallans;
+            // Preserve in-memory truckChallans if server returned empty or fewer assets
+            if (prev.truckChallans && prev.truckChallans.length > 0) {
+              if (!updatedActive.truckChallans || updatedActive.truckChallans.length === 0) {
+                merged.truckChallans = prev.truckChallans;
+              } else {
+                merged.truckChallans = updatedActive.truckChallans.map(st => {
+                  const pt = prev.truckChallans?.find(t => t.id === st.id);
+                  if (pt && pt.assets && pt.assets.length > (st.assets || []).length) {
+                    return { ...st, assets: pt.assets, assets_details: (pt as any).assets_details || st.assets_details };
+                  }
+                  return st;
+                });
+              }
             }
             return merged;
           });
@@ -1523,6 +1612,12 @@ const App: React.FC = () => {
     if (allAssetsRef.current) {
       allAssetsRef.current = allAssetsRef.current.map(a => String(a.id) === String(assetId) ? { ...a, ...updatedFields } : a);
     }
+    const existing = knownAssetsMapRef.current.get(String(assetId));
+    const mergedAsset = { ...(existing || {}), ...updatedFields, id: String(assetId) } as Asset;
+    knownAssetsMapRef.current.set(String(assetId), mergedAsset);
+    try {
+      localStorage.setItem(`cache_asset_${assetId}`, JSON.stringify(mergedAsset));
+    } catch (e) {}
 
     try {
       const res = await apiFetch(`${API_BASE}/api/assets/${assetId}/`, {
@@ -1592,6 +1687,9 @@ const App: React.FC = () => {
           depreciationPercentage: parseFloat(newAsset.depreciation_percentage) || 0,
           createdAt: newAsset.created_at || new Date().toISOString()
         };
+
+        // Immediately register in knownAssetsMapRef and indestructible cache
+        registerKnownAssets([mappedNewAsset]);
 
         // Immediately register the asset in state and ref pool so it exists in memory for ChallanView
         setAssets(prev => {
@@ -8578,16 +8676,82 @@ const App: React.FC = () => {
               const activeAssetIds = (hasTransfers && challanDetailTab === 'return') ? returnIds : dispatchIds;
               // The printed challan PDF always says "DELIVERY CHALLAN" — "Return" is just our internal tab label.
               const detailTitle = 'DELIVERY CHALLAN';
-              const detailAssets = pool.filter(a => activeAssetIds.includes(String(a.id)));
 
               const trucks = conf.truckChallans || [];
               const hasTrucks = trucks.length > 0;
               const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
 
-              // If an active truck is selected, show that truck's assets. Otherwise show detailAssets (all items).
-              const effectiveAssets = activeTruck
-                ? pool.filter(a => activeTruck.assets.includes(String(a.id)))
-                : detailAssets;
+              const targetAssetIds = activeTruck
+                ? (activeTruck.assets || []).map(String)
+                : activeAssetIds;
+
+              // Guaranteed mapping: Every ID in targetAssetIds gets an asset object.
+              // Multi-tier fallback ensures no item can EVER disappear due to pool lookup miss.
+              const effectiveAssets: Asset[] = targetAssetIds.map(idStr => {
+                const id = String(idStr);
+                // 1. Try pool (allAssetsRef or assets)
+                let found = pool.find(a => String(a.id) === id);
+                if (found) {
+                  knownAssetsMapRef.current.set(id, found);
+                  return found;
+                }
+
+                // 2. Try knownAssetsMapRef
+                found = knownAssetsMapRef.current.get(id);
+                if (found) return found;
+
+                // 3. Try truck assets_details or conf challan_assets_details
+                if (activeTruck && (activeTruck as any).assets_details) {
+                  const raw = (activeTruck as any).assets_details.find((a: any) => String(a.id) === id);
+                  if (raw) {
+                    const mapped = mapRawAsset(raw);
+                    knownAssetsMapRef.current.set(id, mapped);
+                    return mapped;
+                  }
+                }
+                if ((conf as any).challan_assets_details) {
+                  const raw = (conf as any).challan_assets_details.find((a: any) => String(a.id) === id);
+                  if (raw) {
+                    const mapped = mapRawAsset(raw);
+                    knownAssetsMapRef.current.set(id, mapped);
+                    return mapped;
+                  }
+                }
+
+                // 4. Try localStorage cache
+                try {
+                  const cachedItem = localStorage.getItem(`cache_asset_${id}`);
+                  if (cachedItem) {
+                    const parsed = JSON.parse(cachedItem);
+                    if (parsed && parsed.id) return parsed;
+                  }
+                } catch (e) { }
+
+                // 5. Resilient Fallback - NEVER let an item disappear!
+                return {
+                  id: id,
+                  sku: `ITEM-${id}`,
+                  aliasName: `Item #${id}`,
+                  serialNumber: '',
+                  type: 'Other',
+                  quantity: 1,
+                  itemPrice: 0,
+                  status: 'In Use' as any,
+                  barcode: '',
+                  condition: 'Good',
+                  description: 'Challan Item',
+                  isBarcodeAdded: false,
+                  macAddress: '',
+                  imeiNumber1: '',
+                  imeiNumber2: '',
+                  purchasedDate: '',
+                  depreciationPercentage: 0,
+                  availableFrom: '',
+                  availableTill: '',
+                  createdAt: '',
+                  lastMaintained: ''
+                } as Asset;
+              }).filter(Boolean);
 
               // Per user requirement: if multi-trucks exist, master challan has blank vehicle and driver.
               // If an active truck is selected, show that truck's vehicle and driver.

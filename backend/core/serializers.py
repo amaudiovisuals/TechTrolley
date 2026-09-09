@@ -172,8 +172,13 @@ class ConferenceSerializer(serializers.ModelSerializer):
             else:
                 raise e
 
-        # Inject truck challans data gracefully
+        # Inject challan_assets_details and truck challans data gracefully
         if data is not None:
+            try:
+                data['challan_assets_details'] = AssetSerializer(instance.challan_assets.all(), many=True).data
+            except Exception:
+                data['challan_assets_details'] = []
+
             try:
                 trucks = instance.truck_challans.prefetch_related('assets').order_by('truck_number')
                 trucks_data = []
@@ -197,6 +202,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
                         'driver_phone': t.driver_phone or '',
                         'challan_number': t.challan_number or '',
                         'assets': list(t.assets.values_list('pk', flat=True)),
+                        'assets_details': AssetSerializer(t.assets.all(), many=True).data,
                         'created_at': t.created_at.isoformat() if t.created_at else '',
                     })
                 data['truck_challans_data'] = trucks_data

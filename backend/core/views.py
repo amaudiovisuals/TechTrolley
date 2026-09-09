@@ -109,18 +109,28 @@ def asset_list(request):
         )
 
         # Exclude temporary items created inside subrental tickets from all inventory views,
-        # but keep temporary/ad-hoc items that were attached to a conference or challan
+        # but keep temporary/ad-hoc items that were attached to a conference, challan, or truck challan
         assets_query = assets_query.filter(
-            Q(is_temporary=False) | Q(assigned_conferences__isnull=False) | Q(challan_conferences__isnull=False)
+            Q(is_temporary=False) | Q(assigned_conferences__isnull=False) | Q(challan_conferences__isnull=False) | Q(truck_challans__isnull=False)
         ).distinct()
 
+        is_all_query = request.GET.get('all') == 'true'
         if subrental_company_id:
             if subrental_company_id == 'null':
                 assets_query = assets_query.filter(subrental_company__isnull=True)
             else:
                 assets_query = assets_query.filter(subrental_company_id=subrental_company_id)
+        elif is_all_query:
+            # When ?all=true is requested (e.g. scan index or challan lookups), include main inventory
+            # PLUS any subrental items that are active/attached to conferences, challans, or trucks
+            assets_query = assets_query.filter(
+                Q(subrental_company__isnull=True) |
+                Q(assigned_conferences__isnull=False) |
+                Q(challan_conferences__isnull=False) |
+                Q(truck_challans__isnull=False)
+            ).distinct()
         else:
-            # By default, show ONLY our main inventory
+            # By default, show ONLY our main inventory in paginated inventory view
             assets_query = assets_query.filter(subrental_company__isnull=True)
 
         from django.db.models.functions import Coalesce, Lower
