@@ -20,6 +20,7 @@ def _serialize_truck(t):
         # J-113: Each truck has its own challan number
         'challan_number': t.challan_number or '',
         'assets': list(t.assets.values_list('pk', flat=True)),
+        'asset_quantities': t.asset_quantities or {},
         'assets_details': AssetSerializer(t.assets.all(), many=True).data,
         'created_at': t.created_at.isoformat() if t.created_at else '',
     }
@@ -37,6 +38,32 @@ def _get_next_challan_number():
     return ''
 
 
+def _heal_unassigned_conference_assets(conference):
+    """
+    Ensure any asset associated with the conference (challan_assets, assets, staged_assets)
+    that is not yet assigned to ANY truck is automatically assigned to Truck 1.
+    """
+    try:
+        truck1 = TruckChallan.objects.filter(conference=conference, truck_number=1).first()
+        if not truck1:
+            return
+        all_truck_assigned = set(
+            TruckChallan.objects.filter(conference=conference)
+            .values_list('assets__pk', flat=True)
+        )
+        all_master = (
+            set(conference.challan_assets.values_list('pk', flat=True)) |
+            set(conference.assets.values_list('pk', flat=True)) |
+            set(conference.staged_assets.values_list('pk', flat=True))
+        )
+        all_master.discard(None)
+        unassigned = all_master - all_truck_assigned
+        if unassigned:
+            truck1.assets.add(*unassigned)
+    except Exception as ex:
+        print("Warning in _heal_unassigned_conference_assets:", ex)
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def conference_trucks(request, pk):
@@ -47,6 +74,7 @@ def conference_trucks(request, pk):
     conference = get_object_or_404(Conference, pk=pk)
 
     if request.method == 'GET':
+        _heal_unassigned_conference_assets(conference)
         trucks = TruckChallan.objects.filter(conference=conference).prefetch_related('assets').order_by('truck_number')
         for t in trucks:
             if not t.challan_number:
@@ -62,7 +90,7 @@ def conference_trucks(request, pk):
         existing = list(TruckChallan.objects.filter(conference=conference).order_by('truck_number'))
 
         if not existing:
-            # First time: create Truck 1 with all current challan_assets, and Truck 2 empty.
+            # First time: create Truck 1 with all master assets, and Truck 2 empty.
             # Truck 1 inherits the conference's existing challan_number.
             # Truck 2 gets a fresh new challan number from the sequence.
             truck1 = TruckChallan.objects.create(
@@ -72,13 +100,24 @@ def conference_trucks(request, pk):
                 vehicle_number=conference.vehicle_number or '',
                 driver_phone=conference.driver_phone or '',
                 challan_number=conference.challan_number or _get_next_challan_number(),
+                asset_quantities={},
             )
-            # Initialize Truck 1 with all challan_assets (or assets if challan_assets is empty)
-            challan_ids = list(conference.challan_assets.values_list('pk', flat=True))
-            if not challan_ids:
-                challan_ids = list(conference.assets.values_list('pk', flat=True))
-            if challan_ids:
-                truck1.assets.set(challan_ids)
+            # Accept asset_ids explicitly passed from frontend (which matches master challan view),
+            # or compute union of all conference asset relations so zero items are missed.
+            raw_passed_ids = request.data.get('asset_ids', [])
+            passed_ids = [int(aid) for aid in raw_passed_ids if str(aid).isdigit()]
+            if passed_ids:
+                initial_ids = set(passed_ids)
+            else:
+                initial_ids = (
+                    set(conference.challan_assets.values_list('pk', flat=True)) |
+                    set(conference.assets.values_list('pk', flat=True)) |
+                    set(conference.staged_assets.values_list('pk', flat=True))
+                )
+            initial_ids.discard(None)
+            if initial_ids:
+                truck1.assets.set(initial_ids)
+                conference.challan_assets.set(initial_ids)
 
             # Create Truck 2 (empty) with its own next challan number
             TruckChallan.objects.create(
@@ -88,6 +127,7 @@ def conference_trucks(request, pk):
                 vehicle_number='',
                 driver_phone='',
                 challan_number=_get_next_challan_number(),
+                asset_quantities={},
             )
         else:
             next_num = max(t.truck_number for t in existing) + 1
@@ -98,8 +138,10 @@ def conference_trucks(request, pk):
                 vehicle_number='',
                 driver_phone='',
                 challan_number=_get_next_challan_number(),
+                asset_quantities={},
             )
 
+        _heal_unassigned_conference_assets(conference)
         trucks = TruckChallan.objects.filter(conference=conference).prefetch_related('assets').order_by('truck_number')
         return Response([_serialize_truck(t) for t in trucks], status=201)
 
@@ -108,7 +150,7 @@ def conference_trucks(request, pk):
 @permission_classes([IsAuthenticated])
 def truck_challan_detail(request, truck_pk):
     """
-    PATCH  /api/truck-challans/{truck_pk}/  - update vehicle/driver/label/assets/challan_number
+    PATCH  /api/truck-challans/{truck_pk}/  - update vehicle/driver/label/assets/challan_number/asset_quantities
     DELETE /api/truck-challans/{truck_pk}/  - delete ALL trucks for this conference (resets to main challan)
     """
     truck = get_object_or_404(TruckChallan, pk=truck_pk)
@@ -124,6 +166,8 @@ def truck_challan_detail(request, truck_pk):
         # J-113: Allow patching the truck's own challan number independently
         if 'challan_number' in data:
             truck.challan_number = str(data['challan_number']).strip()
+        if 'asset_quantities' in data and isinstance(data['asset_quantities'], dict):
+            truck.asset_quantities = data['asset_quantities']
         truck.save()
 
         if 'assets' in data:
@@ -144,41 +188,91 @@ def truck_challan_detail(request, truck_pk):
 def truck_transfer_assets(request, truck_pk):
     """
     POST /api/truck-challans/{truck_pk}/transfer/
-    Body: { "to_truck_id": 5, "asset_ids": [1, 2, 3] }
+    Body:
+      { "to_truck_id": 5, "asset_ids": [1, 2, 3] }
+      OR
+      { "to_truck_id": 5, "transfers": [{ "asset_id": 1, "quantity": 1 }] }
     """
     source_truck = get_object_or_404(TruckChallan, pk=truck_pk)
     to_truck_id = request.data.get('to_truck_id')
+    raw_transfers = request.data.get('transfers')
     raw_asset_ids = request.data.get('asset_ids', [])
 
-    if not to_truck_id or not raw_asset_ids:
-        return Response({'error': 'to_truck_id and asset_ids required'}, status=400)
+    if not to_truck_id or (not raw_transfers and not raw_asset_ids):
+        return Response({'error': 'to_truck_id and either transfers or asset_ids required'}, status=400)
 
     try:
         to_truck_id = int(to_truck_id)
-        asset_ids = [int(aid) for aid in raw_asset_ids if str(aid).isdigit()]
     except (ValueError, TypeError):
-        return Response({'error': 'Invalid to_truck_id or asset_ids'}, status=400)
+        return Response({'error': 'Invalid to_truck_id'}, status=400)
 
     dest_truck = get_object_or_404(TruckChallan, pk=to_truck_id, conference=source_truck.conference)
 
-    # Atomically transfer
-    source_truck.assets.remove(*asset_ids)
-    dest_truck.assets.add(*asset_ids)
+    items_to_transfer = []
+    if raw_transfers and isinstance(raw_transfers, list):
+        for item in raw_transfers:
+            try:
+                aid = int(item.get('asset_id'))
+                qty = int(item.get('quantity', 1))
+                if qty > 0:
+                    items_to_transfer.append((aid, qty))
+            except (ValueError, TypeError):
+                continue
+    elif raw_asset_ids:
+        for aid_raw in raw_asset_ids:
+            if str(aid_raw).isdigit():
+                items_to_transfer.append((int(aid_raw), None))
 
-    from .serializers import AssetSerializer
+    if not items_to_transfer:
+        return Response({'error': 'No valid assets to transfer'}, status=400)
+
+    source_quantities = dict(source_truck.asset_quantities or {})
+    dest_quantities = dict(dest_truck.asset_quantities or {})
+
+    assets_to_fetch = [aid for aid, _ in items_to_transfer]
+    asset_map = {a.pk: a for a in Asset.objects.filter(pk__in=assets_to_fetch)}
+
+    for aid, requested_qty in items_to_transfer:
+        asset = asset_map.get(aid)
+        if not asset:
+            continue
+
+        aid_str = str(aid)
+        base_qty = int(asset.quantity or 1)
+
+        # Current quantity in source truck
+        if aid_str in source_quantities:
+            current_src_qty = int(source_quantities[aid_str])
+        else:
+            current_src_qty = base_qty
+
+        if current_src_qty <= 0:
+            continue
+
+        qty_to_move = current_src_qty if requested_qty is None else min(int(requested_qty), current_src_qty)
+        if qty_to_move <= 0:
+            continue
+
+        new_src_qty = current_src_qty - qty_to_move
+        if new_src_qty <= 0:
+            source_truck.assets.remove(asset)
+            source_quantities.pop(aid_str, None)
+        else:
+            source_quantities[aid_str] = new_src_qty
+
+        dest_truck.assets.add(asset)
+        current_dest_qty = int(dest_quantities.get(aid_str, 0))
+        dest_quantities[aid_str] = current_dest_qty + qty_to_move
+
+    source_truck.asset_quantities = source_quantities
+    source_truck.save(update_fields=['asset_quantities'])
+
+    dest_truck.asset_quantities = dest_quantities
+    dest_truck.save(update_fields=['asset_quantities'])
+
     return Response({
-        'source': {
-            'id': source_truck.pk,
-            'truck_number': source_truck.truck_number,
-            'assets': list(source_truck.assets.values_list('pk', flat=True)),
-            'assets_details': AssetSerializer(source_truck.assets.all(), many=True).data,
-        },
-        'dest': {
-            'id': dest_truck.pk,
-            'truck_number': dest_truck.truck_number,
-            'assets': list(dest_truck.assets.values_list('pk', flat=True)),
-            'assets_details': AssetSerializer(dest_truck.assets.all(), many=True).data,
-        },
+        'source': _serialize_truck(source_truck),
+        'dest': _serialize_truck(dest_truck),
     })
 
 

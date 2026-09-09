@@ -556,6 +556,7 @@ const App: React.FC = () => {
   const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
   const [truckEditValues, setTruckEditValues] = useState<{vehicle_number: string, driver_phone: string, challan_number?: string}>({vehicle_number: '', driver_phone: '', challan_number: ''});
   const [truckTransferSelection, setTruckTransferSelection] = useState<string[]>([]);
+  const [truckTransferQuantities, setTruckTransferQuantities] = useState<Record<string, number>>({});
 
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
@@ -1515,6 +1516,7 @@ const App: React.FC = () => {
               driver_phone: t.driver_phone || '',
               challan_number: t.challan_number || '',
               assets: (t.assets || []).map(String),
+              asset_quantities: t.asset_quantities || {},
               assets_details: t.assets_details || [],
               created_at: t.created_at || '',
             })),
@@ -1798,8 +1800,17 @@ const App: React.FC = () => {
   // ─── Multi-Truck Challan Handlers ──────────────────────────────
   const handleAddTruck = async (conferenceId: string) => {
     try {
+      const activeMasterAssetIds = selectedBookingForChallan
+        ? (
+            (selectedBookingForChallan.challanAssets && selectedBookingForChallan.challanAssets.length > 0)
+              ? selectedBookingForChallan.challanAssets
+              : [...(selectedBookingForChallan.assets || []), ...(selectedBookingForChallan.staged_assets || [])]
+          ).map(id => parseInt(String(id), 10)).filter(id => !isNaN(id))
+        : [];
+
       const res = await apiFetch(`${API_BASE}/api/conferences/${conferenceId}/trucks/`, {
         method: 'POST',
+        body: JSON.stringify({ asset_ids: activeMasterAssetIds }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1812,6 +1823,8 @@ const App: React.FC = () => {
           driver_phone: t.driver_phone || '',
           challan_number: t.challan_number || '',
           assets: (t.assets || []).map(String),
+          asset_quantities: t.asset_quantities || {},
+          assets_details: t.assets_details || [],
           created_at: t.created_at || '',
         }));
         setSelectedBookingForChallan(prev => prev ? { ...prev, truckChallans: mappedTrucks } : null);
@@ -1845,7 +1858,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateTruck = async (truckId: string, updates: { vehicle_number?: string; driver_phone?: string; label?: string; assets?: string[] | number[]; challan_number?: string }) => {
+  const handleUpdateTruck = async (truckId: string, updates: { vehicle_number?: string; driver_phone?: string; label?: string; assets?: string[] | number[]; challan_number?: string; asset_quantities?: Record<string, number> }) => {
     try {
       const res = await apiFetch(`${API_BASE}/api/truck-challans/${truckId}/`, {
         method: 'PATCH',
@@ -1866,6 +1879,8 @@ const App: React.FC = () => {
                     label: updated.label || t.label,
                     challan_number: updated.challan_number !== undefined ? updated.challan_number : t.challan_number,
                     assets: updated.assets ? (updated.assets || []).map(String) : t.assets,
+                    asset_quantities: updated.asset_quantities !== undefined ? updated.asset_quantities : t.asset_quantities,
+                    assets_details: updated.assets_details || t.assets_details,
                   }
                 : t
             ),
@@ -1881,14 +1896,26 @@ const App: React.FC = () => {
     }
   };
 
-  const handleTransferToTruck = async (fromTruckId: string, toTruckId: string, assetIds: string[]) => {
+  const handleTransferToTruck = async (
+    fromTruckId: string,
+    toTruckId: string,
+    transfersOrIds: { asset_id: number; quantity: number }[] | string[]
+  ) => {
     try {
+      const isStructured = transfersOrIds.length > 0 && typeof transfersOrIds[0] === 'object';
+      const bodyData = isStructured
+        ? {
+            to_truck_id: parseInt(toTruckId, 10),
+            transfers: transfersOrIds,
+          }
+        : {
+            to_truck_id: parseInt(toTruckId, 10),
+            asset_ids: (transfersOrIds as string[]).map(id => parseInt(id, 10)),
+          };
+
       const res = await apiFetch(`${API_BASE}/api/truck-challans/${fromTruckId}/transfer/`, {
         method: 'POST',
-        body: JSON.stringify({
-          to_truck_id: parseInt(toTruckId, 10),
-          asset_ids: assetIds.map(id => parseInt(id, 10)),
-        }),
+        body: JSON.stringify(bodyData),
       });
       if (res.ok) {
         const result = await res.json();
@@ -1897,12 +1924,36 @@ const App: React.FC = () => {
           return {
             ...prev,
             truckChallans: prev.truckChallans.map(t => {
-              if (t.id === fromTruckId) return { ...t, assets: (result.source.assets || []).map(String) };
-              if (t.id === toTruckId) return { ...t, assets: (result.dest.assets || []).map(String) };
+              if (t.id === fromTruckId) {
+                return {
+                  ...t,
+                  assets: (result.source.assets || []).map(String),
+                  asset_quantities: result.source.asset_quantities || {},
+                  assets_details: result.source.assets_details || t.assets_details,
+                };
+              }
+              if (t.id === toTruckId) {
+                return {
+                  ...t,
+                  assets: (result.dest.assets || []).map(String),
+                  asset_quantities: result.dest.asset_quantities || {},
+                  assets_details: result.dest.assets_details || t.assets_details,
+                };
+              }
               return t;
             }),
           };
         });
+
+        // Invalidate cache for both trucks so ChallanView immediately loads fresh items & quantities
+        if (selectedBookingForChallan) {
+          const confId = selectedBookingForChallan.id;
+          const fromTruck = selectedBookingForChallan.truckChallans?.find(t => t.id === fromTruckId);
+          const toTruck = selectedBookingForChallan.truckChallans?.find(t => t.id === toTruckId);
+          if (fromTruck) localStorage.removeItem(`cache_challan_items_${confId}__truck${fromTruck.truck_number}`);
+          if (toTruck) localStorage.removeItem(`cache_challan_items_${confId}__truck${toTruck.truck_number}`);
+        }
+
         showScanToast('✅ Items transferred successfully', 'success');
       } else {
         showScanToast('❌ Failed to transfer items', 'error');
@@ -8681,76 +8732,87 @@ const App: React.FC = () => {
               const hasTrucks = trucks.length > 0;
               const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
 
+              const allTruckAssetIds = new Set(trucks.flatMap(t => t.assets || []).map(String));
+              const unassignedIds = activeAssetIds.filter(id => !allTruckAssetIds.has(String(id)));
+
+              // If viewing Truck 1 and some master assets are not in ANY truck yet, include them in Truck 1!
               const targetAssetIds = activeTruck
-                ? (activeTruck.assets || []).map(String)
+                ? (
+                    activeTruck.truck_number === 1 && unassignedIds.length > 0
+                      ? Array.from(new Set([...(activeTruck.assets || []).map(String), ...unassignedIds]))
+                      : (activeTruck.assets || []).map(String)
+                  )
                 : activeAssetIds;
 
               // Guaranteed mapping: Every ID in targetAssetIds gets an asset object.
               // Multi-tier fallback ensures no item can EVER disappear due to pool lookup miss.
               const effectiveAssets: Asset[] = targetAssetIds.map(idStr => {
                 const id = String(idStr);
+                let baseAsset: Asset;
                 // 1. Try pool (allAssetsRef or assets)
                 let found = pool.find(a => String(a.id) === id);
                 if (found) {
                   knownAssetsMapRef.current.set(id, found);
-                  return found;
-                }
+                  baseAsset = found;
+                } else if ((found = knownAssetsMapRef.current.get(id))) {
+                  // 2. Try knownAssetsMapRef
+                  baseAsset = found;
+                } else if (activeTruck && (activeTruck as any).assets_details && (found = (activeTruck as any).assets_details.find((a: any) => String(a.id) === id))) {
+                  // 3. Try truck assets_details
+                  baseAsset = mapRawAsset(found);
+                  knownAssetsMapRef.current.set(id, baseAsset);
+                } else if ((conf as any).challan_assets_details && (found = (conf as any).challan_assets_details.find((a: any) => String(a.id) === id))) {
+                  // 3b. Try conf challan_assets_details
+                  baseAsset = mapRawAsset(found);
+                  knownAssetsMapRef.current.set(id, baseAsset);
+                } else {
+                  // 4. Try localStorage cache
+                  let cached: any = null;
+                  try {
+                    const cachedItem = localStorage.getItem(`cache_asset_${id}`);
+                    if (cachedItem) cached = JSON.parse(cachedItem);
+                  } catch (e) { }
 
-                // 2. Try knownAssetsMapRef
-                found = knownAssetsMapRef.current.get(id);
-                if (found) return found;
-
-                // 3. Try truck assets_details or conf challan_assets_details
-                if (activeTruck && (activeTruck as any).assets_details) {
-                  const raw = (activeTruck as any).assets_details.find((a: any) => String(a.id) === id);
-                  if (raw) {
-                    const mapped = mapRawAsset(raw);
-                    knownAssetsMapRef.current.set(id, mapped);
-                    return mapped;
+                  if (cached && cached.id) {
+                    baseAsset = cached;
+                  } else {
+                    // 5. Resilient Fallback - NEVER let an item disappear!
+                    baseAsset = {
+                      id: id,
+                      sku: `ITEM-${id}`,
+                      aliasName: `Item #${id}`,
+                      serialNumber: '',
+                      type: 'Other',
+                      quantity: 1,
+                      itemPrice: 0,
+                      status: 'In Use' as any,
+                      barcode: '',
+                      condition: 'Good',
+                      description: 'Challan Item',
+                      isBarcodeAdded: false,
+                      macAddress: '',
+                      imeiNumber1: '',
+                      imeiNumber2: '',
+                      purchasedDate: '',
+                      depreciationPercentage: 0,
+                      availableFrom: '',
+                      availableTill: '',
+                      createdAt: '',
+                      lastMaintained: ''
+                    } as Asset;
                   }
                 }
-                if ((conf as any).challan_assets_details) {
-                  const raw = (conf as any).challan_assets_details.find((a: any) => String(a.id) === id);
-                  if (raw) {
-                    const mapped = mapRawAsset(raw);
-                    knownAssetsMapRef.current.set(id, mapped);
-                    return mapped;
-                  }
-                }
 
-                // 4. Try localStorage cache
-                try {
-                  const cachedItem = localStorage.getItem(`cache_asset_${id}`);
-                  if (cachedItem) {
-                    const parsed = JSON.parse(cachedItem);
-                    if (parsed && parsed.id) return parsed;
-                  }
-                } catch (e) { }
+                // If active truck is selected, override quantity if allocated quantity exists for this truck
+                const truckQty = activeTruck?.asset_quantities?.[id];
+                const finalQty = (truckQty !== undefined && truckQty !== null)
+                  ? Number(truckQty)
+                  : (Number(baseAsset.quantity) || 1);
 
-                // 5. Resilient Fallback - NEVER let an item disappear!
                 return {
-                  id: id,
-                  sku: `ITEM-${id}`,
-                  aliasName: `Item #${id}`,
-                  serialNumber: '',
-                  type: 'Other',
-                  quantity: 1,
-                  itemPrice: 0,
-                  status: 'In Use' as any,
-                  barcode: '',
-                  condition: 'Good',
-                  description: 'Challan Item',
-                  isBarcodeAdded: false,
-                  macAddress: '',
-                  imeiNumber1: '',
-                  imeiNumber2: '',
-                  purchasedDate: '',
-                  depreciationPercentage: 0,
-                  availableFrom: '',
-                  availableTill: '',
-                  createdAt: '',
-                  lastMaintained: ''
-                } as Asset;
+                  ...baseAsset,
+                  quantity: finalQty,
+                };
               }).filter(Boolean);
 
               // Per user requirement: if multi-trucks exist, master challan has blank vehicle and driver.
@@ -9049,8 +9111,49 @@ const App: React.FC = () => {
                     const toTruck = trucks.find(t => t.id === toTruckId);
                     if (!fromTruck || !toTruck) return null;
 
-                    const fromAssets = pool.filter(a => fromTruck.assets.includes(String(a.id)));
-                    const toAssets = pool.filter(a => toTruck.assets.includes(String(a.id)));
+                    const getTruckAssetsWithQuantities = (truck: TruckChallan) => {
+                      return (truck.assets || []).map(idStr => {
+                        const id = String(idStr);
+                        let found = pool.find(a => String(a.id) === id);
+                        if (!found) found = knownAssetsMapRef.current.get(id);
+                        if (!found && truck.assets_details) {
+                          const raw = truck.assets_details.find((a: any) => String(a.id) === id);
+                          if (raw) found = mapRawAsset(raw);
+                        }
+                        if (!found && (conf as any).challan_assets_details) {
+                          const raw = (conf as any).challan_assets_details.find((a: any) => String(a.id) === id);
+                          if (raw) found = mapRawAsset(raw);
+                        }
+                        const baseAsset = found || ({
+                          id: id,
+                          sku: `ITEM-${id}`,
+                          aliasName: `Item #${id}`,
+                          serialNumber: '',
+                          type: 'Other',
+                          quantity: 1,
+                        } as Asset);
+
+                        const truckAllocatedQty = truck.asset_quantities?.[id];
+                        const finalQty = (truckAllocatedQty !== undefined && truckAllocatedQty !== null)
+                          ? Number(truckAllocatedQty)
+                          : (Number(baseAsset.quantity) || 1);
+
+                        return {
+                          ...baseAsset,
+                          quantity: finalQty,
+                        };
+                      });
+                    };
+
+                    const fromAssets = getTruckAssetsWithQuantities(fromTruck);
+                    const toAssets = getTruckAssetsWithQuantities(toTruck);
+
+                    const totalUnitsToMove = truckTransferSelection.reduce((sum, aid) => {
+                      const asset = fromAssets.find(a => String(a.id) === aid);
+                      const maxQty = asset ? asset.quantity : 1;
+                      const qty = truckTransferQuantities[aid] !== undefined ? truckTransferQuantities[aid] : maxQty;
+                      return sum + Math.max(1, Math.min(maxQty, qty));
+                    }, 0);
 
                     return (
                       <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -9081,6 +9184,7 @@ const App: React.FC = () => {
                                 onChange={e => {
                                   setShowTruckTransferModal(prev => prev ? { ...prev, fromTruckId: e.target.value } : null);
                                   setTruckTransferSelection([]);
+                                  setTruckTransferQuantities({});
                                 }}
                                 className="bg-slate-900 border border-slate-700 text-white font-bold text-xs rounded-xl px-3 py-1.5"
                               >
@@ -9119,15 +9223,19 @@ const App: React.FC = () => {
                                   <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
                                     {fromTruck.label} Items ({fromAssets.length})
                                   </p>
-                                  <p className="text-[9px] text-slate-500">Check items to transfer</p>
+                                  <p className="text-[9px] text-slate-500">Check items and specify quantity to move</p>
                                 </div>
                                 {fromAssets.length > 0 && (
                                   <button
                                     onClick={() => {
                                       if (truckTransferSelection.length === fromAssets.length) {
                                         setTruckTransferSelection([]);
+                                        setTruckTransferQuantities({});
                                       } else {
                                         setTruckTransferSelection(fromAssets.map(a => String(a.id)));
+                                        const allQtys: Record<string, number> = {};
+                                        fromAssets.forEach(a => { allQtys[String(a.id)] = a.quantity; });
+                                        setTruckTransferQuantities(allQtys);
                                       }
                                     }}
                                     className="text-[9px] font-black uppercase text-sky-400 hover:text-white transition"
@@ -9143,32 +9251,99 @@ const App: React.FC = () => {
                                   </div>
                                 ) : (
                                   fromAssets.map(a => {
-                                    const isChecked = truckTransferSelection.includes(String(a.id));
+                                    const aid = String(a.id);
+                                    const isChecked = truckTransferSelection.includes(aid);
+                                    const maxQty = a.quantity || 1;
+                                    const selectedQty = truckTransferQuantities[aid] !== undefined ? truckTransferQuantities[aid] : maxQty;
+
                                     return (
-                                      <label
+                                      <div
                                         key={a.id}
-                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                                        className={`p-3 rounded-xl border transition-all ${
                                           isChecked
                                             ? 'bg-sky-500/15 border-sky-500/40 text-white'
                                             : 'bg-slate-950/40 border-slate-800/80 hover:border-slate-700 text-slate-300'
                                         }`}
                                       >
-                                        <input
-                                          type="checkbox"
-                                          checked={isChecked}
-                                          onChange={e => {
-                                            const aid = String(a.id);
-                                            setTruckTransferSelection(prev =>
-                                              e.target.checked ? [...prev, aid] : prev.filter(x => x !== aid)
-                                            );
-                                          }}
-                                          className="w-4 h-4 rounded accent-sky-500"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-xs font-bold uppercase truncate">{a.aliasName || a.sku}</p>
-                                          <p className="text-[9px] font-mono text-slate-500">{a.sku} • Qty: {a.quantity || 1}</p>
+                                        <div className="flex items-center gap-3">
+                                          <input
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            onChange={e => {
+                                              if (e.target.checked) {
+                                                setTruckTransferSelection(prev => [...prev, aid]);
+                                                setTruckTransferQuantities(prev => ({ ...prev, [aid]: maxQty }));
+                                              } else {
+                                                setTruckTransferSelection(prev => prev.filter(x => x !== aid));
+                                              }
+                                            }}
+                                            className="w-4 h-4 rounded accent-sky-500 cursor-pointer"
+                                          />
+                                          <div
+                                            className="min-w-0 flex-1 cursor-pointer"
+                                            onClick={() => {
+                                              if (isChecked) {
+                                                setTruckTransferSelection(prev => prev.filter(x => x !== aid));
+                                              } else {
+                                                setTruckTransferSelection(prev => [...prev, aid]);
+                                                setTruckTransferQuantities(prev => ({ ...prev, [aid]: maxQty }));
+                                              }
+                                            }}
+                                          >
+                                            <p className="text-xs font-bold uppercase truncate">{a.aliasName || a.sku}</p>
+                                            <p className="text-[9px] font-mono text-slate-400">{a.sku} • In Truck: <span className="font-bold text-amber-400">{maxQty}</span></p>
+                                          </div>
+
+                                          {/* Quantity Stepper when multiple quantity is available */}
+                                          {isChecked && maxQty > 1 ? (
+                                            <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700 shrink-0">
+                                              <span className="text-[9px] text-slate-400 font-bold uppercase mr-1">Move:</span>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  const next = Math.max(1, selectedQty - 1);
+                                                  setTruckTransferQuantities(prev => ({ ...prev, [aid]: next }));
+                                                }}
+                                                className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center text-xs font-bold"
+                                              >
+                                                -
+                                              </button>
+                                              <input
+                                                type="number"
+                                                min={1}
+                                                max={maxQty}
+                                                value={selectedQty}
+                                                onClick={e => e.stopPropagation()}
+                                                onChange={(e) => {
+                                                  e.stopPropagation();
+                                                  const val = Math.max(1, Math.min(maxQty, parseInt(e.target.value, 10) || 1));
+                                                  setTruckTransferQuantities(prev => ({ ...prev, [aid]: val }));
+                                                }}
+                                                className="w-10 text-center bg-slate-950 border border-slate-700 rounded text-xs font-bold text-emerald-400 py-0.5"
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.preventDefault();
+                                                  e.stopPropagation();
+                                                  const next = Math.min(maxQty, selectedQty + 1);
+                                                  setTruckTransferQuantities(prev => ({ ...prev, [aid]: next }));
+                                                }}
+                                                className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center text-xs font-bold"
+                                              >
+                                                +
+                                              </button>
+                                              <span className="text-[9px] text-slate-500 ml-1">/ {maxQty}</span>
+                                            </div>
+                                          ) : isChecked ? (
+                                            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-[9px] font-black uppercase">
+                                              1 unit
+                                            </span>
+                                          ) : null}
                                         </div>
-                                      </label>
+                                      </div>
                                     );
                                   })
                                 )}
@@ -9177,13 +9352,20 @@ const App: React.FC = () => {
                                 <div className="p-4 border-t border-slate-800 bg-slate-950/50">
                                   <button
                                     onClick={async () => {
-                                      await handleTransferToTruck(fromTruckId, toTruckId, truckTransferSelection);
+                                      const transfers = truckTransferSelection.map(aid => {
+                                        const asset = fromAssets.find(a => String(a.id) === aid);
+                                        const maxQty = asset ? asset.quantity : 1;
+                                        const qty = truckTransferQuantities[aid] !== undefined ? truckTransferQuantities[aid] : maxQty;
+                                        return { asset_id: parseInt(aid, 10), quantity: Math.max(1, Math.min(maxQty, qty)) };
+                                      });
+                                      await handleTransferToTruck(fromTruckId, toTruckId, transfers);
                                       setTruckTransferSelection([]);
+                                      setTruckTransferQuantities({});
                                     }}
                                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
                                   >
                                     <i className="fa-solid fa-arrow-right"></i>
-                                    Move {truckTransferSelection.length} Item{truckTransferSelection.length > 1 ? 's' : ''} to {toTruck.label}
+                                    Move {truckTransferSelection.length} Item{truckTransferSelection.length > 1 ? 's' : ''} ({totalUnitsToMove} unit{totalUnitsToMove > 1 ? 's' : ''}) to {toTruck.label}
                                   </button>
                                 </div>
                               )}
@@ -9210,15 +9392,26 @@ const App: React.FC = () => {
                                     >
                                       <div className="min-w-0 flex-1">
                                         <p className="text-xs font-bold text-white uppercase truncate">{a.aliasName || a.sku}</p>
-                                        <p className="text-[9px] font-mono text-slate-500">{a.sku} • Qty: {a.quantity || 1}</p>
+                                        <p className="text-[9px] font-mono text-slate-400">{a.sku} • In Truck: <span className="font-bold text-emerald-400">{a.quantity || 1}</span></p>
                                       </div>
-                                      <button
-                                        onClick={() => handleTransferToTruck(toTruckId, fromTruckId, [String(a.id)])}
-                                        className="px-2 py-1 bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/30 rounded-lg text-[9px] font-black uppercase transition flex items-center gap-1"
-                                        title={`Move back to ${fromTruck.label}`}
-                                      >
-                                        <i className="fa-solid fa-arrow-left"></i> Return
-                                      </button>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {a.quantity > 1 && (
+                                          <button
+                                            onClick={() => handleTransferToTruck(toTruckId, fromTruckId, [{ asset_id: parseInt(String(a.id), 10), quantity: 1 }])}
+                                            className="px-2 py-1 bg-slate-800 hover:bg-amber-500/20 text-slate-300 hover:text-amber-400 border border-slate-700 hover:border-amber-500/30 rounded-lg text-[9px] font-black uppercase transition flex items-center gap-1"
+                                            title={`Return 1 unit back to ${fromTruck.label}`}
+                                          >
+                                            <i className="fa-solid fa-arrow-left"></i> 1
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => handleTransferToTruck(toTruckId, fromTruckId, [{ asset_id: parseInt(String(a.id), 10), quantity: a.quantity || 1 }])}
+                                          className="px-2 py-1 bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-500/30 rounded-lg text-[9px] font-black uppercase transition flex items-center gap-1"
+                                          title={`Return all ${a.quantity || 1} back to ${fromTruck.label}`}
+                                        >
+                                          <i className="fa-solid fa-arrow-left"></i> {a.quantity > 1 ? `All (${a.quantity})` : 'Return'}
+                                        </button>
+                                      </div>
                                     </div>
                                   ))
                                 )}

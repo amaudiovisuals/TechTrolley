@@ -278,6 +278,10 @@ class TruckChallan(models.Model):
     assets = models.ManyToManyField(
         Asset, blank=True, related_name='truck_challans'
     )
+    asset_quantities = models.JSONField(
+        default=dict, blank=True,
+        help_text="Per-asset allocated quantity in this truck: {'<asset_id>': <quantity>}"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

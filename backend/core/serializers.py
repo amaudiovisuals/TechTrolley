@@ -48,7 +48,7 @@ class TruckChallanSerializer(serializers.ModelSerializer):
     )
     class Meta:
         model = TruckChallan
-        fields = ['id', 'conference', 'truck_number', 'label', 'vehicle_number', 'driver_phone', 'assets', 'created_at']
+        fields = ['id', 'conference', 'truck_number', 'label', 'vehicle_number', 'driver_phone', 'assets', 'asset_quantities', 'created_at']
 
 class SubAssetSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
@@ -202,6 +202,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
                         'driver_phone': t.driver_phone or '',
                         'challan_number': t.challan_number or '',
                         'assets': list(t.assets.values_list('pk', flat=True)),
+                        'asset_quantities': t.asset_quantities or {},
                         'assets_details': AssetSerializer(t.assets.all(), many=True).data,
                         'created_at': t.created_at.isoformat() if t.created_at else '',
                     })

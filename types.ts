@@ -213,6 +213,8 @@ export interface TruckChallan {
   /** Each truck's own unique challan number, separate from the master challan */
   challan_number: string;
   assets: string[];  // asset IDs as strings
+  asset_quantities?: Record<string, number>;
+  assets_details?: any[];
   created_at: string;
 }
 
