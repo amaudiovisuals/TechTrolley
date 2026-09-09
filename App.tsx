@@ -557,6 +557,7 @@ const App: React.FC = () => {
   const [truckEditValues, setTruckEditValues] = useState<{vehicle_number: string, driver_phone: string, challan_number?: string}>({vehicle_number: '', driver_phone: '', challan_number: ''});
   const [truckTransferSelection, setTruckTransferSelection] = useState<string[]>([]);
   const [truckTransferQuantities, setTruckTransferQuantities] = useState<Record<string, number>>({});
+  const [packingTargetTruckId, setPackingTargetTruckId] = useState<string | null>(null);
 
   const [quickSubAssetData, setQuickSubAssetData] = useState({ sku: '', serialNumber: '', type: 'Other', itemPrice: 0, generateQR: false });
 
@@ -1736,27 +1737,34 @@ const App: React.FC = () => {
         // DB has fully committed the M2M relationship before we re-read it.
         setSelectedBookingForChallan(prev => prev ? { ...prev, challanAssets: cleanIds.map(String) } : null);
 
-        // Multi-truck: ensure any newly added assets not yet in any truck get added to Truck 1
+        // Multi-truck: ensure any newly added assets not yet in any truck get added to active truck (or latest truck)
         if (selectedBookingForChallan?.truckChallans && selectedBookingForChallan.truckChallans.length > 0) {
           const allTruckAssetIds = new Set(selectedBookingForChallan.truckChallans.flatMap(t => t.assets));
           const unassignedToAnyTruck = cleanIds.filter(id => !allTruckAssetIds.has(String(id)));
           if (unassignedToAnyTruck.length > 0) {
-            apiFetch(`${API_BASE}/api/conferences/${conferenceId}/trucks/add-to-truck1/`, {
+            const targetTruck = (activeTruckChallanId && selectedBookingForChallan.truckChallans.find(t => t.id === activeTruckChallanId))
+              || selectedBookingForChallan.truckChallans[selectedBookingForChallan.truckChallans.length - 1];
+
+            apiFetch(`${API_BASE}/api/conferences/${conferenceId}/trucks/add-to-truck/`, {
               method: 'POST',
-              body: JSON.stringify({ asset_ids: unassignedToAnyTruck })
+              body: JSON.stringify({
+                asset_ids: unassignedToAnyTruck,
+                truck_id: targetTruck.id,
+                truck_number: targetTruck.truck_number
+              })
             }).then(() => {
               setSelectedBookingForChallan(prev => {
                 if (!prev || !prev.truckChallans) return prev;
                 return {
                   ...prev,
                   truckChallans: prev.truckChallans.map(t =>
-                    t.truck_number === 1
+                    t.id === targetTruck.id
                       ? { ...t, assets: Array.from(new Set([...t.assets, ...unassignedToAnyTruck.map(String)])) }
                       : t
                   )
                 };
               });
-            }).catch(err => console.error("Could not sync unassigned items to truck 1", err));
+            }).catch(err => console.error("Could not sync unassigned items to target truck", err));
           }
         }
 
@@ -1828,6 +1836,11 @@ const App: React.FC = () => {
           created_at: t.created_at || '',
         }));
         setSelectedBookingForChallan(prev => prev ? { ...prev, truckChallans: mappedTrucks } : null);
+        if (mappedTrucks.length > 0) {
+          const latestTruck = mappedTrucks[mappedTrucks.length - 1];
+          setActiveTruckChallanId(latestTruck.id);
+          setPackingTargetTruckId(latestTruck.id);
+        }
         showScanToast('✅ Truck added successfully', 'success');
         fetchConferences();
       } else {
@@ -2089,6 +2102,66 @@ const App: React.FC = () => {
     })
       .then(async res => {
         if (res.ok) {
+          const savedData = await res.json().catch(() => null);
+          if (savedData && savedData.id) {
+            const mappedNew: Booking = {
+              id: savedData.id.toString(),
+              name: savedData.name,
+              conferenceName: savedData.name,
+              association: savedData.association_name,
+              associationName: savedData.association_name,
+              billingAddress: savedData.billing_address,
+              transportAddress: savedData.transport_address,
+              venue: savedData.transport_address,
+              gstNumber: savedData.gst_number,
+              vehicleNumber: savedData.vehicle_number,
+              driverPhone: savedData.driver_phone,
+              challanDate: savedData.challan_date || '',
+              challan_date: savedData.challan_date || '',
+              startDate: savedData.start_date,
+              start_date: savedData.start_date,
+              endDate: savedData.end_date,
+              end_date: savedData.end_date,
+              type: savedData.conference_type as any,
+              conferenceType: savedData.conference_type as any,
+              contactPerson: savedData.contact_person,
+              contactPhone: savedData.contact_phone,
+              contactEmail: savedData.contact_email,
+              challanNumber: savedData.challan_number || (1000 + parseInt(savedData.id)).toString(),
+              assets: (savedData.assets || []).map((id: any) => id.toString()),
+              requirements: (savedData.requirements || []).map((id: any) => id.toString()),
+              staged_assets: (savedData.staged_assets || []).map((id: any) => id.toString()),
+              crosscheckAssets: (savedData.crosscheck_assets || []).map((id: any) => id.toString()),
+              challanAssets: (savedData.challan_assets || []).map((id: any) => id.toString()),
+              challan_assets_details: savedData.challan_assets_details || [],
+              assigned_employees: (savedData.assigned_employees || []).map((id: any) => parseInt(id, 10)),
+              pdf_document: savedData.pdf_document,
+              isAudit: savedData.is_audit || false,
+              is_invoiced: Boolean(savedData.is_invoiced),
+              isInvoiced: Boolean(savedData.is_invoiced),
+              transfer_log: savedData.transfer_log || [],
+              truckChallans: (savedData.truck_challans_data || []).map((t: any) => ({
+                id: String(t.id),
+                conference: String(t.conference),
+                truck_number: t.truck_number,
+                label: t.label || `Truck ${t.truck_number}`,
+                vehicle_number: t.vehicle_number || '',
+                driver_phone: t.driver_phone || '',
+                challan_number: t.challan_number || '',
+                assets: (t.assets || []).map(String),
+                asset_quantities: t.asset_quantities || {},
+                assets_details: t.assets_details || [],
+                created_at: t.created_at || '',
+              })),
+            };
+            setBackendConferences(prev => {
+              const exists = prev.some(c => c.id === mappedNew.id);
+              if (exists) {
+                return prev.map(c => c.id === mappedNew.id ? mappedNew : c);
+              }
+              return [mappedNew, ...prev];
+            });
+          }
           fetchConferences();
           fetchAssets();
           setConferenceView('List');
@@ -6056,6 +6129,7 @@ const App: React.FC = () => {
     // Store locally to persist exact current state across the new tab boundary. Always DELIVERY CHALLAN.
     localStorage.setItem('print_conf_data', JSON.stringify(printConfObj));
     localStorage.setItem('print_challan_title', 'DELIVERY CHALLAN');
+    localStorage.setItem('print_truck_suffix', truckChallan ? `__truck${truckChallan.truck_number}` : '');
 
     const challanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
     let targetAssetIds: string[] = [];
@@ -6070,7 +6144,17 @@ const App: React.FC = () => {
                        : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
     }
 
-    const relevantAssets = challanPool.filter(a => targetAssetIds.includes(String(a.id)));
+    const relevantAssets = challanPool
+      .filter(a => targetAssetIds.includes(String(a.id)))
+      .map(a => {
+        if (truckChallan?.asset_quantities) {
+          const tQty = truckChallan.asset_quantities[String(a.id)] ?? truckChallan.asset_quantities[Number(a.id)];
+          if (tQty !== undefined && tQty !== null) {
+            return { ...a, quantity: Number(tQty) };
+          }
+        }
+        return a;
+      });
     localStorage.setItem('print_assets_data', JSON.stringify(relevantAssets));
 
     // Open in new tab
@@ -6634,6 +6718,7 @@ const App: React.FC = () => {
       return <div className="min-h-screen bg-white flex items-center justify-center text-black font-bold uppercase">Generating Challan Preview...</div>;
     }
     const printTitle = localStorage.getItem('print_challan_title') || 'DELIVERY CHALLAN';
+    const printTruckSuffix = localStorage.getItem('print_truck_suffix') || '';
 
     return (
       <div className="min-h-screen bg-white p-8 print:p-0 print:m-0 print:min-h-0 relative">
@@ -6658,7 +6743,8 @@ const App: React.FC = () => {
           onUpdateConferenceValue={handleUpdateConferenceValue}
           onUpdateChallanNumber={handleUpdateChallanNumber}
           onSaveFullChallan={handleSaveFullChallan}
-          readOnly={user?.role === 'accounts'}
+          readOnly={true}
+          localStorageSuffix={printTruckSuffix || undefined}
         />
         <style>{`
             @media print {
@@ -7930,12 +8016,12 @@ const App: React.FC = () => {
                                                  <div className="border-t border-orange-100 divide-y divide-orange-50">
                                                    {items.map(asset => (
                                                      <div key={asset.id} className="flex items-center gap-3 px-4 py-2.5">
-                                                       <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
+                                                        <span className="font-mono text-[10px] text-slate-700 font-bold truncate flex-1">
                                                           {asset.aliasName && !['Apple MacBook', 'Windows Laptop', 'MacBook'].includes(asset.aliasName)
                                                             ? `${asset.aliasName} • ${asset.sku || asset.serialNumber}`
                                                             : (asset.sku || asset.serialNumber)}
                                                         </span>
-                                                       <span className="shrink-0 px-1.5 py-0.5 bg-orange-400 text-white text-[8px] font-black rounded-full">PENDING</span>
+                                                        <span className="shrink-0 px-1.5 py-0.5 bg-orange-400 text-white text-[8px] font-black rounded-full">PENDING</span>
                                                      </div>
                                                    ))}
                                                  </div>
@@ -7947,6 +8033,57 @@ const App: React.FC = () => {
                                      );
                                    })()}
                                 </div>
+
+                                 {/* Multi-Truck Target Selector for Godown Packing Station */}
+                                 {(() => {
+                                   const activeConfTrucks = (editingConference?.truckChallans && editingConference.truckChallans.length > 0)
+                                     ? editingConference.truckChallans
+                                     : (backendConferences.find(c => c.id === conferenceFormData.id)?.truckChallans || []);
+                                   const effectiveTargetTruck = (activeConfTrucks.find(t => t.id === packingTargetTruckId))
+                                     || (activeConfTrucks.length > 0 ? activeConfTrucks[activeConfTrucks.length - 1] : null);
+
+                                   if (!effectiveTargetTruck || activeConfTrucks.length === 0) return null;
+
+                                   return (
+                                     <div className="flex items-center justify-between p-4 bg-sky-950/40 border border-sky-500/30 rounded-2xl flex-wrap gap-3 mb-6 shadow-lg">
+                                       <div className="flex items-center gap-2.5">
+                                         <div className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold">
+                                           <i className="fa-solid fa-truck-ramp-box"></i>
+                                         </div>
+                                         <div>
+                                           <p className="text-[11px] font-black text-sky-400 uppercase tracking-wider">
+                                             Packing Target: {effectiveTargetTruck.label || `Truck ${effectiveTargetTruck.truck_number}`}
+                                           </p>
+                                           <p className="text-[9px] text-slate-400">Scanned items will be packed into this truck challan</p>
+                                         </div>
+                                       </div>
+                                       <div className="flex items-center gap-1.5 flex-wrap">
+                                         {activeConfTrucks.map(t => {
+                                           const isSelected = effectiveTargetTruck.id === t.id;
+                                           const isLatest = t.truck_number === activeConfTrucks[activeConfTrucks.length - 1].truck_number;
+                                           return (
+                                             <button
+                                               key={t.id}
+                                               type="button"
+                                               onClick={() => setPackingTargetTruckId(t.id)}
+                                               className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+                                                 isSelected
+                                                   ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30 ring-2 ring-sky-400'
+                                                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                               }`}
+                                             >
+                                               <span>{t.label || `Truck ${t.truck_number}`}</span>
+                                               {isLatest && (
+                                                 <span className="text-[9px] text-emerald-300 font-bold">(Active)</span>
+                                               )}
+                                               <span className="text-[10px] opacity-80 font-mono">({(t.assets || []).length})</span>
+                                             </button>
+                                           );
+                                         })}
+                                       </div>
+                                     </div>
+                                   );
+                                 })()}
 
                                 {/* 2. Godown Search/Scan Bar */}
                                 <div className="space-y-4">
@@ -8110,6 +8247,7 @@ const App: React.FC = () => {
                                       <button 
                                         onClick={async () => {
                                           const itemCount = (conferenceFormData.staged_assets || []).length;
+                                          const stagedItemIds = (conferenceFormData.staged_assets || []).map((id: any) => parseInt(String(id), 10)).filter((id: number) => !isNaN(id));
                                           if (confirm(`⚠️ FINAL DISPATCH CHECK:\n\nAre you sure you want to finalize and submit these ${itemCount} item(s) for dispatch? \n\nThis will officially move them to the Packup phase and notify the team.`)) {
                                             const newAssets = [...(conferenceFormData.assets || []), ...(conferenceFormData.staged_assets || [])];
                                             const newStaged = [];
@@ -8139,7 +8277,29 @@ const App: React.FC = () => {
                                               });
                                               
                                               if (res.ok) {
-                                                showScanToast('🚚 DISPATCHED: Items moved to Packup!', 'success');
+                                                const activeConfTrucks = (editingConference?.truckChallans && editingConference.truckChallans.length > 0)
+                                                  ? editingConference.truckChallans
+                                                  : (backendConferences.find(c => c.id === conferenceFormData.id)?.truckChallans || []);
+                                                const effectiveTargetTruck = (activeConfTrucks.find(t => t.id === packingTargetTruckId))
+                                                  || (activeConfTrucks.length > 0 ? activeConfTrucks[activeConfTrucks.length - 1] : null);
+
+                                                // Multi-truck: assign newly dispatched assets to the designated target truck!
+                                                if (effectiveTargetTruck && stagedItemIds.length > 0) {
+                                                  try {
+                                                    await apiFetch(`${API_BASE}/api/conferences/${conferenceFormData.id}/trucks/add-to-truck/`, {
+                                                      method: 'POST',
+                                                      body: JSON.stringify({
+                                                        asset_ids: stagedItemIds,
+                                                        truck_id: effectiveTargetTruck.id,
+                                                        truck_number: effectiveTargetTruck.truck_number
+                                                      })
+                                                    });
+                                                  } catch (err) {
+                                                    console.error("Failed to assign newly dispatched items to truck", err);
+                                                  }
+                                                }
+
+                                                showScanToast(`🚚 DISPATCHED: Items moved to ${effectiveTargetTruck ? effectiveTargetTruck.label : 'Packup'}!`, 'success');
                                                 setAssetTab('packup'); // Switch to view the list
                                                 fetchConferences();
                                               } else {

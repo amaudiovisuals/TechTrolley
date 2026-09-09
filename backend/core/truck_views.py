@@ -41,11 +41,12 @@ def _get_next_challan_number():
 def _heal_unassigned_conference_assets(conference):
     """
     Ensure any asset associated with the conference (challan_assets, assets, staged_assets)
-    that is not yet assigned to ANY truck is automatically assigned to Truck 1.
+    that is not yet assigned to ANY truck is automatically assigned to the latest active truck
+    (or Truck 1 if only one truck exists).
     """
     try:
-        truck1 = TruckChallan.objects.filter(conference=conference, truck_number=1).first()
-        if not truck1:
+        target_truck = TruckChallan.objects.filter(conference=conference).order_by('-truck_number').first()
+        if not target_truck:
             return
         all_truck_assigned = set(
             TruckChallan.objects.filter(conference=conference)
@@ -59,7 +60,7 @@ def _heal_unassigned_conference_assets(conference):
         all_master.discard(None)
         unassigned = all_master - all_truck_assigned
         if unassigned:
-            truck1.assets.add(*unassigned)
+            target_truck.assets.add(*unassigned)
     except Exception as ex:
         print("Warning in _heal_unassigned_conference_assets:", ex)
 
@@ -278,21 +279,40 @@ def truck_transfer_assets(request, truck_pk):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def add_asset_to_truck1(request, pk):
+def add_asset_to_truck(request, pk):
     """
+    POST /api/conferences/{pk}/trucks/add-to-truck/
     POST /api/conferences/{pk}/trucks/add-to-truck1/
-    Body: { "asset_ids": [1, 2, 3] }
-    Adds new assets to Truck 1 of this conference if trucks exist.
+    Body: { "asset_ids": [1, 2, 3], "truck_id": 5 (optional), "truck_number": 2 (optional) }
+    Adds new assets to the designated truck (or latest truck if unspecified) of this conference.
     """
     conference = get_object_or_404(Conference, pk=pk)
     raw_asset_ids = request.data.get('asset_ids', [])
     clean_asset_ids = [int(aid) for aid in raw_asset_ids if str(aid).isdigit()]
+    truck_id = request.data.get('truck_id')
+    truck_number = request.data.get('truck_number')
 
-    truck1 = TruckChallan.objects.filter(conference=conference, truck_number=1).first()
-    if truck1 and clean_asset_ids:
-        truck1.assets.add(*clean_asset_ids)
-        return Response({'status': 'added', 'truck_id': truck1.pk})
-    return Response({'status': 'no_truck1_or_no_assets'})
+    target_truck = None
+    if truck_id:
+        target_truck = TruckChallan.objects.filter(conference=conference, pk=truck_id).first()
+    elif truck_number:
+        target_truck = TruckChallan.objects.filter(conference=conference, truck_number=truck_number).first()
+
+    if not target_truck:
+        target_truck = TruckChallan.objects.filter(conference=conference).order_by('-truck_number').first()
+
+    if target_truck and clean_asset_ids:
+        target_truck.assets.add(*clean_asset_ids)
+        return Response({
+            'status': 'added',
+            'truck_id': target_truck.pk,
+            'truck_number': target_truck.truck_number,
+            'label': target_truck.label or f"Truck {target_truck.truck_number}"
+        })
+    return Response({'status': 'no_truck_or_no_assets'})
+
+# Backwards compatibility alias
+add_asset_to_truck1 = add_asset_to_truck
 
 
 @api_view(['POST'])

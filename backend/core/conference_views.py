@@ -11,7 +11,8 @@ from django.shortcuts import get_object_or_404
 def conference_list(request):
     if request.method == 'GET':
         conferences = Conference.objects.prefetch_related(
-            'assets', 'crosscheck_assets', 'challan_assets', 'requirements', 'assigned_employees'
+            'assets', 'crosscheck_assets', 'challan_assets', 'requirements', 'assigned_employees',
+            'truck_challans', 'truck_challans__assets'
         ).order_by('-start_date')
         serializer = ConferenceSerializer(conferences, many=True)
         return Response(serializer.data)
@@ -28,7 +29,13 @@ def conference_list(request):
 @api_view(['GET', 'PUT', 'DELETE', 'PATCH', 'POST'])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def conference_detail(request, pk):
-    conference = get_object_or_404(Conference, pk=pk)
+    conference = get_object_or_404(
+        Conference.objects.prefetch_related(
+            'assets', 'crosscheck_assets', 'challan_assets', 'requirements', 'assigned_employees',
+            'truck_challans', 'truck_challans__assets'
+        ),
+        pk=pk
+    )
 
     if request.method == 'GET':
         serializer = ConferenceSerializer(conference)

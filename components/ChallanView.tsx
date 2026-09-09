@@ -192,6 +192,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
   const [isEditMode, setIsEditMode] = React.useState(false);
   const [localAssets, setLocalAssets] = React.useState<Asset[]>(() => {
+    if (readOnly) return assets;
     try {
       const cached = localStorage.getItem(`cache_challan_items_${cacheKey}`);
       if (cached) {
@@ -204,6 +205,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     return assets;
   });
   const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(() => {
+    if (readOnly) return booking.approximate_value || null;
     try {
       const stored = localStorage.getItem(`cache_total_val_${cacheKey}`);
       if (stored) return parseFloat(stored);
@@ -211,6 +213,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     return booking.approximate_value || null;
   });
   const [challanNoOverride, setChallanNoOverride] = React.useState<string | null>(() => {
+    if (readOnly) return booking.challanNumber || null;
     try {
       const stored = localStorage.getItem(`cache_challan_no_${cacheKey}`);
       if (stored) return stored;
@@ -249,16 +252,28 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       lastTruckKeyRef.current = localStorageSuffix || '';
       savedAssetIdsRef.current = new Set(assets.map(a => String(a.id)));
 
+      if (readOnly) {
+        setChallanNoOverride(booking.challanNumber || null);
+        setTotalValueOverride(booking.approximate_value || null);
+      } else {
+        const storedChallanNo = localStorage.getItem(`cache_challan_no_${cacheKey}`);
+        setChallanNoOverride(storedChallanNo || booking.challanNumber || null);
+        const storedTotalVal = localStorage.getItem(`cache_total_val_${cacheKey}`);
+        setTotalValueOverride(storedTotalVal ? parseFloat(storedTotalVal) : (booking.approximate_value || null));
+      }
+
       // Check indestructible localStorage cache
-      const cached = localStorage.getItem(`cache_challan_items_${cacheKey}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length >= assets.length && parsed.length > 0) {
-            setLocalAssets(parsed);
-            return;
-          }
-        } catch (e) { }
+      if (!readOnly) {
+        const cached = localStorage.getItem(`cache_challan_items_${cacheKey}`);
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length >= assets.length && parsed.length > 0) {
+              setLocalAssets(parsed);
+              return;
+            }
+          } catch (e) { }
+        }
       }
 
       setLocalAssets(assets.map(a => ({

@@ -50,6 +50,19 @@ class TruckChallanSerializer(serializers.ModelSerializer):
         model = TruckChallan
         fields = ['id', 'conference', 'truck_number', 'label', 'vehicle_number', 'driver_phone', 'assets', 'asset_quantities', 'created_at']
 
+class SimpleAssetSerializer(serializers.ModelSerializer):
+    """
+    Ultra-lightweight Asset Serializer for embedded challan & truck asset representations.
+    Excludes expensive relations (deployment_history, sub_assets, current_conference_name)
+    to eliminate N+1 query storms and ensure lightning-fast response times.
+    """
+    class Meta:
+        model = Asset
+        fields = [
+            'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
+            'item_price', 'barcode_type', 'barcode', 'qr_code', 'description', 'status'
+        ]
+
 class SubAssetSerializer(serializers.ModelSerializer):
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
     current_conference_name = serializers.SerializerMethodField()
@@ -172,15 +185,15 @@ class ConferenceSerializer(serializers.ModelSerializer):
             else:
                 raise e
 
-        # Inject challan_assets_details and truck challans data gracefully
+        # Inject challan_assets_details and truck challans data gracefully (using SimpleAssetSerializer)
         if data is not None:
             try:
-                data['challan_assets_details'] = AssetSerializer(instance.challan_assets.all(), many=True).data
+                data['challan_assets_details'] = SimpleAssetSerializer(instance.challan_assets.all(), many=True).data
             except Exception:
                 data['challan_assets_details'] = []
 
             try:
-                trucks = instance.truck_challans.prefetch_related('assets').order_by('truck_number')
+                trucks = instance.truck_challans.all().order_by('truck_number')
                 trucks_data = []
                 for t in trucks:
                     if not t.challan_number:
@@ -203,7 +216,7 @@ class ConferenceSerializer(serializers.ModelSerializer):
                         'challan_number': t.challan_number or '',
                         'assets': list(t.assets.values_list('pk', flat=True)),
                         'asset_quantities': t.asset_quantities or {},
-                        'assets_details': AssetSerializer(t.assets.all(), many=True).data,
+                        'assets_details': SimpleAssetSerializer(t.assets.all(), many=True).data,
                         'created_at': t.created_at.isoformat() if t.created_at else '',
                     })
                 data['truck_challans_data'] = trucks_data
