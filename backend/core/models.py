@@ -396,6 +396,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     ROLE_CHOICES = [
         ('admin', 'Admin'),
+        ('boss', 'Boss / Executive'),
         ('godown_incharge', 'Godown Incharge'),
         ('technician', 'Technician'),
         ('accounts', 'Accounts'),

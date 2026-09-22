@@ -8,9 +8,11 @@ from . import subrental_views
 from . import subrental_ticket_views
 from . import transfer_views
 from . import truck_views
+from . import ai_views
 
 urlpatterns = [
     # API endpoints or views
+    path('ai-assistant/', ai_views.ai_assistant_chat, name='ai_assistant'),
     path('login/', auth_views.custom_login, name='api_login'),
     path('my-profile/', profile_view.get_my_profile, name='get_my_profile'),
     path('change-password/', user_views.change_password, name='change_password'),

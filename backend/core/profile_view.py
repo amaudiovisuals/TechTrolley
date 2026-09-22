@@ -16,12 +16,12 @@ def get_my_profile(request):
             employee_id = emp.id
 
     role = user.profile.role if hasattr(user, 'profile') else ('admin' if user.is_staff else 'technician')
-    if role == 'admin' and not user.is_staff:
+    if role in ('admin', 'boss') and not user.is_staff:
         user.is_staff = True
         user.is_superuser = True
         user.save(update_fields=['is_staff', 'is_superuser'])
 
-    is_staff = user.is_staff or role == 'admin'
+    is_staff = user.is_staff or role in ('admin', 'boss')
 
     return Response({
         'user_id': user.pk,

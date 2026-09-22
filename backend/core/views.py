@@ -392,7 +392,7 @@ def employee_list(request):
                 if not user_obj:
                     user_obj = User.objects.filter(email__iexact=employee.email).first()
                 
-                is_admin = (employee.role == 'admin')
+                is_admin = (employee.role in ('admin', 'boss'))
                 if not user_obj:
                     user_obj = User.objects.create_user(
                         username=employee.email,

@@ -33,6 +33,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             role = validated_data.get('role', 'technician')
             dept_map = {
                 'admin': 'Management',
+                'boss': 'Executive',
                 'godown_incharge': 'Warehouse',
                 'accounts': 'Accounts',
                 'technician': 'Operations'

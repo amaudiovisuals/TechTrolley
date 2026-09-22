@@ -21,6 +21,37 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
   const lastScanned = useRef<string>("");
   const lastScannedTime = useRef<number>(0);
 
+  const playFeedback = () => {
+    // 1. Tactile Haptic Vibration
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate([40, 30, 40]);
+      } catch {
+        // Ignore vibration errors on unsupported hardware
+      }
+    }
+
+    // 2. High-Precision Audio Beep
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+      }
+    } catch {
+      // Audio playback might be restricted if no user interaction yet
+    }
+  };
+
   const handleClose = async () => {
     if (scannerRef.current && isScanning.current) {
       try {
@@ -40,11 +71,6 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
 
     const startScanner = async () => {
       try {
-        const hasCamera = await Html5Qrcode.getCameras();
-        if (!hasCamera || hasCamera.length === 0) {
-          throw new Error("No camera found"); // TYPO J-39: was 'No camera camera found'
-        }
-
         if (!isMounted) return;
 
         // Ensure cleanup of any old instance before starting
@@ -58,16 +84,24 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           }
         }
 
-        scannerRef.current = new Html5Qrcode(scannerId);
+        // Initialize with hardware-accelerated BarcodeDetector where supported (Android/Chrome 60fps zero-lag)
+        scannerRef.current = new Html5Qrcode(scannerId, {
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          },
+          verbose: false
+        });
 
+        // Request back-facing camera directly via facingMode: "environment"
         await scannerRef.current.start(
           { facingMode: "environment" },
           {
-            fps: 10,
+            fps: 15, // 15 FPS for snappy asset scanning without draining battery
             qrbox: (viewfinderWidth, viewfinderHeight) => {
-              const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-              const qrboxSize = Math.floor(minEdgeSize * 0.75);
-              return { width: qrboxSize, height: qrboxSize };
+              // Wide rectangular region to naturally accommodate 1D barcodes (Code128, EAN) and 2D QR codes
+              const width = Math.min(Math.floor(viewfinderWidth * 0.88), 340);
+              const height = Math.min(Math.floor(viewfinderHeight * 0.58), 230);
+              return { width, height };
             }
           },
           (decodedText) => {
@@ -83,10 +117,11 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
             lastScannedTime.current = now;
 
             if (isMounted) {
-              // Trigger Visual Feedback
+              // Trigger Visual & Haptic/Audio Feedback
               setIsSuccessFlash(true);
+              playFeedback();
               setTimeout(() => setIsSuccessFlash(false), 400);
-              
+
               // Pass to parent
               onScanRef.current(code);
             }
@@ -106,7 +141,7 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           if (errMsg.includes("NotAllowedError") || errMsg.includes("Permission denied")) {
             setPermissionError(true);
           } else {
-            setCameraError(errMsg || "Camera access denied. Please enable camera permissions.");
+            setCameraError(errMsg || "Camera access denied. Please enable camera permissions in your browser settings.");
           }
         }
       }
@@ -117,7 +152,6 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
     return () => {
       isMounted = false;
       if (scannerRef.current && isScanning.current) {
-        // Robust cleanup to prevent "hanging"
         const currentRef = scannerRef.current;
         isScanning.current = false;
         currentRef.stop().then(() => {
@@ -128,82 +162,110 @@ const ScannerComponent: React.FC<ScannerProps> = ({ onScan, onClose }) => {
           }
         }).catch(err => {
           console.warn("Stop error on unmount:", err);
-          // If stopping fails, we try to clear anyway
-          try { currentRef.clear(); } catch(e) {}
+          try { currentRef.clear(); } catch {}
         });
         scannerRef.current = null;
       }
     };
-  }, []); // Empty dependency array to prevent camera blinking
+  }, []);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black p-0 sm:p-4 animate-in fade-in duration-300">
-      <div className="relative w-full h-full sm:h-auto sm:max-w-md bg-slate-900 sm:rounded-[2.5rem] overflow-hidden border-0 sm:border border-slate-800 shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-0 sm:p-4 animate-in fade-in duration-300">
+      <div className="relative w-full h-full sm:h-auto sm:max-w-lg bg-slate-950 sm:rounded-[2.5rem] overflow-hidden border-0 sm:border border-slate-800 shadow-2xl flex flex-col">
 
-        {/* Close Button */}
+        {/* Dedicated Touch-Friendly Close Button */}
         <button
           onClick={handleClose}
-          className="absolute top-6 left-6 z-[110] w-12 h-12 bg-black/40 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-all border border-white/10 shadow-xl"
+          className="absolute top-5 left-5 z-[120] w-12 h-12 bg-black/60 backdrop-blur-md rounded-2xl flex items-center justify-center text-white hover:bg-white/20 active:scale-90 transition-all border border-white/15 shadow-2xl"
+          title="Close Scanner"
+          aria-label="Close Scanner"
         >
           <i className="fa-solid fa-xmark text-xl" />
         </button>
 
-        {/* Minimalist UI Header */}
-        <div className="absolute top-6 right-6 z-[110] text-right pointer-events-none">
-          <p className="text-[10px] font-black text-white/60 uppercase tracking-[0.3em]">Scanner Active</p>
-          <p className="text-[8px] font-bold text-sky-400 uppercase tracking-widest mt-0.5 animate-pulse">Continuous Workflow</p>
+        {/* Minimalist Scanner Status Header */}
+        <div className="absolute top-5 right-5 z-[120] text-right pointer-events-none">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur border border-white/10 text-[9px] font-black text-white/80 uppercase tracking-widest">
+            <span className={`w-2 h-2 rounded-full ${isReady ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            {isReady ? 'Live Scanning' : 'Starting...'}
+          </span>
+          <p className="text-[8px] font-bold text-sky-400 uppercase tracking-widest mt-1">Continuous Mode</p>
         </div>
 
         {permissionError ? (
           <div className="h-full flex flex-col items-center justify-center p-6 sm:p-12 text-center text-white bg-slate-950">
-            <div className="p-4 bg-red-50 text-red-700 rounded-lg text-center">
-              <strong>Camera Access Blocked</strong><br/>
-              Please ensure you are using a secure connection (HTTPS) and that you have granted camera permissions in your phone's browser settings.
+            <div className="w-16 h-16 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center text-2xl mb-4">
+              <i className="fa-solid fa-camera-slash" />
             </div>
-            <button onClick={handleClose} className="mt-8 px-8 py-4 bg-slate-800 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-700 transition">Go Back</button>
+            <h4 className="text-xl font-black uppercase tracking-tight text-white mb-2">Camera Blocked</h4>
+            <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+              Please ensure camera permissions are allowed in your phone browser settings and that you are using a secure connection (HTTPS).
+            </p>
+            <button
+              onClick={handleClose}
+              className="px-8 py-3.5 bg-slate-800 hover:bg-slate-700 rounded-2xl font-black uppercase text-xs tracking-widest text-white transition active:scale-95"
+            >
+              Close
+            </button>
           </div>
         ) : cameraError ? (
-          <div className="h-full flex flex-col items-center justify-center p-12 text-center text-white bg-slate-950">
-            <i className="fa-solid fa-camera-slash text-4xl text-red-500 mb-6" />
-            <h4 className="text-xl font-black uppercase tracking-tight">Access Denied</h4>
-            <p className="text-sm text-slate-400 mt-2 max-w-[200px]">{cameraError}</p>
-            <button onClick={handleClose} className="mt-8 px-8 py-4 bg-slate-800 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-700 transition">Go Back</button>
+          <div className="h-full flex flex-col items-center justify-center p-8 sm:p-12 text-center text-white bg-slate-950">
+            <div className="w-16 h-16 rounded-3xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center text-2xl mb-4">
+              <i className="fa-solid fa-triangle-exclamation" />
+            </div>
+            <h4 className="text-xl font-black uppercase tracking-tight text-white mb-2">Access Denied</h4>
+            <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">{cameraError}</p>
+            <button
+              onClick={handleClose}
+              className="px-8 py-3.5 bg-slate-800 hover:bg-slate-700 rounded-2xl font-black uppercase text-xs tracking-widest text-white transition active:scale-95"
+            >
+              Close
+            </button>
           </div>
         ) : (
-          <div className="relative w-full h-full aspect-[3/4] sm:aspect-square bg-black flex items-center justify-center pt-20 sm:pt-0">
-            <div id="qr-reader" className="w-full h-full absolute inset-0 [&>video]:object-cover" />
+          <div className="relative w-full flex-1 sm:flex-initial sm:h-[480px] bg-black flex items-center justify-center overflow-hidden">
+            {/* HTML5 QR Code Container with Universal Video Fill Rules */}
+            <div
+              id="qr-reader"
+              className="w-full h-full absolute inset-0 [&_video]:w-full [&_video]:h-full [&_video]:object-cover [&_canvas]:hidden"
+            />
 
-            <button onClick={handleClose} className="absolute top-4 left-4 z-[999] bg-black/70 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-lg flex items-center font-semibold border border-white/20">
-              ← Back
-            </button>
+            {/* Visual Scan Reticle (Rectangular for 1D Barcodes + QR) */}
+            <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center z-40 p-4">
+              <div className={`w-[290px] h-[190px] sm:w-[340px] sm:h-[220px] border-2 rounded-[2rem] relative transition-all duration-300 ${
+                isSuccessFlash ? 'border-emerald-500 scale-105 shadow-[0_0_40px_rgba(16,185,129,0.5)]' : 'border-white/30 shadow-2xl'
+              }`}>
+                {/* Corner Markers */}
+                <div className={`absolute -top-0.5 -left-0.5 w-8 h-8 border-t-4 border-l-4 rounded-tl-[1.8rem] transition-colors ${isSuccessFlash ? 'border-emerald-400' : 'border-sky-400'}`} />
+                <div className={`absolute -top-0.5 -right-0.5 w-8 h-8 border-t-4 border-r-4 rounded-tr-[1.8rem] transition-colors ${isSuccessFlash ? 'border-emerald-400' : 'border-sky-400'}`} />
+                <div className={`absolute -bottom-0.5 -left-0.5 w-8 h-8 border-b-4 border-l-4 rounded-bl-[1.8rem] transition-colors ${isSuccessFlash ? 'border-emerald-400' : 'border-sky-400'}`} />
+                <div className={`absolute -bottom-0.5 -right-0.5 w-8 h-8 border-b-4 border-r-4 rounded-br-[1.8rem] transition-colors ${isSuccessFlash ? 'border-emerald-400' : 'border-sky-400'}`} />
 
-            {/* Visual Scan Area (Stylistic overlay) */}
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-40">
-              <div className={`w-[220px] h-[220px] sm:w-[260px] sm:h-[260px] border-2 rounded-[2.5rem] relative transition-all duration-300 ${isSuccessFlash ? 'border-emerald-500 scale-110' : 'border-white/20'}`}>
-                <div className={`absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 rounded-tl-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
-                <div className={`absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 rounded-tr-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
-                <div className={`absolute bottom-0 left-0 w-10 h-10 border-b-4 border-l-4 rounded-bl-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
-                <div className={`absolute bottom-0 right-0 w-10 h-10 border-b-4 border-r-4 rounded-br-[2rem] transition-colors ${isSuccessFlash ? 'border-emerald-500' : 'border-sky-500'}`} />
-                <div className={`absolute inset-0 rounded-[2rem] transition-all duration-300 ${isSuccessFlash ? 'bg-emerald-500/30' : 'bg-sky-500/10'}`} />
-                
+                {/* Laser scanline indicator */}
+                <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 h-0.5 bg-gradient-to-r from-transparent via-sky-400 to-transparent opacity-70 animate-pulse pointer-events-none" />
+
+                {/* Success Flash Fill */}
+                <div className={`absolute inset-0 rounded-[1.8rem] transition-all duration-300 ${isSuccessFlash ? 'bg-emerald-500/25' : 'bg-sky-500/5'}`} />
+
                 {isSuccessFlash && (
-                  <div className="absolute inset-0 flex items-center justify-center animate-out zoom-out fade-out duration-500">
-                    <i className="fa-solid fa-circle-check text-4xl text-emerald-500 shadow-xl" />
+                  <div className="absolute inset-0 flex items-center justify-center animate-out zoom-out fade-out duration-400">
+                    <i className="fa-solid fa-circle-check text-5xl text-emerald-400 shadow-2xl" />
                   </div>
                 )}
               </div>
+
+              {/* Guidance text under viewfinder */}
+              <p className="mt-4 text-[10px] font-bold text-white/70 uppercase tracking-widest bg-black/50 backdrop-blur px-4 py-1.5 rounded-full border border-white/10 shadow-lg">
+                Point at Barcode or QR Code
+              </p>
             </div>
           </div>
         )}
 
-        {/* Footer info - Minimalist */}
-        <div className="absolute bottom-8 sm:bottom-10 left-0 right-0 text-center pointer-events-none z-[110]">
-          <div className="inline-flex items-center gap-2 bg-black/50 backdrop-blur px-4 py-2 rounded-full border border-white/10">
-            <div className={`w-2 h-2 rounded-full ${isReady ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
-            <p className="text-[9px] font-black text-white/60 uppercase tracking-[0.4em]">
-              {isReady ? 'Engine Optical Ready' : 'Initializing...'}
-            </p>
-          </div>
+        {/* Footer info banner */}
+        <div className="bg-slate-950 p-4 border-t border-slate-900 flex items-center justify-between text-[9px] font-black text-slate-500 uppercase tracking-widest">
+          <span>TechTrolley Optical Suite</span>
+          <span className="text-sky-400">Continuous Auto-Scan</span>
         </div>
       </div>
     </div>

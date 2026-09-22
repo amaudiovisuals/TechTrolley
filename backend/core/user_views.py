@@ -13,7 +13,7 @@ def check_is_admin(user):
         return False
     if user.is_superuser or user.is_staff:
         return True
-    if hasattr(user, 'profile') and user.profile.role == 'admin':
+    if hasattr(user, 'profile') and user.profile.role in ('admin', 'boss'):
         # Self-heal is_staff flag if missing
         if not user.is_staff:
             user.is_staff = True
@@ -22,7 +22,7 @@ def check_is_admin(user):
         return True
     from .models import Employee
     emp = Employee.objects.filter(email__iexact=user.email).first()
-    if emp and emp.role == 'admin':
+    if emp and emp.role in ('admin', 'boss'):
         if not user.is_staff:
             user.is_staff = True
             user.is_superuser = True
@@ -105,12 +105,12 @@ def update_user_role(request):
     if not email or not role:
         return Response({'error': 'Email and role required'}, status=status.HTTP_400_BAD_REQUEST)
 
-    valid_roles = ['admin', 'godown_incharge', 'technician', 'accounts']
+    valid_roles = ['admin', 'boss', 'godown_incharge', 'technician', 'accounts']
     if role not in valid_roles:
         return Response({'error': f'Invalid role: {role}'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Self-demotion check
-    if email.lower() == (request.user.email or '').lower() and role != 'admin':
+    if email.lower() == (request.user.email or '').lower() and role not in ('admin', 'boss'):
         return Response({'error': 'You cannot demote your own admin account.'}, status=status.HTTP_400_BAD_REQUEST)
 
     from .models import UserProfile, Employee
@@ -128,7 +128,7 @@ def update_user_role(request):
         else:
             UserProfile.objects.create(user=target_user, role=role)
 
-        if role == 'admin':
+        if role in ('admin', 'boss'):
             target_user.is_staff = True
             target_user.is_superuser = True
         else:
@@ -141,8 +141,8 @@ def update_user_role(request):
             username=email,
             email=email,
             password='amoffice',
-            is_staff=(role == 'admin'),
-            is_superuser=(role == 'admin')
+            is_staff=(role in ('admin', 'boss')),
+            is_superuser=(role in ('admin', 'boss'))
         )
         UserProfile.objects.create(user=target_user, role=role)
 
@@ -184,7 +184,7 @@ def admin_reset_password(request):
     from .models import Employee, UserProfile
     emp = Employee.objects.filter(email__iexact=email).first()
     if emp:
-        new_u = User.objects.create_user(username=emp.email, email=emp.email, password='amoffice', is_staff=(emp.role == 'admin'))
+        new_u = User.objects.create_user(username=emp.email, email=emp.email, password='amoffice', is_staff=(emp.role in ('admin', 'boss')))
         UserProfile.objects.create(user=new_u, role=emp.role or 'technician')
         return Response({'message': f'User account provisioned and password set to "amoffice" for {emp.email}.'})
 

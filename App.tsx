@@ -175,6 +175,7 @@ import { SettingsView } from './components/SettingsView';
 import { ReportsView } from './components/ReportsView';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { QRLabelModal } from './components/QRLabelModal';
+import { AIChatbotModal } from './components/AIChatbotModal';
 import jsPDF from 'jspdf';
 
 type Page = 'Dashboard' | 'Assets' | 'Employees' | 'Conferences' | 'Billing' | 'Reports' | 'Settings' | 'Subrentals';
@@ -203,10 +204,13 @@ const App: React.FC = () => {
 
   const showUnknownError = true;
   const isMobilePhone = useMemo(() => {
+    if (typeof window === 'undefined') return false;
     const ua = navigator.userAgent;
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isTouch = 'ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
+    const isNarrow = window.innerWidth < 1024;
     const isPDA = /Zebra|TC21|TC26|MC33|MC93|Scanner|Honeywell|Datalogic/i.test(ua);
-    return isMobile && !isPDA;
+    return (isMobile || isTouch || isNarrow) && !isPDA;
   }, []);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -1125,6 +1129,8 @@ const App: React.FC = () => {
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('All');
   // J-118: Alias Filter State
   const [selectedAlias, setSelectedAlias] = useState<string>('All');
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>('All');
+  const [inventorySortOption, setInventorySortOption] = useState<string>('newest');
   const [purchaseDateFrom, setPurchaseDateFrom] = useState<string>('');
   const [purchaseDateTo, setPurchaseDateTo] = useState<string>('');
   const [inventoryPage, setInventoryPage] = useState(1);
@@ -1220,6 +1226,31 @@ const App: React.FC = () => {
     ];
   }, [assets]);
 
+  // J-PhaseB: Memoized map of active conference names for fast asset location lookup
+  const assetConferenceMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!backendConferences || backendConferences.length === 0) return map;
+    backendConferences.forEach(c => {
+      if (c.status === 'Completed' || c.status === 'Cancelled') return;
+      const confName = c.conferenceName || (c as any).name || 'Active Conference';
+      const allIds = [
+        ...(c.assets || []),
+        ...(c.crosscheckAssets || []),
+        ...(c.challanAssets || []),
+        ...((c as any).staged_assets || [])
+      ];
+      allIds.forEach(id => {
+        if (id) map.set(String(id), confName);
+      });
+    });
+    return map;
+  }, [backendConferences]);
+
+  const getAssetConferenceName = useCallback((asset: Asset): string | undefined => {
+    if (asset.current_conference_name) return asset.current_conference_name;
+    return assetConferenceMap.get(String(asset.id));
+  }, [assetConferenceMap]);
+
   // Compute filtered assets once
   const filteredInventoryAssets = useMemo(() => {
     // 1. Text Search: Instant client-side filtering on searchQuery
@@ -1241,6 +1272,11 @@ const App: React.FC = () => {
         if (assetCat !== inventoryCategoryFilter) return false;
       }
 
+      // Status Filter (Available, In Use, Damaged, Crosscheck, etc.)
+      if (inventoryStatusFilter !== 'All') {
+        if (asset.status !== inventoryStatusFilter) return false;
+      }
+
       if (purchaseDateFrom) {
         if (!asset.purchasedDate || asset.purchasedDate < purchaseDateFrom) return false;
       }
@@ -1255,7 +1291,9 @@ const App: React.FC = () => {
         const typeMatch = (asset.type || '').toLowerCase().includes(q);
         const barcodeMatch = (asset.barcode || '').toLowerCase().includes(q);
         const venueMatch = (asset.currentVenue || '').toLowerCase().includes(q);
-        if (!nameMatch && !skuMatch && !serialMatch && !typeMatch && !barcodeMatch && !venueMatch) {
+        const confName = (asset.current_conference_name || assetConferenceMap.get(String(asset.id)) || '').toLowerCase();
+        const confMatch = confName.includes(q);
+        if (!nameMatch && !skuMatch && !serialMatch && !typeMatch && !barcodeMatch && !venueMatch && !confMatch) {
           return false;
         }
       }
@@ -1263,13 +1301,35 @@ const App: React.FC = () => {
       return true;
     });
 
-    // 3. Native Default Sorting (Newest First)
+    // 3. Dynamic Sorting based on inventorySortOption
     return filtered.sort((a, b) => {
+      if (inventorySortOption === 'oldest') {
+        const dateA = new Date(a.createdAt || 0).getTime() || 0;
+        const dateB = new Date(b.createdAt || 0).getTime() || 0;
+        return dateA - dateB;
+      }
+      if (inventorySortOption === 'name-asc') {
+        const nameA = (a.aliasName || a.sku || '').toLowerCase();
+        const nameB = (b.aliasName || b.sku || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      }
+      if (inventorySortOption === 'sku-asc') {
+        const skuA = (a.sku || '').toLowerCase();
+        const skuB = (b.sku || '').toLowerCase();
+        return skuA.localeCompare(skuB);
+      }
+      if (inventorySortOption === 'qty-desc') {
+        return (b.quantity || 1) - (a.quantity || 1);
+      }
+      if (inventorySortOption === 'price-desc') {
+        return (Number(b.itemPrice) || 0) - (Number(a.itemPrice) || 0);
+      }
+      // Default: newest first
       const dateA = new Date(a.createdAt || 0).getTime() || 0;
       const dateB = new Date(b.createdAt || 0).getTime() || 0;
       return dateB - dateA; // Descending
     });
-  }, [assets, inventoryCategoryFilter, selectedAlias, searchQuery, purchaseDateFrom, purchaseDateTo]);
+  }, [assets, inventoryCategoryFilter, selectedAlias, searchQuery, purchaseDateFrom, purchaseDateTo, inventoryStatusFilter, inventorySortOption, assetConferenceMap]);
   const assetUsageHistory = useMemo(() => {
     if (!viewingAsset) return { history: [], timesUsed: 0 };
     
@@ -2175,7 +2235,7 @@ const App: React.FC = () => {
             assets: [], requirements: [], staged_assets: [], crosscheck_assets: [], assigned_employees: [], pdf_document: null
           });
           setPdfFile(null);
-          setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Smart default tab
+          setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge' || user?.role === 'accounts') ? 'assigned' : 'available'); // Smart default tab
         } else {
           const errData = await res.json().catch(() => ({}));
           alert(`Failed to save conference. Status: ${res.status}\n${JSON.stringify(errData)}`);
@@ -2461,7 +2521,7 @@ const App: React.FC = () => {
     fetchAssets();      // Always get fresh statuses before interacting with conference
     fetchConferences(); // Refresh backend conference data too
     setEditingConference(null);
-    setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Smart default tab
+    setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge' || user?.role === 'accounts') ? 'assigned' : 'available'); // Smart default tab
     setConferenceFormData({
       name: '', association_name: '', billing_address: '', transport_address: '', gst_number: '',
       vehicle_number: '', driver_phone: '', challan_date: '',
@@ -2478,7 +2538,7 @@ const App: React.FC = () => {
     fetchConferences(); // Refresh backend conference data too
     fetchEmployees();   // Ensure technician names are loaded
     setEditingConference(conf);
-    setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge') ? 'assigned' : 'available'); // Reset to default tab based on role
+    setAssetTab((user?.role === 'technician' || user?.role === 'godown_incharge' || user?.role === 'accounts') ? 'assigned' : 'available'); // Reset to default tab based on role
     setConferenceFormData({
       id: conf.id,
       name: conf.name,
@@ -2692,6 +2752,11 @@ const App: React.FC = () => {
     const existingAssets = conferenceFormData.assets.map((id: any) => id.toString());
     const crosscheckIds = new Set((conferenceFormData.crosscheck_assets || []).map((id: any) => id.toString()));
     const currentConfId = editingConference?.id ? String(editingConference.id) : null;
+
+    if (user?.role === 'accounts') {
+      showScanToast('🔒 Access Restricted: Accounts role cannot modify conference assets.', 'warning');
+      return;
+    }
 
     if (action === 'add') {
       // LOCK 1: Already assigned to THIS conference
@@ -3804,6 +3869,7 @@ const App: React.FC = () => {
       assigned_to: asset.assigned_to
     });
     setAssetView('Form');
+    setCurrentPage('Assets');
     setFormErrors({});
   };
 
@@ -4152,11 +4218,11 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
-          {viewingAsset.current_conference_name && (
+          {(viewingAsset.current_conference_name || getAssetConferenceName(viewingAsset)) && (
             <div className="bg-orange-500/5 border border-orange-500/10 px-6 py-3 rounded-2xl flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <i className="fa-solid fa-calendar-check text-orange-400 text-xs"></i>
-                <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Currently at: {viewingAsset.current_conference_name}</p>
+                <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Currently at: {viewingAsset.current_conference_name || getAssetConferenceName(viewingAsset)}</p>
               </div>
               {viewingAsset.flag && (
                 <div className="flex items-center gap-2 px-3 py-1 bg-red-500/20 rounded-lg">
@@ -4544,11 +4610,58 @@ const App: React.FC = () => {
     return list.sort((a, b) => Number(b.id) - Number(a.id));
   }, [backendConferences, user, conferenceSearchTerm, conferenceStatusFilter, conferenceTypeFilter]);
 
+  const handleDashboardStatClick = (key: string) => {
+    if (isEditingDashboard) return;
+    if (key === 'total_assets') {
+      setInventoryStatusFilter('All');
+      setInventoryCategoryFilter('All');
+      setSelectedAlias('All');
+      setSearchQuery('');
+      setPurchaseDateFrom('');
+      setPurchaseDateTo('');
+      setInventoryPage(1);
+      setCurrentPage('Assets');
+    } else if (key === 'in_use') {
+      setInventoryStatusFilter('In Use');
+      setInventoryCategoryFilter('All');
+      setSelectedAlias('All');
+      setSearchQuery('');
+      setPurchaseDateFrom('');
+      setPurchaseDateTo('');
+      setInventoryPage(1);
+      setCurrentPage('Assets');
+    } else if (key === 'available') {
+      setInventoryStatusFilter('Available');
+      setInventoryCategoryFilter('All');
+      setSelectedAlias('All');
+      setSearchQuery('');
+      setPurchaseDateFrom('');
+      setPurchaseDateTo('');
+      setInventoryPage(1);
+      setCurrentPage('Assets');
+    } else if (key === 'active_conferences') {
+      setConferenceStatusFilter('ONGOING');
+      setConferenceSearchTerm('');
+      setCurrentPage('Conferences');
+    }
+  };
+
   const renderDashboard = () => (
     <div className="space-y-12 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="flex flex-col gap-2">
-          {!user?.is_staff && (
+          {user?.role === 'boss' ? (
+            <div className="inline-flex items-center gap-2.5 bg-gradient-to-r from-amber-500/20 to-amber-600/10 border border-amber-500/30 px-4 py-2 rounded-full mb-4 w-fit shadow-lg shadow-amber-500/10">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest flex items-center gap-2">
+                <i className="fa-solid fa-crown text-amber-400 text-xs" />
+                Executive Command Center • Boss Overview & Direct Control
+              </p>
+            </div>
+          ) : !user?.is_staff && (
             <div className={`inline-flex items-center gap-2 ${user?.role === 'accounts' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-orange-500/10 border-orange-500/20'} px-4 py-2 rounded-full mb-4 w-fit border`}>
               <span className="relative flex h-2 w-2">
                 <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${user?.role === 'accounts' ? 'bg-purple-400' : 'bg-orange-400'} opacity-75`}></span>
@@ -4613,6 +4726,90 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      {/* Boss Executive Direct Navigation Suite */}
+      {user?.role === 'boss' && (
+        <div className="bg-slate-900/40 border border-amber-500/20 rounded-[2rem] p-6 backdrop-blur-xl space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                <i className="fa-solid fa-bolt-lightning text-sm" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-white uppercase tracking-wider">Executive Direct Actions</h4>
+                <p className="text-[10px] text-slate-400">Monitor and jump directly into any department to modify details instantly</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-black text-amber-400/90 uppercase tracking-widest bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">
+                {backendConferences.filter(c => c.status !== 'Completed').length} Active Conferences • {assets.filter(a => a.status === AssetStatus.IN_USE).length} Gear In Field
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <button
+              onClick={() => setCurrentPage('Assets')}
+              className="p-4 bg-slate-950/60 hover:bg-slate-800/60 border border-slate-800 hover:border-sky-500/40 rounded-2xl text-left transition-all group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <i className="fa-solid fa-boxes-stacked text-sky-400 text-lg group-hover:scale-110 transition-transform" />
+                <i className="fa-solid fa-arrow-right text-[10px] text-slate-600 group-hover:text-sky-400 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <p className="text-xs font-black text-white uppercase">Inventory</p>
+              <p className="text-[9px] text-slate-400 uppercase tracking-tight">Edit Gear & Pricing</p>
+            </button>
+
+            <button
+              onClick={() => setCurrentPage('Conferences')}
+              className="p-4 bg-slate-950/60 hover:bg-slate-800/60 border border-slate-800 hover:border-violet-500/40 rounded-2xl text-left transition-all group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <i className="fa-solid fa-calendar-check text-violet-400 text-lg group-hover:scale-110 transition-transform" />
+                <i className="fa-solid fa-arrow-right text-[10px] text-slate-600 group-hover:text-violet-400 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <p className="text-xs font-black text-white uppercase">Conferences</p>
+              <p className="text-[9px] text-slate-400 uppercase tracking-tight">Modify Events & GST</p>
+            </button>
+
+            <button
+              onClick={() => setCurrentPage('Billing')}
+              className="p-4 bg-slate-950/60 hover:bg-slate-800/60 border border-slate-800 hover:border-emerald-500/40 rounded-2xl text-left transition-all group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <i className="fa-solid fa-receipt text-emerald-400 text-lg group-hover:scale-110 transition-transform" />
+                <i className="fa-solid fa-arrow-right text-[10px] text-slate-600 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <p className="text-xs font-black text-white uppercase">Challans</p>
+              <p className="text-[9px] text-slate-400 uppercase tracking-tight">Delivery & Invoicing</p>
+            </button>
+
+            <button
+              onClick={() => setCurrentPage('Subrentals')}
+              className="p-4 bg-slate-950/60 hover:bg-slate-800/60 border border-slate-800 hover:border-orange-500/40 rounded-2xl text-left transition-all group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <i className="fa-solid fa-building-shield text-orange-400 text-lg group-hover:scale-110 transition-transform" />
+                <i className="fa-solid fa-arrow-right text-[10px] text-slate-600 group-hover:text-orange-400 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <p className="text-xs font-black text-white uppercase">Subrentals</p>
+              <p className="text-[9px] text-slate-400 uppercase tracking-tight">Vendors & Rentals</p>
+            </button>
+
+            <button
+              onClick={() => setCurrentPage('Settings')}
+              className="p-4 bg-slate-950/60 hover:bg-slate-800/60 border border-slate-800 hover:border-amber-500/40 rounded-2xl text-left transition-all group col-span-2 sm:col-span-1"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <i className="fa-solid fa-users-gear text-amber-400 text-lg group-hover:scale-110 transition-transform" />
+                <i className="fa-solid fa-arrow-right text-[10px] text-slate-600 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <p className="text-xs font-black text-white uppercase">Staff & Roles</p>
+              <p className="text-[9px] text-slate-400 uppercase tracking-tight">Security & Team</p>
+            </button>
+          </div>
+        </div>
+      )}
+
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
@@ -4621,9 +4818,16 @@ const App: React.FC = () => {
           { key: 'available', label: companySettings?.dashboard_config?.available_label || 'Ready / Available', val: stats.available, icon: 'fa-warehouse', color: 'text-emerald-400' },
           { key: 'active_conferences', label: companySettings?.dashboard_config?.active_conferences_label || 'Active Conferences', val: activeConferencesCount, icon: 'fa-calendar-check', color: 'text-violet-400' }
         ].filter(item => isEditingDashboard || companySettings?.dashboard_config?.[item.key] !== false).map((item, i) => (
-          <div key={i} className={`bg-slate-900/40 backdrop-blur-xl p-8 rounded-[2rem] border border-slate-800/60 shadow-xl relative group ${isEditingDashboard && companySettings?.dashboard_config?.[item.key] === false ? 'opacity-40 grayscale' : ''}`}>
-            {isEditingDashboard && (
-              <div className="absolute top-4 right-4 flex gap-2">
+          <div
+            key={i}
+            onClick={() => handleDashboardStatClick(item.key)}
+            className={`bg-slate-900/40 backdrop-blur-xl p-8 rounded-[2rem] border border-slate-800/60 shadow-xl relative group ${
+              !isEditingDashboard ? 'cursor-pointer hover:border-sky-500/50 hover:bg-slate-900/70 hover:shadow-sky-500/10 hover:-translate-y-1 active:translate-y-0 transition-all duration-200' : ''
+            } ${isEditingDashboard && companySettings?.dashboard_config?.[item.key] === false ? 'opacity-40 grayscale' : ''}`}
+            title={!isEditingDashboard ? `Click to view ${item.label}` : undefined}
+          >
+            {isEditingDashboard ? (
+              <div className="absolute top-4 right-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => {
                     const nl = prompt("Enter new label for " + item.label, item.label);
@@ -4640,6 +4844,10 @@ const App: React.FC = () => {
                 >
                   <i className={`fa-solid ${companySettings?.dashboard_config?.[item.key] === false ? 'fa-eye-slash' : 'fa-eye'} text-xs`} />
                 </button>
+              </div>
+            ) : (
+              <div className="absolute top-6 right-6 w-8 h-8 rounded-full bg-slate-800/50 group-hover:bg-sky-500/20 group-hover:text-sky-400 flex items-center justify-center text-slate-500 transition-all duration-200">
+                <i className="fa-solid fa-arrow-right text-[11px] group-hover:translate-x-0.5 transition-transform" />
               </div>
             )}
             <i className={`fa-solid ${item.icon} ${item.color} text-2xl mb-6`}></i>
@@ -4682,6 +4890,7 @@ const App: React.FC = () => {
                   <th className="pb-6">Association</th>
                   <th className="pb-6">Duration</th>
                   <th className="pb-6">Status</th>
+                  <th className="pb-6 text-right">Direct Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/20">
@@ -4692,12 +4901,35 @@ const App: React.FC = () => {
                   const end = new Date(conf.endDate);
                   return today >= start && today <= end;
                 }).map(conf => (
-                  <tr key={conf.id} className="text-xs font-bold text-slate-300">
-                    <td className="py-4 text-white uppercase">{conf.name}</td>
+                  <tr
+                    key={conf.id}
+                    onClick={() => openEditConferenceForm(conf)}
+                    className="text-xs font-bold text-slate-300 hover:bg-slate-800/40 cursor-pointer transition-colors group/row"
+                    title="Click to directly open and edit conference details"
+                  >
+                    <td className="py-4 text-white uppercase font-black">
+                      <div className="flex items-center gap-2">
+                        <span>{conf.name}</span>
+                        <i className="fa-solid fa-arrow-up-right text-[8px] text-slate-500 group-hover/row:text-sky-400 opacity-0 group-hover/row:opacity-100 transition-all" />
+                      </div>
+                    </td>
                     <td className="py-4 opacity-70 uppercase">{conf.association}</td>
                     <td className="py-4 font-mono text-sky-400">{new Date(conf.startDate).toLocaleDateString()} - {new Date(conf.endDate).toLocaleDateString()}</td>
                     <td className="py-4">
                       <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase bg-violet-500/10 text-violet-400">Live</span>
+                    </td>
+                    <td className="py-4 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditConferenceForm(conf);
+                        }}
+                        className="px-3 py-1.5 bg-sky-500/10 text-sky-400 hover:bg-sky-500 hover:text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all inline-flex items-center gap-1.5 shadow-sm"
+                        title="Directly edit conference details"
+                      >
+                        <i className="fa-solid fa-pen text-[8px]" /> Direct Edit
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -4709,7 +4941,7 @@ const App: React.FC = () => {
                   return today >= start && today <= end;
                 }).length === 0 && (
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active conferences</td>
+                      <td colSpan={5} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active conferences</td>
                     </tr>
                   )}
               </tbody>
@@ -4749,14 +4981,26 @@ const App: React.FC = () => {
                   <th className="pb-6">Assigned To</th>
                   <th className="pb-6">Department</th>
                   <th className="pb-6">Status</th>
+                  <th className="pb-6 text-right">Direct Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/20">
                 {assets.filter(a => a.assigned_to).map(asset => {
                   const emp = employees.find(e => e.id.toString() === asset.assigned_to?.toString());
                   return (
-                    <tr key={asset.id} className="text-xs font-bold text-slate-300">
-                      <td className="py-4 font-mono text-sky-400">{asset.aliasName || asset.sku} <span className="opacity-50">({asset.serialNumber})</span></td>
+                    <tr
+                      key={asset.id}
+                      onClick={() => openEditAssetForm(asset)}
+                      className="text-xs font-bold text-slate-300 hover:bg-slate-800/40 cursor-pointer transition-colors group/row"
+                      title="Click to directly view/edit this asset"
+                    >
+                      <td className="py-4 font-mono text-sky-400 font-black">
+                        <div className="flex items-center gap-2">
+                          <span>{asset.aliasName || asset.sku}</span>
+                          <span className="opacity-50 font-normal">({asset.serialNumber || 'No S/N'})</span>
+                          <i className="fa-solid fa-arrow-up-right text-[8px] text-slate-500 group-hover/row:text-sky-400 opacity-0 group-hover/row:opacity-100 transition-all" />
+                        </div>
+                      </td>
                       <td className="py-4 text-white uppercase">{emp?.name || 'Unknown'}</td>
                       <td className="py-4 opacity-70 uppercase">{emp?.department || '-'}</td>
                       <td className="py-4">
@@ -4764,12 +5008,25 @@ const App: React.FC = () => {
                           asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' : 'bg-red-500/10 text-red-400'
                           }`}>{asset.status}</span>
                       </td>
+                      <td className="py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditAssetForm(asset);
+                          }}
+                          className="px-3 py-1.5 bg-sky-500/10 text-sky-400 hover:bg-sky-500 hover:text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all inline-flex items-center gap-1.5 shadow-sm"
+                          title="Directly edit asset details"
+                        >
+                          <i className="fa-solid fa-pen text-[8px]" /> Direct Edit
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
                 {assets.filter(a => a.assigned_to).length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active allocations</td>
+                    <td colSpan={5} className="py-8 text-center text-slate-600 uppercase tracking-widest text-[10px]">No active allocations</td>
                   </tr>
                 )}
               </tbody>
@@ -4923,8 +5180,7 @@ const App: React.FC = () => {
         <div className="p-4 md:p-6 border-b border-slate-800/40 space-y-4">
           {/* Row 1: Primary Search Bar (Full Width, Crisp & Highly Visible) */}
           <div className="relative group w-full">
-            {/* Search lens icon: hidden on mobile to prevent overlapping, visible on desktop/laptop */}
-            <i className="fa-solid fa-search absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-sm hidden md:block" />
+            <i className="fa-solid fa-magnifying-glass absolute left-3.5 sm:left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-xs md:text-sm pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
@@ -4940,13 +5196,13 @@ const App: React.FC = () => {
                   handleScan(code);
                 }
               }}
-              placeholder="Search equipment by name, SKU, serial number, MAC, IMEI..."
+              placeholder="Search equipment, SKU, serial, MAC..."
               ref={inventorySearchRef}
               style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-              className="w-full px-4 md:pl-12 pr-24 md:pr-36 py-3.5 md:py-4 rounded-2xl border border-slate-300 bg-white text-slate-900 font-bold text-xs md:text-sm uppercase tracking-wide focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all placeholder:text-slate-400 placeholder:normal-case shadow-sm"
+              className="w-full pl-9 sm:pl-11 md:pl-12 pr-20 sm:pr-24 md:pr-36 py-3 sm:py-3.5 md:py-4 rounded-2xl border border-slate-300 bg-white text-slate-900 font-bold text-xs md:text-sm uppercase tracking-wide focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all placeholder:text-slate-400 placeholder:normal-case shadow-sm"
             />
-            {/* Right side controls: Item count badge & Clear button & Mobile Camera */}
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            {/* Right side controls: Item count badge & Clear button & Camera Scanner */}
+            <div className="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 sm:gap-2">
               {searchQuery.trim() && (
                 <>
                   <span className="hidden sm:inline-block bg-sky-50 text-sky-600 border border-sky-200 text-[10px] md:text-xs font-black px-2.5 py-1 rounded-lg uppercase tracking-wider whitespace-nowrap shadow-sm">
@@ -4958,29 +5214,84 @@ const App: React.FC = () => {
                       setSearchQuery('');
                       inventorySearchRef.current?.focus();
                     }}
-                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition active:scale-95"
                     title="Clear search"
                   >
                     <i className="fa-solid fa-xmark text-xs" />
                   </button>
                 </>
               )}
-              {isMobilePhone && (
-                <button
-                  onClick={() => setShowScanner(true)}
-                  className="w-9 h-9 md:w-10 md:h-10 bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white rounded-xl flex items-center justify-center transition group/btn shadow-sm"
-                  title="Scan with Camera"
-                >
-                  <i className="fa-solid fa-camera text-sm group-hover/btn:scale-110 transition-transform" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-sky-500/10 text-sky-600 hover:bg-sky-500 hover:text-white rounded-xl flex items-center justify-center transition active:scale-95 shadow-sm group/btn"
+                title="Scan with Camera"
+              >
+                <i className="fa-solid fa-camera text-xs sm:text-sm group-hover/btn:scale-110 transition-transform" />
+              </button>
             </div>
           </div>
 
-          {/* Row 2: Secondary Filter Bar (Category, Alias, Purchase Date) */}
+          {/* Row 2: Secondary Filter Bar (Status, Sort, Category, Alias, Purchase Date) */}
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
+            {/* Status Filter */}
+            <div className="flex-1 sm:flex-initial sm:w-48 min-w-[160px]">
+              <select
+                value={inventoryStatusFilter}
+                onChange={(e) => {
+                  setInventoryStatusFilter(e.target.value);
+                  setInventoryPage(1);
+                }}
+                className={`w-full bg-white border ${inventoryStatusFilter !== 'All' ? 'border-sky-500 ring-2 ring-sky-500/20' : 'border-slate-300'} rounded-xl px-4 py-2.5 md:py-3 text-slate-800 font-bold text-xs uppercase outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all cursor-pointer appearance-none shadow-sm`}
+                style={{
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 1rem center',
+                  backgroundSize: '1rem'
+                }}
+              >
+                <option value="All">All Statuses</option>
+                <option value="Available">Ready / Available</option>
+                <option value="In Use">Currently In Use</option>
+                <option value="Crosscheck">Crosscheck</option>
+                <option value="Damaged">Damaged</option>
+                <option value="On Service">On Service</option>
+                <option value="Missing">Missing</option>
+                <option value="Expired">Expired</option>
+              </select>
+            </div>
+
+            {/* Sort Order */}
+            <div className="flex-1 sm:flex-initial sm:w-48 min-w-[160px]">
+              <select
+                value={inventorySortOption}
+                onChange={(e) => {
+                  setInventorySortOption(e.target.value);
+                  setInventoryPage(1);
+                }}
+                className={`w-full bg-white border ${inventorySortOption !== 'newest' ? 'border-sky-500 ring-2 ring-sky-500/20' : 'border-slate-300'} rounded-xl px-4 py-2.5 md:py-3 text-slate-800 font-bold text-xs uppercase outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all cursor-pointer appearance-none shadow-sm`}
+                style={{
+                  color: '#0f172a',
+                  backgroundColor: '#ffffff',
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2364748b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 1rem center',
+                  backgroundSize: '1rem'
+                }}
+              >
+                <option value="newest">Sort: Newest First</option>
+                <option value="oldest">Sort: Oldest First</option>
+                <option value="name-asc">Sort: Name (A-Z)</option>
+                <option value="sku-asc">Sort: SKU (A-Z)</option>
+                <option value="qty-desc">Sort: Quantity (High-Low)</option>
+                <option value="price-desc">Sort: Price (High-Low)</option>
+              </select>
+            </div>
+
             {/* Category Filter */}
-            <div className="flex-1 sm:flex-initial sm:w-60 min-w-[180px]">
+            <div className="flex-1 sm:flex-initial sm:w-52 min-w-[160px]">
               <select
                 value={inventoryCategoryFilter}
                 onChange={(e) => {
@@ -5004,7 +5315,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Alias Filter */}
-            <div className="flex-1 sm:flex-initial sm:w-60 min-w-[180px]">
+            <div className="flex-1 sm:flex-initial sm:w-52 min-w-[160px]">
               <select
                 value={selectedAlias}
                 onChange={(e) => {
@@ -5072,12 +5383,33 @@ const App: React.FC = () => {
               )}
             </div>
 
+            {/* Active Status Filter Chip */}
+            {inventoryStatusFilter !== 'All' && (
+              <div className="flex items-center gap-1.5 px-3 py-2 bg-sky-500/10 border border-sky-500/30 rounded-xl text-sky-400 text-[10px] font-black uppercase tracking-wider">
+                <i className="fa-solid fa-filter text-[9px]" />
+                <span>Status: {inventoryStatusFilter}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInventoryStatusFilter('All');
+                    setInventoryPage(1);
+                  }}
+                  className="w-4 h-4 ml-1 rounded-full bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 flex items-center justify-center transition"
+                  title="Clear status filter"
+                >
+                  <i className="fa-solid fa-xmark text-[8px]" />
+                </button>
+              </div>
+            )}
+
             {/* Active Filters Reset Pill */}
-            {(inventoryCategoryFilter !== 'All' || selectedAlias !== 'All' || purchaseDateFrom || purchaseDateTo || searchQuery) && (
+            {(inventoryStatusFilter !== 'All' || inventorySortOption !== 'newest' || inventoryCategoryFilter !== 'All' || selectedAlias !== 'All' || purchaseDateFrom || purchaseDateTo || searchQuery) && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchQuery('');
+                  setInventoryStatusFilter('All');
+                  setInventorySortOption('newest');
                   setInventoryCategoryFilter('All');
                   setSelectedAlias('All');
                   setPurchaseDateFrom('');
@@ -5126,9 +5458,10 @@ const App: React.FC = () => {
                         asset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
                           'bg-red-500/10 text-red-400'
                       }`}>{asset.status}</span>
-                    {asset.current_conference_name && (
-                      <span className="text-[7px] font-black text-orange-500/70 uppercase tracking-tighter truncate max-w-[80px]">
-                        {asset.current_conference_name}
+                    {getAssetConferenceName(asset) && (
+                      <span className="text-[8px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded uppercase tracking-tight flex items-center gap-1 max-w-[110px] truncate" title={`Deployed to: ${getAssetConferenceName(asset)}`}>
+                        <i className="fa-solid fa-location-dot text-[7px] shrink-0" />
+                        <span className="truncate">{getAssetConferenceName(asset)}</span>
                       </span>
                     )}
                   </div>
@@ -5299,15 +5632,16 @@ const App: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-6 text-center">
-                      <div className="flex flex-col items-center gap-1">
+                      <div className="flex flex-col items-center gap-1.5">
                         <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
                           asset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' :
                             asset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
                               'bg-red-500/10 text-red-400'
                           }`}>{asset.status}</span>
-                        {asset.current_conference_name && (
-                          <span className="text-[8px] font-black text-orange-500/70 uppercase tracking-tight">
-                            {asset.current_conference_name}
+                        {getAssetConferenceName(asset) && (
+                          <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2.5 py-0.5 rounded-md uppercase tracking-tight flex items-center gap-1 max-w-[180px] truncate" title={`In Conference: ${getAssetConferenceName(asset)}`}>
+                            <i className="fa-solid fa-location-dot text-[8px] shrink-0" />
+                            <span className="truncate">{getAssetConferenceName(asset)}</span>
                           </span>
                         )}
                       </div>
@@ -5946,16 +6280,36 @@ const App: React.FC = () => {
       )}
 
       <div className="flex flex-col md:flex-row gap-4 items-center mb-8">
-        <div className="relative flex-1">
-          <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 hidden md:block"></i>
+        <div className="relative group flex-1 w-full">
+          <i className="fa-solid fa-magnifying-glass absolute left-3.5 sm:left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-xs md:text-sm pointer-events-none" />
           <input 
             type="text"
-            placeholder="Search Subrental Inventory (SKU, Name, Serial)..."
+            placeholder="Search subrental gear, SKU..."
             value={subrentalSearchQuery}
             onChange={(e) => setSubrentalSearchQuery(e.target.value)}
             style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-            className="w-full bg-white border border-slate-300 rounded-2xl px-6 md:pl-16 pr-8 py-4 text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 focus:border-sky-500 outline-none transition-all shadow-sm"
+            className="w-full bg-white border border-slate-300 rounded-2xl pl-9 sm:pl-11 md:pl-12 pr-20 sm:pr-24 md:pr-28 py-3 sm:py-3.5 md:py-4 text-slate-900 font-bold text-xs md:text-sm uppercase placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all shadow-sm"
           />
+          <div className="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 sm:gap-2">
+            {subrentalSearchQuery.trim() && (
+              <button
+                type="button"
+                onClick={() => setSubrentalSearchQuery('')}
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition active:scale-95"
+                title="Clear search"
+              >
+                <i className="fa-solid fa-xmark text-xs" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowScanner(true)}
+              className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-sky-500/10 text-sky-600 hover:bg-sky-500 hover:text-white rounded-xl flex items-center justify-center transition active:scale-95 shadow-sm group/btn"
+              title="Scan with Camera"
+            >
+              <i className="fa-solid fa-camera text-xs sm:text-sm group-hover/btn:scale-110 transition-transform" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -6212,13 +6566,28 @@ const App: React.FC = () => {
           )}
         </div>
         <div className="bg-slate-900/30 rounded-[1.5rem] md:rounded-[2rem] border border-slate-800/50 overflow-hidden">
-          <div className="p-4 md:p-8 border-b border-slate-800/40">
-            <input
-              type="text" value={challanSearchQuery} onChange={(e) => setChallanSearchQuery(e.target.value)}
-              placeholder="Search challans..."
-              style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-              className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border border-slate-300 bg-white text-slate-900 font-bold text-xs uppercase placeholder:text-slate-400 outline-none focus:border-orange-500 shadow-sm"
-            />
+          <div className="p-3 sm:p-4 md:p-6 border-b border-slate-800/40">
+            <div className="relative group w-full">
+              <i className="fa-solid fa-magnifying-glass absolute left-3.5 sm:left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors text-xs md:text-sm pointer-events-none" />
+              <input
+                type="text"
+                value={challanSearchQuery}
+                onChange={(e) => setChallanSearchQuery(e.target.value)}
+                placeholder="Search challans by number, venue, vehicle..."
+                style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                className="w-full pl-9 sm:pl-11 md:pl-12 pr-12 sm:pr-14 py-3 sm:py-3.5 md:py-4 rounded-xl border border-slate-300 bg-white text-slate-900 font-bold text-xs md:text-sm uppercase placeholder:text-slate-400 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm"
+              />
+              {challanSearchQuery.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setChallanSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition active:scale-95"
+                  title="Clear search"
+                >
+                  <i className="fa-solid fa-xmark text-xs" />
+                </button>
+              )}
+            </div>
           </div>
           {/* Desktop Table View */}
           <div className="hidden md:block overflow-x-auto custom-scrollbar">
@@ -6454,20 +6823,33 @@ const App: React.FC = () => {
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <div className="flex justify-between items-center">
         <h2 className="text-5xl font-black text-orange-500 tracking-tighter uppercase">Conferences</h2>
-        {user?.is_staff && (
+        {(user?.is_staff || user?.role === 'accounts') && (
           <button onClick={openNewConferenceForm} className="w-full md:w-auto px-8 py-4 bg-violet-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-violet-500/20">Add Conference</button>
         )}
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 bg-slate-900/30 p-4 rounded-3xl border border-slate-800/50">
-         <input
+      <div className="flex flex-col md:flex-row gap-3 sm:gap-4 bg-slate-900/30 p-3 sm:p-4 rounded-3xl border border-slate-800/50">
+        <div className="relative group flex-1 w-full">
+          <i className="fa-solid fa-magnifying-glass absolute left-3.5 sm:left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors text-xs md:text-sm pointer-events-none" />
+          <input
             type="text"
             value={conferenceSearchTerm}
             onChange={(e) => setConferenceSearchTerm(e.target.value)}
             placeholder="Search conference name or venue..."
             style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-            className="flex-1 bg-white border border-slate-300 rounded-2xl px-6 py-4 text-slate-900 font-bold placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/10 shadow-sm"
-         />
+            className="w-full bg-white border border-slate-300 rounded-2xl pl-9 sm:pl-11 md:pl-12 pr-12 sm:pr-14 py-3 sm:py-3.5 md:py-4 text-slate-900 font-bold text-xs md:text-sm placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all shadow-sm"
+          />
+          {conferenceSearchTerm.trim() && (
+            <button
+              type="button"
+              onClick={() => setConferenceSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition active:scale-95"
+              title="Clear search"
+            >
+              <i className="fa-solid fa-xmark text-xs" />
+            </button>
+          )}
+        </div>
          <select
             value={conferenceStatusFilter}
             onChange={(e) => setConferenceStatusFilter(e.target.value)}
@@ -6662,14 +7044,20 @@ const App: React.FC = () => {
                         <i className="fa-solid fa-lock-open"></i>
                       </button>
                     )}
-                    {user?.is_staff ? (
+                    {(user?.is_staff || user?.role === 'accounts') ? (
                       <>
-                        <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white"><i className="fa-solid fa-pen"></i></button>
-                        <button onClick={() => handleDeleteConference(conf.id)} className="text-red-400 hover:text-white"><i className="fa-solid fa-trash"></i></button>
+                        <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white" title="Edit Conference Details">
+                          <i className="fa-solid fa-pen"></i>
+                        </button>
+                        {user?.is_staff && (
+                          <button onClick={() => handleDeleteConference(conf.id)} className="text-red-400 hover:text-white" title="Delete Conference">
+                            <i className="fa-solid fa-trash"></i>
+                          </button>
+                        )}
                       </>
                     ) : (
                       <button onClick={() => openEditConferenceForm(conf)} className="text-sky-400 hover:text-white text-[10px] font-black uppercase tracking-widest pl-4">
-                        {user?.role === 'accounts' ? 'Monitor' : 'View Execution'} <i className="fa-solid fa-arrow-right ml-1"></i>
+                        View Execution <i className="fa-solid fa-arrow-right ml-1"></i>
                       </button>
                     )}
                   </td>
@@ -6864,14 +7252,25 @@ const App: React.FC = () => {
             )}
           </div>
           <div className="flex items-center gap-4">
-            {user && <span className="text-[10px] font-bold text-slate-500 uppercase hidden lg:block">{user.email}</span>}
-            <div className="w-10 h-10 md:w-12 md:h-12 bg-slate-900 rounded-xl border-2 border-slate-800 flex items-center justify-center text-sky-500"><i className="fa-solid fa-user-shield"></i></div>
+            {user && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase hidden lg:block">{user.email}</span>
+                {user.role === 'boss' && (
+                  <span className="px-2.5 py-1 bg-amber-500/15 text-amber-400 border border-amber-500/30 rounded-full text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                    <i className="fa-solid fa-crown text-[9px]" /> Boss
+                  </span>
+                )}
+              </div>
+            )}
+            <div className={`w-10 h-10 md:w-12 md:h-12 bg-slate-900 rounded-xl border-2 ${user?.role === 'boss' ? 'border-amber-500/40 text-amber-400 shadow-lg shadow-amber-500/10' : 'border-slate-800 text-sky-500'} flex items-center justify-center`}>
+              <i className={`fa-solid ${user?.role === 'boss' ? 'fa-crown' : 'fa-user-shield'}`}></i>
+            </div>
             <button onClick={handleLogout} className="w-10 h-10 md:w-12 md:h-12 bg-slate-900 rounded-xl border-2 border-slate-800 flex items-center justify-center text-red-400 hover:bg-slate-800 hover:text-red-300 transition" title="Logout">
               <i className="fa-solid fa-power-off"></i>
             </button>
           </div>
         </header>
-        <div className="p-6 md:p-12 max-w-7xl mx-auto">
+        <div className="p-3.5 sm:p-6 md:p-12 max-w-7xl mx-auto">
           {currentPage === 'Dashboard' && renderDashboard()}
           {currentPage === 'Settings' && <SettingsView apiFetch={apiFetch} user={user} />}
           {currentPage === 'Subrentals' && (
@@ -7248,6 +7647,16 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
+                  {(user?.is_staff || user?.role === 'accounts') && (
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateLogistics()}
+                      className="flex items-center gap-2 px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-sky-500/20 transition-all active:scale-95"
+                      title="Save All Conference Details"
+                    >
+                      <i className="fa-solid fa-floppy-disk"></i> Save Conference
+                    </button>
+                  )}
                   {(() => {
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
@@ -7275,7 +7684,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Administrative Top Section - Full Width / 2-Column for Identity & Billing */}
-              {(user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician' && user?.role !== 'accounts')) && (
+              {(user?.is_staff || user?.role === 'accounts' || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && (
                 <div className="space-y-10">
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
                     {/* Conference Identity & Schedule */}
@@ -7466,7 +7875,7 @@ const App: React.FC = () => {
                         />
                       </div>
 
-                      {user?.is_staff && (
+                      {(user?.is_staff || user?.role === 'accounts') && (
                         <div>
                           <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Conference Document (PDF)</label>
                           <div className="relative group/file">
@@ -7516,14 +7925,14 @@ const App: React.FC = () => {
                         >
                           <i className="fa-solid fa-print"></i> <span>Print Delivery Challan</span>
                         </button>
-                        {(user?.is_staff || user?.role === 'technician' || user?.role === 'godown_incharge') && (
+                        {(user?.is_staff || user?.role === 'accounts' || user?.role === 'technician' || user?.role === 'godown_incharge') && (
                           <button 
                             type="button"
                             onClick={() => handleUpdateLogistics()}
                             className="w-full py-4 md:py-5 bg-sky-600 hover:bg-sky-700 text-white rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-sky-600/20 transition-all active:scale-95 leading-tight text-center"
                           >
                             <i className="fa-solid fa-cloud-arrow-up"></i>
-                            <span>{user?.role === 'technician' ? 'Submit Requirements' : 'Update Logistics & PDF'}</span>
+                            <span>{user?.role === 'technician' ? 'Submit Requirements' : user?.role === 'accounts' ? 'Save Conference Details' : 'Update Logistics & PDF'}</span>
                           </button>
                         )}
                       </div>
@@ -7533,7 +7942,7 @@ const App: React.FC = () => {
 
                 {/* Right Column: Asset Scanning Card */}
                 <div className="xl:col-span-8">
-                  <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
+                  <div className="bg-white rounded-[2.5rem] border border-slate-200 p-4 sm:p-6 md:p-10 shadow-xl shadow-sky-500/5 h-full flex flex-col space-y-8 relative">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center text-xl shadow-inner border border-orange-500/20">
@@ -7595,12 +8004,12 @@ const App: React.FC = () => {
                         (assetTab === 'packup') ||
                         ((user?.role === 'godown_incharge' || user?.is_staff) && assetTab === 'crosscheck')) && (
                           <div className="relative group">
-                            <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                            <div className="absolute left-4 md:left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors pointer-events-none">
                               <i className="fa-solid fa-magnifying-glass"></i>
                             </div>
                             <input
                               type="text"
-                              placeholder={assetTab === 'available' ? "SCAN OR TYPE SKU..." : "SCAN TO REMOVE/VERIFY..."}
+                              placeholder={assetTab === 'available' ? "Scan or type SKU..." : "Scan to remove/verify..."}
                               value={assetTab === 'available' ? quickAddInput : quickRemoveInput}
                               onChange={(e) => assetTab === 'available' ? setQuickAddInput(e.target.value) : setQuickRemoveInput(e.target.value)}
                               onKeyDown={(e) => {
@@ -7610,16 +8019,16 @@ const App: React.FC = () => {
                                   if (assetTab === 'available') setQuickAddInput(''); else setQuickRemoveInput('');
                                 }
                               }}
-                              className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                              className="w-full bg-sky-50 border-none rounded-2xl pl-11 md:pl-14 pr-16 md:pr-20 py-4 md:py-6 text-xs md:text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-400 placeholder:font-bold shadow-sm"
                             />
-                            {isMobilePhone && (
-                              <button
-                                onClick={() => setShowScanner(true)}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-sky-500 text-white rounded-xl shadow-lg shadow-sky-500/30 flex items-center justify-center transition-transform active:scale-90"
-                              >
-                                <i className="fa-solid fa-camera"></i>
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => setShowScanner(true)}
+                              className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-sky-500 hover:bg-sky-400 text-white rounded-xl shadow-lg shadow-sky-500/30 flex items-center justify-center transition-transform active:scale-90"
+                              title="Scan with Camera"
+                            >
+                              <i className="fa-solid fa-camera text-sm"></i>
+                            </button>
                           </div>
                         )}
                       </div>
@@ -7664,13 +8073,15 @@ const App: React.FC = () => {
                                               <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
                                               <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5 truncate">{asset.type} • ALLOCATED</p>
                                             </div>
-                                            <button
-                                              onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                              className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                              title="Unassign Asset"
-                                            >
-                                              <i className="fa-solid fa-trash-can text-xs"></i>
-                                            </button>
+                                            {user?.role !== 'accounts' && (
+                                              <button
+                                                onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                                className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                                title="Unassign Asset"
+                                              >
+                                                <i className="fa-solid fa-trash-can text-xs"></i>
+                                              </button>
+                                            )}
                                           </div>
                                         ))}
                                       </div>
@@ -7694,13 +8105,15 @@ const App: React.FC = () => {
                                             <p className="font-black uppercase text-xs text-slate-800 truncate">{asset.aliasName || asset.sku}</p>
                                             <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5 truncate">{asset.type}</p>
                                           </div>
-                                          <button
-                                            onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
-                                            className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
-                                            title="Hard Remove (Accidental Scan)"
-                                          >
-                                            <i className="fa-solid fa-trash-can text-xs"></i>
-                                          </button>
+                                          {user?.role !== 'accounts' && (
+                                            <button
+                                              onClick={() => triggerAssetConferenceAction(asset, 'unassign')}
+                                              className="w-10 h-10 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-red-500 hover:border-red-500/50 transition-all flex items-center justify-center"
+                                              title="Hard Remove (Accidental Scan)"
+                                            >
+                                              <i className="fa-solid fa-trash-can text-xs"></i>
+                                            </button>
+                                          )}
                                         </div>
                                       ))}
                                     </div>
@@ -7773,12 +8186,12 @@ const App: React.FC = () => {
                                {/* 1. Technician Search/Scan Bar (Inline - Matching Godown) */}
                                <div className="space-y-4 text-left">
                                  <div className="relative group">
-                                   <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                                   <div className="absolute left-4 md:left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors pointer-events-none">
                                      <i className="fa-solid fa-magnifying-glass"></i>
                                    </div>
                                    <input 
                                      type="text"
-                                     placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
+                                     placeholder="Search or scan requirement..."
                                      value={quickAddInput}
                                      onChange={(e) => setQuickAddInput(e.target.value)}
                                      onKeyDown={(e) => {
@@ -7790,8 +8203,16 @@ const App: React.FC = () => {
                                          }
                                        }
                                      }}
-                                     className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                                     className="w-full bg-sky-50 border-none rounded-2xl pl-11 md:pl-14 pr-16 md:pr-20 py-4 md:py-6 text-xs md:text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-400 placeholder:font-bold shadow-sm"
                                    />
+                                   <button
+                                     type="button"
+                                     onClick={() => setShowScanner(true)}
+                                     className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-sky-500 hover:bg-sky-400 text-white rounded-xl shadow-lg shadow-sky-500/30 flex items-center justify-center transition-transform active:scale-90"
+                                     title="Scan with Camera"
+                                   >
+                                     <i className="fa-solid fa-camera text-sm"></i>
+                                   </button>
                                  </div>
                                  
                                  {quickAddInput && (
@@ -8089,12 +8510,12 @@ const App: React.FC = () => {
                                 <div className="space-y-4">
                                   <div className="flex gap-3">
                                     <div className="relative group flex-1">
-                                      <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors">
+                                      <div className="absolute left-4 md:left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors pointer-events-none">
                                         <i className="fa-solid fa-magnifying-glass"></i>
                                       </div>
                                       <input 
                                         type="text"
-                                        placeholder="SEARCH ASSETS TO ADD AS REQUIREMENT..."
+                                        placeholder="Search or scan requirement..."
                                         value={quickAddInput}
                                         onChange={(e) => setQuickAddInput(e.target.value)}
                                         onKeyDown={(e) => {
@@ -8106,8 +8527,16 @@ const App: React.FC = () => {
                                             }
                                           }
                                         }}
-                                        className="w-full bg-sky-50 border-none rounded-2xl pl-14 pr-6 py-6 text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-300 placeholder:font-bold"
+                                        className="w-full bg-sky-50 border-none rounded-2xl pl-11 md:pl-14 pr-16 md:pr-20 py-4 md:py-6 text-xs md:text-sm font-black text-slate-800 focus:ring-4 focus:ring-sky-500/10 transition-all placeholder:text-slate-400 placeholder:font-bold shadow-sm"
                                       />
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowScanner(true)}
+                                        className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-sky-500 hover:bg-sky-400 text-white rounded-xl shadow-lg shadow-sky-500/30 flex items-center justify-center transition-transform active:scale-90"
+                                        title="Scan with Camera"
+                                      >
+                                        <i className="fa-solid fa-camera text-sm"></i>
+                                      </button>
                                     </div>
                                     <button
                                       type="button"
@@ -9798,26 +10227,24 @@ const App: React.FC = () => {
 
                   {/* Scan input (hardware scanner or type) */}
                   <div className="relative mb-3 group">
-                    <i className="fa-solid fa-barcode absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-purple-500 transition-colors text-sm"></i>
+                    <i className="fa-solid fa-barcode absolute left-3.5 sm:left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-purple-500 transition-colors text-xs sm:text-sm pointer-events-none"></i>
                     <input
                       ref={transferScanRef}
                       type="text"
-                      placeholder="Scan QR / Barcode to toggle selection..."
+                      placeholder="Scan or type QR / Barcode..."
                       value={transferScanInput}
                       onChange={e => setTransferScanInput(e.target.value)}
                       onKeyDown={handleTransferScanKeyDown}
-                      className="w-full bg-slate-50 rounded-2xl pl-12 pr-14 py-3.5 text-sm font-bold text-slate-800 border border-slate-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+                      className="w-full bg-slate-50 rounded-2xl pl-10 sm:pl-11 pr-14 py-3 sm:py-3.5 text-xs sm:text-sm font-bold text-slate-800 border border-slate-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all placeholder:text-slate-400 placeholder:font-normal shadow-sm"
                     />
-                    {isMobilePhone && (
-                      <button
-                        type="button"
-                        onClick={() => setShowTransferScanner(true)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-purple-500 text-white rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/30 transition-transform active:scale-90"
-                        title="Scan with camera"
-                      >
-                        <i className="fa-solid fa-camera text-xs"></i>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowTransferScanner(true)}
+                      className="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-purple-500 hover:bg-purple-600 text-white rounded-xl flex items-center justify-center shadow-md shadow-purple-500/30 transition-transform active:scale-90"
+                      title="Scan with camera"
+                    >
+                      <i className="fa-solid fa-camera text-xs"></i>
+                    </button>
                   </div>
 
                   {/* Asset list */}
@@ -10363,17 +10790,27 @@ const App: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-8 space-y-6">
-              <div className="relative">
-                <i className="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-slate-500"></i>
+            <div className="p-4 sm:p-8 space-y-6">
+              <div className="relative group w-full">
+                <i className="fa-solid fa-magnifying-glass absolute left-3.5 sm:left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-500 transition-colors text-xs md:text-sm pointer-events-none"></i>
                 <input
                   type="text"
-                  placeholder="SEARCH CONSUMABLES..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-14 pr-6 text-xs font-black text-white uppercase tracking-widest focus:border-amber-500 outline-none transition"
+                  placeholder="Search consumables..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-3 sm:py-3.5 md:py-4 pl-9 sm:pl-11 md:pl-12 pr-12 text-xs font-black text-white uppercase tracking-wider focus:border-amber-500 focus:ring-2 focus:ring-amber-500/10 outline-none transition shadow-sm"
                   value={consumablesPickerSearchQuery}
                   onChange={(e) => setConsumablesPickerSearchQuery(e.target.value)}
                   autoFocus
                 />
+                {consumablesPickerSearchQuery.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setConsumablesPickerSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 flex items-center justify-center transition active:scale-95"
+                    title="Clear search"
+                  >
+                    <i className="fa-solid fa-xmark text-xs" />
+                  </button>
+                )}
               </div>
 
               <div className="max-h-[40vh] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
@@ -10535,6 +10972,9 @@ const App: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* Executive AI Assistant (Admin & Boss Only) */}
+      <AIChatbotModal apiFetch={apiFetch} user={user} />
 
       <style>{`
         .form-input-night { width: 100%; background: #0f172a; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.25rem; color: #fff; font-weight: 900; text-transform: uppercase; outline: none; transition: border-color 0.2s; }

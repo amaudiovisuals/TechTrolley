@@ -15,12 +15,12 @@ import { CompanySettings, Employee } from '../types';
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) => {
     const API_BASE = '';
-    const isAdmin = user?.is_staff || user?.role === 'admin';
+    const isAdmin = user?.is_staff || user?.role === 'admin' || user?.role === 'boss';
     const [activeTab, setActiveTab] = useState<'general' | 'profile' | 'users'>(isAdmin ? 'general' : 'profile');
     const [users, setUsers] = useState<SystemUser[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [userSearchQuery, setUserSearchQuery] = useState('');
-    const [roleFilter, setRoleFilter] = useState<'All' | 'admin' | 'godown_incharge' | 'technician' | 'accounts'>('All');
+    const [roleFilter, setRoleFilter] = useState<'All' | 'admin' | 'boss' | 'godown_incharge' | 'technician' | 'accounts'>('All');
 
     // Company Settings State
     const [companySettings, setCompanySettings] = useState<CompanySettings>({
@@ -52,7 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     const [newEmployeeName, setNewEmployeeName] = useState('');
     const [newEmployeeEmail, setNewEmployeeEmail] = useState('');
     const [newEmployeePassword, setNewEmployeePassword] = useState('');
-    const [newEmployeeRole, setNewEmployeeRole] = useState<'technician' | 'godown_incharge' | 'accounts' | 'admin'>('technician');
+    const [newEmployeeRole, setNewEmployeeRole] = useState<'technician' | 'godown_incharge' | 'accounts' | 'admin' | 'boss'>('technician');
     const [addEmployeeMsg, setAddEmployeeMsg] = useState({ type: '', text: '' });
 
     useEffect(() => {
@@ -221,12 +221,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
 
         const roleLabels: Record<string, string> = {
             admin: 'Admin',
+            boss: 'Boss / Executive',
             godown_incharge: 'Incharge',
             accounts: 'Accounts',
             technician: 'Technician'
         };
         const roleDept: Record<string, string> = {
             admin: 'Management',
+            boss: 'Executive',
             godown_incharge: 'Warehouse',
             accounts: 'Accounts',
             technician: 'Operations'
@@ -276,9 +278,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
     };
 
     const handleUpdateRole = async (email: string, role: string) => {
-        // Prevent admin from demoting their own account (self-lockout)
-        if (email.toLowerCase() === user?.email?.toLowerCase() && role !== 'admin') {
-            alert('You cannot demote your own admin account.');
+        // Prevent admin or boss from demoting their own account (self-lockout)
+        if (email.toLowerCase() === user?.email?.toLowerCase() && role !== 'admin' && role !== 'boss') {
+            alert('You cannot demote your own administrative account.');
             fetchEmployees();
             fetchUsers();
             return;
@@ -705,6 +707,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                 >
                                     <option value="All">All Roles</option>
                                     <option value="admin">Admins Only</option>
+                                    <option value="boss">Boss / Executive</option>
                                     <option value="godown_incharge">Incharges</option>
                                     <option value="technician">Technicians</option>
                                     <option value="accounts">Accounts</option>
@@ -718,12 +721,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                     <div className="flex items-center gap-4 min-w-0 flex-1">
                                         <div className={`w-12 h-12 rounded-2xl flex shrink-0 items-center justify-center shadow-inner ${
                                             u.role === 'admin' ? 'bg-orange-500/10 text-orange-400' :
+                                            u.role === 'boss' ? 'bg-amber-500/10 text-amber-400' :
                                             u.role === 'godown_incharge' ? 'bg-sky-500/10 text-sky-400' : 
                                             u.role === 'accounts' ? 'bg-purple-500/10 text-purple-400' :
                                             'bg-teal-500/10 text-teal-400'
                                         }`}>
                                             <i className={`fa-solid ${
                                                 u.role === 'admin' ? 'fa-user-shield' :
+                                                u.role === 'boss' ? 'fa-crown' :
                                                 u.role === 'godown_incharge' ? 'fa-warehouse' : 
                                                 u.role === 'accounts' ? 'fa-calculator' :
                                                 'fa-user-tag'
@@ -732,6 +737,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-3">
                                                 <p className="text-sm font-black text-white uppercase truncate tracking-tight">{u.displayName}</p>
+                                                {u.role === 'boss' && (
+                                                    <span className="px-2 py-0.5 bg-amber-500/20 text-[8px] font-black uppercase text-amber-400 rounded-md border border-amber-500/30">Executive</span>
+                                                )}
                                                 {u.source === 'system' && (
                                                     <span className="px-2 py-0.5 bg-orange-500/20 text-[8px] font-black uppercase text-orange-400 rounded-md border border-orange-500/20">System Admin</span>
                                                 )}
@@ -746,6 +754,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                             className="bg-slate-900/80 border border-slate-800 rounded-xl text-white text-[10px] font-black p-2.5 uppercase outline-none focus:border-sky-500 transition cursor-pointer hover:bg-slate-800"
                                         >
                                             <option value="admin">Admin</option>
+                                            <option value="boss">Boss / Executive</option>
                                             <option value="godown_incharge">Incharge</option>
                                             <option value="technician">Technician</option>
                                             <option value="accounts">Accounts</option>
@@ -809,6 +818,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user }) =>
                                         <option value="godown_incharge">Incharge (Godown Incharge)</option>
                                         <option value="accounts">Accounts</option>
                                         <option value="admin">Admin</option>
+                                        <option value="boss">Boss / Executive</option>
                                     </select>
                                 </div>
                                 <div>
