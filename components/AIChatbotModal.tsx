@@ -13,8 +13,9 @@ interface AIChatbotModalProps {
 }
 
 const QUICK_PROMPTS = [
+  "Who is the incharge of KENTCON 2026?",
+  "Out of all windows laptop, how many have i3 processor?",
   "How many Dynatech we have in total and where are they?",
-  "Inventory overview & asset health",
   "Which conferences are ongoing right now?",
   "How many Bose speakers do we have?",
   "Check damaged or on-service gear"
@@ -86,8 +87,8 @@ const renderFormattedMessage = (text: string) => {
           );
         }
 
-        // Section header (starts with ### or has emoji like 📊, 📍, 📦, 📅, ⚠️, 🟢)
-        if (trimmed.startsWith('###') || /^[📊📍📦📅⚠️🟢🟡🔴🎪💡•]/.test(trimmed)) {
+        // Section header (starts with ### or has emoji like 📊, 📍, 📦, 📅, ⚠️, 🟢, 💻, 👤, 🚚)
+        if (trimmed.startsWith('###') || /^[📊📍📦📅⚠️🟢🟡🔴🎪💡💻👤🚚⭐•]/.test(trimmed)) {
           return (
             <div
               key={lineIdx}
@@ -109,6 +110,38 @@ const renderFormattedMessage = (text: string) => {
   );
 };
 
+// Expandable Assistant Message Bubble with Read More functionality
+const ExpandableAssistantBubble: React.FC<{ text: string }> = ({ text }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const lines = text.split('\n');
+  const isLong = lines.length > 9 || text.length > 420;
+
+  return (
+    <div>
+      <div
+        className={`transition-all duration-300 relative ${
+          !isExpanded && isLong ? 'max-h-[290px] overflow-hidden' : ''
+        }`}
+      >
+        {renderFormattedMessage(text)}
+        {!isExpanded && isLong && (
+          <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-white via-white/80 to-transparent pointer-events-none" />
+        )}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="mt-2.5 text-xs font-black text-sky-600 hover:text-sky-700 flex items-center gap-1.5 py-1 px-3 rounded-lg bg-sky-50 hover:bg-sky-100 transition active:scale-95 shadow-2xs border border-sky-100"
+          style={{ color: '#0284c7' }}
+        >
+          <span>{isExpanded ? 'Show Less ▴' : 'Read Full Details / Expand ▾'}</span>
+        </button>
+      )}
+    </div>
+  );
+};
+
 export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputQuery, setInputQuery] = useState('');
@@ -117,7 +150,7 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }
     {
       id: 'welcome',
       sender: 'assistant',
-      text: `Hello ${user?.name || (user?.role === 'boss' ? 'Boss' : 'Admin')}! I am **AM Orbit AI**, your operations intelligence assistant.\n\nAsk me about equipment locations, quantities, active conferences, or damaged gear (e.g. *"How many Dynatech do we have and where are they?"*).`,
+      text: `Hello ${user?.name || (user?.role === 'boss' ? 'Boss' : 'Admin')}! I am **AM Orbit AI**, your operations intelligence assistant.\n\nAsk me about equipment locations, hardware specs, conference incharges, or damaged gear (e.g. *"Who is the incharge of KENTCON 2026?"* or *"Out of all windows laptop, how many have i3 processor?"*).`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -232,7 +265,7 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }
       {/* Floating Chat Drawer / Window */}
       {isOpen && (
         <div
-          className="fixed bottom-24 right-4 sm:right-6 z-50 w-[94vw] sm:w-[460px] max-h-[82vh] h-[640px] bg-white border border-slate-200 rounded-[2rem] shadow-[0_25px_70px_rgba(15,23,42,0.25)] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 fade-in duration-300"
+          className="fixed bottom-24 right-4 sm:right-6 z-50 w-[94vw] sm:w-[470px] max-h-[82vh] h-[650px] bg-white border border-slate-200 rounded-[2rem] shadow-[0_25px_70px_rgba(15,23,42,0.25)] flex flex-col overflow-hidden animate-in slide-in-from-bottom-6 fade-in duration-300"
           style={{ backgroundColor: '#ffffff' }}
         >
           {/* Header */}
@@ -290,7 +323,7 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }
                 className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[88%] rounded-2xl px-4 py-3.5 shadow-sm ${
+                  className={`max-w-[90%] rounded-2xl px-4 py-3.5 shadow-sm ${
                     m.sender === 'user'
                       ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white rounded-br-none font-bold shadow-sky-500/20'
                       : 'bg-white border border-slate-200/90 rounded-bl-none'
@@ -298,7 +331,7 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }
                   style={m.sender === 'assistant' ? { backgroundColor: '#ffffff', color: '#0f172a' } : undefined}
                 >
                   {m.sender === 'assistant' ? (
-                    renderFormattedMessage(m.text)
+                    <ExpandableAssistantBubble text={m.text} />
                   ) : (
                     <div className="whitespace-pre-wrap text-xs leading-relaxed text-white font-bold">
                       {m.text}
@@ -340,7 +373,7 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }
                 type="button"
                 onClick={() => handleSend(p)}
                 disabled={isLoading}
-                className="shrink-0 px-3 py-1.5 rounded-full bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-300 text-[11px] font-bold text-slate-700 hover:text-sky-800 transition whitespace-nowrap active:scale-95 disabled:opacity-50 shadow-xs"
+                className="shrink-0 px-3 py-1.5 rounded-full bg-slate-50 hover:bg-sky-50 border border-slate-200 hover:border-sky-300 text-[11px] font-bold text-slate-700 hover:text-sky-800 transition whitespace-nowrap active:scale-95 disabled:opacity-50 shadow-2xs"
                 style={{ color: '#334155' }}
               >
                 {p}
@@ -365,9 +398,9 @@ export const AIChatbotModal: React.FC<AIChatbotModalProps> = ({ apiFetch, user }
                 type="text"
                 value={inputQuery}
                 onChange={(e) => setInputQuery(e.target.value)}
-                placeholder="Ask about gear, counts, venues (e.g. 'how many dynatech')..."
+                placeholder="Ask about incharge, gear, venues, hardware specs..."
                 disabled={isLoading}
-                className="w-full bg-white border border-slate-300 rounded-2xl pl-4 pr-12 py-3.5 text-xs font-bold placeholder-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 outline-none transition shadow-xs"
+                className="w-full bg-white border border-slate-300 rounded-2xl pl-4 pr-12 py-3.5 text-xs font-bold placeholder-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 outline-none transition shadow-2xs"
                 style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
               />
               <button
