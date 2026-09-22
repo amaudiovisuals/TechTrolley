@@ -17,7 +17,7 @@ STOPWORDS = {
     "a", "an", "show", "me", "tell", "list", "give", "gear", "items", "assets", "system", 
     "please", "can", "you", "with", "on", "about", "currently", "right", "now", "location",
     "locations", "venue", "venues", "status", "statuses", "count", "check", "details",
-    "got", "there", "which", "available", "ready"
+    "got", "there", "which", "available", "ready", "use", "used", "using", "in-use"
 }
 
 def check_ai_permission(user):
@@ -30,14 +30,20 @@ def check_ai_permission(user):
         return True
     return False
 
-def extract_meaningful_tokens(query):
-    q_lower = query.lower().strip()
-    words = [w.strip() for w in re.split(r'[^a-zA-Z0-9_-]+', q_lower) if len(w.strip()) >= 2]
-    return [w for w in words if w not in STOPWORDS]
+def clean_tokens(query):
+    words = [w.strip() for w in re.split(r'[^a-zA-Z0-9_-]+', query.lower()) if len(w.strip()) >= 2]
+    tokens = [w for w in words if w not in STOPWORDS]
+    stemmed = []
+    for t in tokens:
+        stemmed.append(t)
+        # Stem plurals (e.g. dynatechs -> dynatech, mics -> mic, speakers -> speaker)
+        if t.endswith('s') and len(t) > 3 and not t.endswith('ss'):
+            stemmed.append(t[:-1])
+    return list(dict.fromkeys(stemmed))
 
 def build_inventory_context(query):
     q_lower = query.lower().strip()
-    tokens = extract_meaningful_tokens(query)
+    tokens = clean_tokens(query)
     today = date.today()
 
     total_assets = Asset.objects.count()
@@ -95,44 +101,54 @@ def build_inventory_context(query):
             crosscheck_cnt = sum(a.quantity or 1 for a in matched_assets.filter(status='Crosscheck'))
             maint_cnt = sum(a.quantity or 1 for a in matched_assets.filter(status__in=['Damaged', 'On Service', 'Under Maintenance']))
 
-            # Find active deployment locations (conferences and venues)
-            active_ids = set(matched_assets.filter(status__in=['In Use', 'Crosscheck']).values_list('id', flat=True))
-            deployments = []
-            if active_ids:
-                confs = Conference.objects.filter(
-                    Q(crosscheck_assets__id__in=active_ids) |
-                    Q(assets__id__in=active_ids) |
-                    Q(staged_assets__id__in=active_ids)
-                ).distinct().order_by('-end_date')
-
-                for c in confs:
-                    c_active = (
-                        set(c.crosscheck_assets.filter(id__in=active_ids).values_list('id', flat=True)) |
-                        set(c.assets.filter(id__in=active_ids).values_list('id', flat=True)) |
-                        set(c.staged_assets.filter(id__in=active_ids).values_list('id', flat=True))
-                    )
-                    cnt = len(c_active)
-                    if cnt > 0:
-                        is_ongoing = bool((c.end_date and c.end_date >= today) or getattr(c, 'is_ongoing', False))
-                        status_tag = "Ongoing / Live Event" if is_ongoing else "Completed / Pending Incheck"
-                        deployments.append({
-                            "conference_name": c.name,
-                            "count": cnt,
-                            "dates": f"{c.start_date or 'TBD'} to {c.end_date or 'TBD'}",
-                            "venue": c.transport_address or c.billing_address or "Venue not specified",
+            # Reconcile exact current conference per active asset
+            active_assets = matched_assets.filter(status__in=['In Use', 'Crosscheck'])
+            deployments_map = {}
+            for a in active_assets:
+                # Find the most recent conference associated with this unit
+                confs = Conference.objects.filter(crosscheck_assets=a).order_by('-end_date', '-id')
+                if not confs.exists():
+                    confs = Conference.objects.filter(assets=a).order_by('-end_date', '-id')
+                if not confs.exists():
+                    confs = Conference.objects.filter(staged_assets=a).order_by('-end_date', '-id')
+                
+                recent_conf = confs.first()
+                if recent_conf:
+                    c_name = recent_conf.name
+                    if c_name not in deployments_map:
+                        is_ongoing = bool((recent_conf.end_date and recent_conf.end_date >= today) or getattr(recent_conf, 'is_ongoing', False))
+                        status_tag = "Ongoing / Live Event" if is_ongoing else "Ended / Pending Incheck"
+                        deployments_map[c_name] = {
+                            "conference_name": c_name,
+                            "count": 0,
+                            "dates": f"{recent_conf.start_date or 'TBD'} to {recent_conf.end_date or 'TBD'}",
+                            "venue": recent_conf.transport_address or recent_conf.billing_address or "Venue not specified",
                             "status": status_tag
-                        })
+                        }
+                    deployments_map[c_name]["count"] += (a.quantity or 1)
 
-                deployments.sort(key=lambda x: x["count"], reverse=True)
+            deployments = sorted(deployments_map.values(), key=lambda x: x["count"], reverse=True)
 
-            # Model breakdown
+            # Model breakdown extracting base model name
             model_counts = {}
             for a in matched_assets:
-                label = a.alias_name or a.name or a.sku
+                base_model = re.sub(r'-\d+$', '', a.sku).replace('_', ' ').title()
+                label = f"{base_model} ({a.alias_name})" if a.alias_name and a.alias_name.lower() not in base_model.lower() else base_model
                 model_counts[label] = model_counts.get(label, 0) + (a.quantity or 1)
 
+            # Check if user query also specified a conference
+            conf_tokens = [t for t in tokens if Conference.objects.filter(name__icontains=t).exists()]
+            if conf_tokens:
+                filtered_deployments = [d for d in deployments if any(ct in d["conference_name"].lower() for ct in conf_tokens)]
+                if filtered_deployments:
+                    deployments = filtered_deployments
+
+            display_tokens = [t.capitalize() for t in tokens if not t.endswith('s') or len(t) <= 3]
+            if not display_tokens:
+                display_tokens = [t.capitalize() for t in tokens]
+
             context["matched_equipment"] = {
-                "search_terms": tokens,
+                "search_terms": display_tokens,
                 "total_units": matched_count,
                 "available_units": avail_cnt,
                 "in_use_units": in_use_cnt,
@@ -161,7 +177,7 @@ def build_inventory_context(query):
                     "name": c.name,
                     "dates": f"{c.start_date or 'TBD'} to {c.end_date or 'TBD'}",
                     "venue": c.transport_address or c.billing_address or "Venue not specified",
-                    "status": "Ongoing" if is_ongoing else "Concluded / Upcoming",
+                    "status": "Ongoing / Live" if is_ongoing else "Concluded / Upcoming",
                     "allocated_gear_count": gear_cnt,
                     "contact": f"{c.contact_person} ({c.contact_phone})" if c.contact_person else None
                 })
@@ -192,7 +208,7 @@ def fallback_local_ai(query, context):
     # 1. Equipment query match
     eq = context.get('matched_equipment')
     if eq:
-        terms_label = " ".join(t.capitalize() for t in eq.get('search_terms', []))
+        terms_label = " ".join(eq.get('search_terms', []))
         total_units = eq.get('total_units', 0)
         avail = eq.get('available_units', 0)
         in_use = eq.get('in_use_units', 0)
@@ -214,7 +230,7 @@ def fallback_local_ai(query, context):
 
         # Deployments / Venues breakdown
         if deployments:
-            lines.append(f"\n📍 **Where are the {active_total} units deployed?**")
+            lines.append(f"\n📍 **Where are the {active_total} units located?**")
             for d in deployments:
                 lines.append(
                     f"• **{d['conference_name']}** — {d['count']} units (*{d['status']}*)\n"
@@ -226,7 +242,7 @@ def fallback_local_ai(query, context):
 
         # Models breakdown
         if models:
-            lines.append("\n📦 **Fleet Breakdown:**")
+            lines.append("\n📦 **Model Inventory Breakdown:**")
             for m in models:
                 lines.append(f"• **{m['name']}** — {m['count']} units")
 
