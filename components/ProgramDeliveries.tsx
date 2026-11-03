@@ -45,7 +45,7 @@ export function deliveryPaperHtml(paper: Paper, delivery: Delivery): string {
 }
 
 export const ProgramDeliveries: React.FC<{
-  conferenceId: string; truckId?: number; canIssue: boolean; apiFetch: (url: string, options?: any) => Promise<Response>; apiBase: string;
+  conferenceId: string; truckId?: number | string; canIssue: boolean; apiFetch: (url: string, options?: any) => Promise<Response>; apiBase: string;
 }> = ({ conferenceId, truckId, canIssue, apiFetch, apiBase }) => {
   const endpoint = `${apiBase}/api/conferences/${conferenceId}/deliveries/`;
   const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
@@ -104,7 +104,7 @@ export const ProgramDeliveries: React.FC<{
     if (busyRef.current || !preview) return;
     busyRef.current = true; setBusy(true); setError('');
     if (!requestRef.current) requestRef.current = {
-      request_key: crypto.randomUUID(), source_hash: preview.source_hash, truck_id: truckId || null,
+      request_key: crypto.randomUUID(), source_hash: preview.source_hash, truck_id: truckId ? Number(truckId) : null,
       reference, delivery_date: deliveryDate, vehicle_number: vehicle, driver_phone: phone,
       rows: (Object.entries(selected) as [string, Selection][]).filter(([, row]) => row.checked).map(([key, row]) => ({ key, name: row.name, quantity: row.quantity })),
     };
