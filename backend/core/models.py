@@ -300,6 +300,28 @@ class DeliveryChallan(models.Model):
     def __str__(self):
         return self.challan_number
 
+
+class ProgramDelivery(models.Model):
+    """An issued delivery's immutable customer and supplier paper snapshots.
+
+    These are documents, not a second warehouse movement or a rental invoice.
+    No live asset/company foreign keys are used inside the snapshots.
+    """
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='issued_deliveries')
+    request_key = models.UUIDField(unique=True)
+    request_hash = models.CharField(max_length=64)
+    reference = models.CharField(max_length=100)
+    snapshot = models.JSONField(default=dict)
+    issued_at = models.DateTimeField(auto_now_add=True)
+    issued_by = models.CharField(max_length=150)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.CharField(max_length=150, blank=True, default='')
+    void_reason = models.CharField(max_length=500, blank=True, default='')
+
+    class Meta:
+        ordering = ['-id']
+        constraints = [models.UniqueConstraint(fields=['conference', 'reference'], name='unique_program_delivery_reference')]
+
 class CompanySettings(models.Model):
     name = models.CharField(max_length=200, default="AM AUDIOVISUALS PVT LTD")
     address = models.TextField(default="Warehouse Complex 7, Industrial Area Phase II, New Delhi - 110020.")
