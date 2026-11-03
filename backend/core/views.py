@@ -49,7 +49,7 @@ def unique_aliases(request):
 from datetime import date
 from django.db import connection, utils
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -101,7 +101,7 @@ def asset_list(request):
         
         assets_query = Asset.objects.annotate(
             annotated_conference=Coalesce(Subquery(assigned_qs), Subquery(crosscheck_qs), Value(None))
-        ).select_related('assigned_to', 'parent_asset').prefetch_related(
+        ).select_related('assigned_to', 'parent_asset', 'subrental_company').prefetch_related(
             'sub_assets',
             'sub_assets__assigned_to',
             'assigned_conferences',
@@ -121,14 +121,9 @@ def asset_list(request):
             else:
                 assets_query = assets_query.filter(subrental_company_id=subrental_company_id)
         elif is_all_query:
-            # When ?all=true is requested (e.g. scan index or challan lookups), include main inventory
-            # PLUS any subrental items that are active/attached to conferences, challans, or trucks
-            assets_query = assets_query.filter(
-                Q(subrental_company__isnull=True) |
-                Q(assigned_conferences__isnull=False) |
-                Q(challan_conferences__isnull=False) |
-                Q(truck_challans__isnull=False)
-            ).distinct()
+            # The complete lookup includes idle permanent inventory across owners.
+            # The temporary-item attachment filter above remains in force.
+            pass
         else:
             # By default, show ONLY our main inventory in paginated inventory view
             assets_query = assets_query.filter(subrental_company__isnull=True)
@@ -511,206 +506,25 @@ import pandas as pd
 from rest_framework.parsers import MultiPartParser, FormParser
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def bulk_upload_assets(request):
-    """
-    Handle bulk upload of assets via CSV or Excel.
-    Re-uploading the same file skips existing records (matched by Serial Number) — no errors on duplicates.
-    """
+    """Create new inventory atomically; imports never overwrite existing stock."""
+    from .inventory_import import import_assets, InventoryImportError
+    role = getattr(getattr(request.user, 'profile', None), 'role', None)
+    allowed = request.user.is_superuser or role in {'admin', 'boss', 'godown_incharge'} or (request.user.is_staff and role not in {'accounts', 'technician'})
+    if not allowed:
+        return Response({'error': 'Only an inventory administrator or godown incharge can import stock.'}, status=403)
     if 'file' not in request.FILES:
         return Response({'error': 'No file provided'}, status=400)
-
-    file = request.FILES['file']
-
     try:
-        if file.name.endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(file)
-        else:
-            return Response({'error': 'Unsupported file format. Please upload ONLY Excel Workbook (.xlsx) files.'}, status=400)
-
-        import math, traceback
-
-        # ── Helpers (defined ONCE outside the row loop) ────────────────────
-        def col(candidates, fallback):
-            """Find the first matching column name from candidates list."""
-            for c in df.columns:
-                if str(c).strip().lower() in candidates:
-                    return c
-            return fallback
-
-        from decimal import Decimal, InvalidOperation as DecimalInvalidOperation, ROUND_HALF_UP
-
-        def safe_decimal(val, default=Decimal('0.00')):
-            """Return a Decimal object. Django 6 DecimalField on SQLite needs Decimal, not float.
-            Float values get stored as REAL and cause InvalidOperation on read-back."""
-            try:
-                v = float(val)
-                if math.isnan(v) or math.isinf(v):
-                    return default
-                # Quantize to 2dp — matches DecimalField(decimal_places=2)
-                return Decimal(str(round(v, 2))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            except (TypeError, ValueError, DecimalInvalidOperation):
-                return default
-
-
-        def safe_str(val):
-            """Convert to string, returning '' for nan/None."""
-            s = str(val).strip()
-            return '' if s.lower() in ('nan', 'none', 'nat') else s
-
-        def parse_date(val):
-            if not val or str(val).lower() in ('nan', 'none', 'nat', ''):
-                return None
-            try:
-                return pd.to_datetime(val).date()
-            except Exception:
-                return None
-
-        # ── Resolve column names ONCE ───────────────────────────────────────
-        sku_col        = col(['sku'], 'SKU')
-        alias_col      = col(['alias name', 'alias_name'], 'Alias Name')
-        mac_col        = col(['mac address', 'mac_address'], 'MAC Address')
-        imei1_col      = col(['imei number 1', 'imei1'], 'IMEI Number 1')
-        imei2_col      = col(['imei number 2', 'imei2'], 'IMEI Number 2')
-        serial_col     = col(['serial number', 'serial'], 'Serial Number')
-        desc_col       = col(['description'], 'Description')
-        bc_added_col   = col(['is barcode added', 'barcode_added'], 'Is Barcode added')
-        type_col       = col(['type', 'category'], 'Type')
-        purchase_col   = col(['purchased date', 'purchased_date'], 'Purchased Date')
-        price_col      = col(['item price', 'price'], 'Item Price')
-        deprec_col     = col(['depreciation percentage', 'depreciation'], 'Depreciation Percentage')
-        avail_from_col = col(['available from', 'available_from'], 'Available from')
-        avail_till_col = col(['available till', 'available_till'], 'Available till')
-        bc_type_col    = col(['barcode type'], 'Barcode Type')
-        barcode_col    = col(['barcode'], 'Barcode')
-        qr_code_col    = col(['qr code'], 'QR Code')
-        qty_col        = col(['quantity', 'qty'], 'Quantity')
-
-        # ── Category Mapping Logic ──────────────────────────────────────────
-        # Standardize incoming values to the new 6-7 categories
-        base_map = {c[1].lower(): c[0] for c in Asset.CATEGORY_CHOICES}
-        
-        # Legacy/Fuzzy overrides (Mapping to valid DB types)
-        fuzzy_overrides = {
-            'speakers & audio': 'Speakers & Audio', 'audio mixers': 'Audio Mixers', 'microphones': 'Microphones',
-            'laptops': 'Laptops', 'smartphones': 'Smartphones', 'computers & servers': 'Computers & Servers',
-            'peripherals': 'IT & Networking', 'ups & power': 'UPS & Power', 'printers': 'Printers',
-            'monitors': 'Monitors', 'tvs': 'TVs', 'projectors': 'Projectors',
-            'video switchers': 'Video Switchers', 'capture cards': 'Capture Cards', 'cameras': 'Cameras',
-            'splitters & converters': 'Splitters & Converters', 'consumables': 'Consumables', 'cable': 'Cable',
-            'lighting & led': 'Lighting & LED', 'lighting & effects': 'Lighting & LED'
-        }
-
-        def normalize_type(raw):
-            low = str(raw).lower().strip()
-            if low in base_map: return base_map[low]
-            if low in fuzzy_overrides: return fuzzy_overrides[low]
-            # Partial matches
-            for key, val in fuzzy_overrides.items():
-                if key in low or low in key: return val
-            return 'Other'
-
-
-        # ── Process rows ─────────────────────────────────────────────────────
-        created_count = 0
-        updated_count = 0
-        errors = []
-
-        for index, row in df.iterrows():
-            try:
-                # Skip completely empty rows
-                if row.isnull().all():
-                    continue
-
-                serial = safe_str(row.get(serial_col, ''))
-                sku_val = safe_str(row.get(sku_col, ''))
-                
-                if not serial:
-                    if sku_val:
-                        serial = sku_val
-                    else:
-                        # Only report error if the row is not completely empty (redundant check but safe)
-                        if not all(safe_str(v) == '' for v in row.values):
-                            errors.append(f"Row {index+2}: Missing both Serial Number and SKU — skipped")
-                        continue
-
-                # Normalize type
-                raw_type = safe_str(row.get(type_col, 'Other'))
-                normalized_type = normalize_type(raw_type)
-
-                barcode_type_val = safe_str(row.get(bc_type_col, ''))
-                barcode_val      = safe_str(row.get(barcode_col, ''))
-                qr_code_val      = safe_str(row.get(qr_code_col, ''))
-                barcode_added    = bool(qr_code_val or barcode_val) or \
-                                   safe_str(row.get(bc_added_col, '')).lower() in ['yes', 'true', '1', 'y']
-                desc             = safe_str(row.get(desc_col, ''))
-                
-                # Check for subrental company context
-                subrental_company_id = request.data.get('subrental_company_id')
-
-                # Depreciation — handle "%" strings and Excel 0-1 float representation
-                raw_deprec = row.get(deprec_col, 0)
-                if isinstance(raw_deprec, str):
-                    deprec_val = safe_decimal(raw_deprec.replace('%', '').strip() or 0)
-                elif isinstance(raw_deprec, (int, float)):
-                    deprec_val = safe_decimal(raw_deprec * 100) if 0 < raw_deprec <= 1.0 else safe_decimal(raw_deprec)
-                else:
-                    deprec_val = 0.0
-
-                defaults = {
-                    'sku':                    safe_str(row.get(sku_col, serial)) or serial,
-                    'alias_name':             safe_str(row.get(alias_col, '')),
-                    'mac_address':            safe_str(row.get(mac_col, '')),
-                    'imei_number_1':          safe_str(row.get(imei1_col, '')),
-                    'imei_number_2':          safe_str(row.get(imei2_col, '')),
-                    'serial_number':          serial,
-                    'description':            desc,
-                    'is_barcode_added':       barcode_added,
-                    'barcode':                barcode_val,
-                    'barcode_type':           barcode_type_val,
-                    'qr_code':                qr_code_val,
-                    'type':                   normalized_type,
-                    'item_price':             safe_decimal(row.get(price_col, 0)),
-                    'depreciation_percentage': deprec_val,
-                    'purchased_date':         parse_date(row.get(purchase_col)),
-                    'available_from':         parse_date(row.get(avail_from_col)),
-                    'available_till':         parse_date(row.get(avail_till_col)),
-                    'quantity':               int(row.get(qty_col, 1)) if not math.isnan(float(row.get(qty_col, 1))) else 1,
-                    # BUG J-27: 'condition' removed — do not overwrite 'Damaged'/'Fair' on updates; rely on DB default ('Good') for new records only
-                    'subrental_company_id':   subrental_company_id
-                }
-
-                # SAFELY UPDATE OR CREATE asset(s) based on serial number
-                # Bulk items (like cables) often share the same generic SKU/Serial.
-                # update_or_create() crashes with MultipleObjectsReturned if multiple exist.
-                matching_assets = Asset.objects.filter(serial_number=serial)
-                
-                if matching_assets.exists():
-                    # Bulk update all matching instances (defaults dictionary excludes operational fields like 'status')
-                    count = matching_assets.update(**defaults)
-                    updated_count += count
-                else:
-                    Asset.objects.create(**defaults)
-                    created_count += 1
-
-
-            except Exception as e:
-                tb = traceback.format_exc()
-                print(f"[bulk_upload] Row {index+2} error: {tb}")
-                errors.append(f"Row {index+2}: {str(e)}")
-
-        return Response({
-            'created': created_count,
-            'updated': updated_count,
-            'skipped': 0,
-            'errors': errors,
-            'message': f'{created_count} asset(s) created, {updated_count} updated.'
-        }, status=200)
-
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print(f"[bulk_upload] Top-level error: {tb}")
-        return Response({'error': str(e), 'detail': tb}, status=500)
+        result, status = import_assets(request.FILES['file'], request.data.get('subrental_company_id'))
+        return Response(result, status=status)
+    except InventoryImportError as exc:
+        return Response({'created': 0, 'updated': 0, 'skipped': 0, 'errors': [str(exc)], 'error': str(exc)}, status=400)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Inventory import failed; transaction rolled back')
+        return Response({'created': 0, 'updated': 0, 'skipped': 0, 'error': 'Import failed. No inventory changes saved.'}, status=500)
 
 
 # from rest_framework.permissions import AllowAny
@@ -721,6 +535,8 @@ from rest_framework.authtoken.models import Token as AuthToken
 @permission_classes([IsAuthenticated])
 def asset_assign_quantity(request, pk):
     asset = get_object_or_404(Asset, pk=pk)
+    if asset.subrental_company_id and (asset.quantity > 1 or asset.type == 'Consumables'):
+        return Response({'error': 'Supplier bulk items and consumables need their quantity and return workflow enabled before assignment.'}, status=409)
     quantity_to_assign = int(request.data.get('quantity', 0))
     conference_id = request.data.get('conference_id')
     
@@ -821,7 +637,22 @@ def export_inventory(request):
     Support two modes via query parameter: type=template or type=master
     """
     export_type = request.query_params.get('type', 'template')
+    if export_type == 'template':
+        return download_asset_template(request)
+    if export_type != 'master':
+        return Response({'error': 'Choose template or master export.'}, status=400)
     assets = Asset.objects.filter(is_temporary=False).select_related('assigned_to', 'parent_asset')  # BUG J-13: Exclude temp assets from export
+    owner = request.query_params.get('subrental_company_id')
+    if owner and owner != 'null':
+        if not owner.isdigit():
+            return Response({'error': 'Choose a valid supplier company.'}, status=400)
+        assets = assets.filter(subrental_company_id=owner)
+    else:
+        assets = assets.filter(subrental_company__isnull=True)
+    query = request.query_params.get('search', '').strip()
+    if query:
+        assets = assets.filter(Q(alias_name__icontains=query) | Q(sku__icontains=query) |
+                               Q(serial_number__icontains=query) | Q(description__icontains=query))
     data = []
     
     for a in assets:

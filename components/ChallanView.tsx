@@ -1,5 +1,6 @@
 import React from 'react';
 import { Booking, Asset, Client, CompanySettings } from '../types';
+import { inventoryOwnerKey, inventoryOwnerSections, overlappingSupplierSources } from '../inventoryHelpers';
 import { Logo } from './Logo';
 
 const EXCLUDED_LAPTOP_KEYWORDS = [
@@ -467,6 +468,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     const defaultName = `ADHOC-${localAssets.length + 1}`;
     const newItem: Asset = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      isTemporary: true,
       sku: defaultSku,
       aliasName: defaultName,
       serialNumber: '',
@@ -535,7 +537,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         // For laptops, merge into MacBook / Windows Laptop sub-groups.
         // For all other assets, group by their exact alias name as before.
         const subGroup = getLaptopSubGroup(asset);
-        const key = subGroup ?? asset.aliasName ?? asset.sku ?? 'Unknown';
+        const key = `${inventoryOwnerKey(asset)}:${asset.itemPrice}:${subGroup ?? asset.aliasName ?? asset.sku ?? 'Unknown'}`;
         if (!groups[key]) {
           groups[key] = {
             ...asset,
@@ -557,7 +559,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         ...g,
         serialNumber: g.serials.length > 0 ? g.serials.join(', ') : '',
         // We keep the first ID for the row key, but note it's a group
-        id: `group-${g.sku}-${g.aliasName}`
+        id: `group-${inventoryOwnerKey(g)}-${g.itemPrice}-${g.sku}-${g.aliasName}`
       }));
     }
 
@@ -577,6 +579,13 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         ?? (isGrouped ? (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? '') : (a.aliasName || a.sku || ''))
     }));
   }, [localAssets, isGrouped, isEditMode, printAliasOverrides]);
+
+  if (overlappingSupplierSources(processedAssets, subrentalTickets)) {
+    return <div role="alert" className="p-5 border border-red-300 bg-red-50 text-red-800 rounded-xl">
+      The same equipment appears in both the scanned inventory and a subrental ticket.
+      Review the duplicate source before printing this challan.
+    </div>;
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -844,6 +853,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
     ? totalOverride
     : assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity || 1)), 0) + subrentalTotal;
 
+  const ownerSections = inventoryOwnerSections(assets);
+
   const renderCell = (asset: Asset, col: ColumnKey, index: number) => {
     if (isEditMode) {
       switch (col) {
@@ -1096,7 +1107,14 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
           </tr>
         </thead>
         <tbody className="text-[8px]">
-          {assets.map((asset, index) => (
+          {ownerSections.map((section, sectionIndex) => (
+            <React.Fragment key={section.key}>
+              <tr className="bg-gray-100">
+                <td colSpan={visibleColumns.length} className="py-1.5 px-2 text-[9px] font-black text-gray-800 uppercase border-y border-gray-400">
+                  {section.key === 'owned' ? `${companySettings?.name || 'Company'} — Owned inventory` : section.label}
+                </td>
+              </tr>
+          {section.assets.map((asset, index) => (
             <tr key={asset.id} className="border-b border-gray-300 page-break-inside-avoid">
               {visibleColumns.map(colKey => {
                 const col = ALL_COLUMNS.find(c => c.key === colKey);
@@ -1106,11 +1124,13 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                     key={`${asset.id}-${colKey}`}
                     className={`py-0.5 px-2 text-gray-900 font-bold ${col.className || ''} ${col.printHidden ? 'print:hidden' : ''}`}
                   >
-                    {renderCell(asset, colKey, index)}
+                    {renderCell(asset, colKey, index + ownerSections.slice(0, sectionIndex).reduce((sum, previous) => sum + previous.assets.length, 0))}
                   </td>
                 );
               })}
             </tr>
+          ))}
+            </React.Fragment>
           ))}
 
           {/* Subrental Sections */}

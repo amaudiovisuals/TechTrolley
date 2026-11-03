@@ -52,6 +52,7 @@ class TruckChallanSerializer(serializers.ModelSerializer):
         fields = ['id', 'conference', 'truck_number', 'label', 'vehicle_number', 'driver_phone', 'assets', 'asset_quantities', 'created_at']
 
 class SimpleAssetSerializer(serializers.ModelSerializer):
+    subrental_company_name = serializers.ReadOnlyField(source='subrental_company.name')
     """
     Ultra-lightweight Asset Serializer for embedded challan & truck asset representations.
     Excludes expensive relations (deployment_history, sub_assets, current_conference_name)
@@ -61,10 +62,12 @@ class SimpleAssetSerializer(serializers.ModelSerializer):
         model = Asset
         fields = [
             'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
-            'item_price', 'barcode_type', 'barcode', 'qr_code', 'description', 'status'
+            'item_price', 'barcode_type', 'barcode', 'qr_code', 'description', 'status',
+            'subrental_company', 'subrental_company_name', 'is_temporary'
         ]
 
 class SubAssetSerializer(serializers.ModelSerializer):
+    subrental_company_name = serializers.ReadOnlyField(source='subrental_company.name')
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
     current_conference_name = serializers.SerializerMethodField()
 
@@ -73,7 +76,7 @@ class SubAssetSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
             'status', 'flag', 'condition', 'barcode_type', 'barcode', 'qr_code', 'assigned_to', 'assigned_to_name',
-            'parent_asset', 'current_conference_name', 'subrental_company',
+            'parent_asset', 'current_conference_name', 'subrental_company', 'subrental_company_name',
         ]
 
     def get_current_conference_name(self, obj):
@@ -83,6 +86,7 @@ class SubAssetSerializer(serializers.ModelSerializer):
         return conf.name if conf else None
 
 class AssetSerializer(serializers.ModelSerializer):
+    subrental_company_name = serializers.ReadOnlyField(source='subrental_company.name')
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
     sub_assets = SubAssetSerializer(many=True, read_only=True)
     current_conference_name = serializers.SerializerMethodField()
@@ -102,7 +106,7 @@ class AssetSerializer(serializers.ModelSerializer):
             'available_from', 'available_till', 'created_at',
             'barcode_type', 'barcode', 'qr_code', 'status', 'flag', 'condition', 'last_maintained', 
             'current_venue', 'return_date', 'assigned_to', 'assigned_to_name',
-            'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'deployment_history',
+            'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'subrental_company_name', 'deployment_history',
             'is_temporary',
         ]
 

@@ -137,6 +137,7 @@ export interface Asset {
   sub_assets?: Asset[];
   current_conference_name?: string | null;
   subrental_company?: number | string | null;
+  subrental_company_name?: string;
   // Legacy / Optional compatibility
   name?: string;
   brand?: string;
@@ -168,6 +169,13 @@ export interface Client {
 export type ConferenceType = 'Medical Conference' | 'Personal Rental';
 
 export interface Booking {
+  name?: string;
+  association?: string;
+  start_date?: string;
+  end_date?: string;
+  type?: ConferenceType;
+  requirements?: string[];
+  challan_assets_details?: Asset[];
   id: string;
   conferenceName: string;
   associationName: string;
@@ -183,8 +191,8 @@ export interface Booking {
   crosscheckAssets?: string[];
   challanAssets?: string[];
   staged_assets?: string[];
-  status: 'Pending' | 'Active' | 'Completed' | 'Cancelled';
-  operatorId: string;
+  status?: 'Pending' | 'Active' | 'Completed' | 'Cancelled';
+  operatorId?: string;
   challanNumber: string;
   clientId?: string;
   transportAddress?: string;
