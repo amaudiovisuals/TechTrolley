@@ -9,6 +9,7 @@ from . import subrental_ticket_views
 from . import transfer_views
 from . import truck_views
 from . import ai_views
+from . import program_deliveries
 
 urlpatterns = [
     # API endpoints or views
@@ -23,6 +24,9 @@ urlpatterns = [
     
     path('conferences/', conference_views.conference_list, name='conference_list'),
     path('conferences/<int:pk>/', conference_views.conference_detail, name='conference_detail'),
+    path('conferences/<int:pk>/deliveries/', program_deliveries.program_deliveries, name='program_deliveries'),
+    path('conferences/<int:pk>/deliveries/preview/', program_deliveries.delivery_preview, name='delivery_preview'),
+    path('conferences/<int:pk>/deliveries/<int:delivery_pk>/void/', program_deliveries.void_delivery, name='void_delivery'),
     path('conferences/<int:pk>/transfer-assets/', transfer_views.asset_transfer, name='asset_transfer'),
     path('conferences/<int:pk>/trucks/', truck_views.conference_trucks, name='conference_trucks'),
     path('conferences/<int:pk>/trucks/add-to-truck/', truck_views.add_asset_to_truck, name='add_asset_to_truck'),

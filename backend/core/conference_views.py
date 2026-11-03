@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from .models import Conference
 from .serializers import ConferenceSerializer
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 
 @api_view(['GET', 'POST'])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
@@ -62,8 +63,12 @@ def conference_detail(request, pk):
             return Response({"error": str(e), "traceback": traceback.format_exc()}, status=500)
 
     elif request.method == 'DELETE':
-        conference.assets.update(status='Available')
-        conference.crosscheck_assets.update(status='Available')
-        conference.delete()
+        with transaction.atomic():
+            conference = Conference.objects.select_for_update().get(pk=pk)
+            if conference.issued_deliveries.exists():
+                return Response({'error': 'This program has saved delivery challans and must be retained for its document history.'}, status=409)
+            conference.assets.update(status='Available')
+            conference.crosscheck_assets.update(status='Available')
+            conference.delete()
         return Response(status=204)
 

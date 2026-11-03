@@ -15,6 +15,15 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,8 +36,18 @@ jobs:
         run: python -m pip install -r scripts/hotfix-test-requirements.in
       - name: Test inventory contracts in memory
         run: python -B scripts/run_hotfix_tests.py
+      - name: Check migration model consistency
+        run: python -B scripts/run_hotfix_tests.py --check-migrations
+      - name: Test PostgreSQL transactions and simultaneous delivery requests
+        run: python -B scripts/run_hotfix_tests.py
+        env:
+          TT_TEST_POSTGRES_NAME: codex_delivery_acceptance_ci
+          TT_TEST_POSTGRES_HOST: 127.0.0.1
+          TT_TEST_POSTGRES_PASSWORD: synthetic-ci-only
       - name: Check code-only activation script
-        run: bash -n scripts/deployment/activate_inventory_hotfix.sh
+        run: |
+          bash -n scripts/deployment/activate_inventory_hotfix.sh
+          bash -n scripts/deployment/activate_delivery_documents.sh
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -80,4 +99,4 @@ jobs:
             set -euo pipefail
             cd /home/ubuntu/TechTrolley
             git fetch origin "$CANDIDATE_REVISION" > /dev/null 2>&1 || { echo 'Fetching the tested revision failed; server authentication needs review.'; exit 1; }
-            git show "$CANDIDATE_REVISION:scripts/deployment/activate_inventory_hotfix.sh" | bash -s -- "$CANDIDATE_REVISION"
+            git show "$CANDIDATE_REVISION:scripts/deployment/activate_delivery_documents.sh" | bash -s -- "$CANDIDATE_REVISION"

@@ -156,6 +156,7 @@ import {
 } from './constants';
 import { Scanner } from './components/Scanner';
 import { ChallanView } from './components/ChallanView';
+import { ProgramDeliveries } from './components/ProgramDeliveries';
 import { Logo } from './components/Logo';
 import {
   BarChart,
@@ -9973,6 +9974,14 @@ const App: React.FC = () => {
                   })()}
 
                   <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
+                    <ProgramDeliveries
+                      key={`deliveries_${conf.id}_${activeTruck?.id || 'master'}`}
+                      conferenceId={String(conf.id)}
+                      truckId={activeTruck?.id}
+                      canIssue={user?.role !== 'accounts' && (!!user?.is_staff || ['admin', 'boss', 'godown_incharge'].includes(user?.role || ''))}
+                      apiFetch={apiFetch}
+                      apiBase={API_BASE}
+                    />
                     <ChallanView
                       key={`${conf.id}_${activeTruck ? activeTruck.id : 'master'}`}
                       booking={effectiveBooking}
