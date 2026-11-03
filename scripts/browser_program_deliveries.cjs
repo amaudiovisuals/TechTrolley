@@ -99,6 +99,15 @@ const root = path.resolve(__dirname, '..');
     await page.frameLocator('iframe').getByText('VOID — Synthetic correction', { exact: true }).first().waitFor();
     assert.equal(await page.frameLocator('iframe').getByText('VOID — Synthetic correction', { exact: true }).count(), 3);
     checks.push('Voiding preserves all original papers with a visible void marker');
+    await page.goto('http://127.0.0.1:4667/testing/program-deliveries.html?truck=1');
+    await page.getByRole('button', { name: 'New delivery for this truck', exact: true }).click();
+    await page.getByLabel('Include AM-M17').check();
+    assert.equal(await page.getByLabel('Include OWN-SPEAKER').count(), 0);
+    await page.getByLabel('Delivery reference').fill('Truck delivery');
+    await page.getByRole('button', { name: 'Issue delivery challans', exact: true }).click();
+    await page.getByText(/OUT-000003 — saved copy/).waitFor();
+    assert.equal(issuedRequests.at(-1).truck_id, 1);
+    checks.push('Legacy text truck ID is normalized and only that truck equipment is issued');
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ checks, pageErrors: errors, backend: 'real Django, isolated in-memory synthetic fixtures', pdf: pdfPath, productionAccess: false }, null, 2));
   } catch (error) {

@@ -23,7 +23,7 @@ from django.core.wsgi import get_wsgi_application
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
 from core import program_deliveries
-from core.models import Asset, CompanySettings, Conference, SubrentalCompany, UserProfile
+from core.models import Asset, CompanySettings, Conference, SubrentalCompany, TruckChallan, UserProfile
 urlpatterns = [
     path('api/conferences/<int:pk>/deliveries/', program_deliveries.program_deliveries),
     path('api/conferences/<int:pk>/deliveries/preview/', program_deliveries.delivery_preview),
@@ -41,6 +41,8 @@ event.challan_assets.add(
     Asset.objects.create(sku='OWN-SPEAKER', alias_name='Owned speaker'),
     Asset.objects.create(sku='AM-M17', alias_name='Supplier MacBook', serial_number='M17-TEST', subrental_company=supplier),
 )
+truck = TruckChallan.objects.create(conference=event, truck_number=1)
+truck.assets.add(Asset.objects.get(sku='AM-M17'))
 application = get_wsgi_application()
 def cors(environ, start_response):
     def start(status, headers, exc_info=None):
