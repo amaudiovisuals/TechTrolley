@@ -1,86 +1,83 @@
-name: Deploy Tech Trolley
+name: Validate and deploy Tech Trolley
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: techtrolley-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
+  validate:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js (React Build Environment)
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: '20'
-
-      - name: Install Frontend Dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Compile React PWA
-        run: npm run build
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated test dependencies
+        run: python -m pip install -r scripts/hotfix-test-requirements.in
+      - name: Test inventory contracts in memory
+        run: python -B scripts/run_hotfix_tests.py
+      - name: Check code-only activation script
+        run: bash -n scripts/deployment/activate_inventory_hotfix.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: node scripts/test_inventory_helpers.cjs
+      - run: npx tsc --noEmit
+      - name: Build exact candidate
+        run: |
+          npm run build
+          printf '%s\n' "$CANDIDATE_REVISION" > dist/build-revision.txt
         env:
-          VITE_API_URL: https://techtrolley.amaudiovisuals.com
+          CANDIDATE_REVISION: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Transfer React Build to AWS EC2
+  deploy:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist
+      - name: Transfer validated frontend
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "dist"
-          target: "/home/ubuntu/TechTrolley/"
-
-      - name: Transfer Data Fixture to AWS EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "backend/production_data.json,backend/load_production_data.py"
-          target: "/home/ubuntu/data_sync/"
-
-      - name: Deploy & Sync Data
+          source: dist
+          target: /home/ubuntu/TechTrolley/
+      - name: Checkpoint and activate exact tested revision
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          CANDIDATE_REVISION: ${{ github.sha }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: CANDIDATE_REVISION
+          command_timeout: 10m
           script: |
-            set -e
-            cd ~/TechTrolley
-
-            # 1. Pull latest code
-            git fetch origin
-            git reset --hard origin/main
-            git pull origin main
-
-            # 2. Deploy the compiled React Frontend
-            sudo cp -r ~/TechTrolley/dist/* /var/www/html/techtrolley/
-
-            # 3. Update the Python Backend Environment
-            cd backend
-            if [ ! -d "venv" ]; then
-              python3 -m venv venv
-            fi
-            source venv/bin/activate
-            pip install -r requirements.txt -q
-
-            # 4. Apply schema migrations (Synchronous and Forceful)
-            export DJANGO_ENV=production
-            python manage.py migrate core --noinput
-            python manage.py migrate --noinput
-
-            # 5. Apply static assets
-            python manage.py collectstatic --noinput
-
-            # 6. Restart services
-            sudo systemctl daemon-reload
-            sudo systemctl restart gunicorn
-            sudo systemctl reload nginx
-
-            echo "=== DEPLOY COMPLETE ==="
+            set -euo pipefail
+            cd /home/ubuntu/TechTrolley
+            git fetch origin "$CANDIDATE_REVISION" > /dev/null 2>&1 || { echo 'Fetching the tested revision failed; server authentication needs review.'; exit 1; }
+            git show "$CANDIDATE_REVISION:scripts/deployment/activate_inventory_hotfix.sh" | bash -s -- "$CANDIDATE_REVISION"

@@ -17,6 +17,7 @@ import {
   SubrentalTicketItem,
   TruckChallan
 } from './types';
+import { resolveInventoryScan, supplierInventoryRows, importOutcome, assetOwnerLabel } from './inventoryHelpers';
 import QRCode from 'qrcode';
 import * as XLSX from 'xlsx';
 
@@ -230,6 +231,10 @@ const App: React.FC = () => {
   const [subrentalFormData, setSubrentalFormData] = useState({ name: '', address: '', gst_number: '' });
   const [editingSubrentalId, setEditingSubrentalId] = useState<string | null>(null);
   const [subrentalAssets, setSubrentalAssets] = useState<Asset[]>([]);
+  const [subrentalLoading, setSubrentalLoading] = useState(false);
+  const [subrentalError, setSubrentalError] = useState('');
+  const subrentalRequestRef = useRef(0);
+  useEffect(() => () => { subrentalRequestRef.current++; }, [isLoggedIn]);
   const [subrentalSearchQuery, setSubrentalSearchQuery] = useState('');
   const [subrentalTickets, setSubrentalTickets] = useState<SubrentalTicket[]>([]);
   const [showSubrentalInventory, setShowSubrentalInventory] = useState(false);
@@ -724,7 +729,7 @@ const App: React.FC = () => {
           });
           const fullPool = Array.from(existingMap.values());
 
-          setAssets(mappedAssets);
+          setAssets(mappedAssets.filter(asset => !asset.subrental_company));
           allAssetsRef.current = fullPool;
           setIsBackgroundSyncing(false);
           return mappedAssets;
@@ -825,26 +830,24 @@ const App: React.FC = () => {
       .catch(err => console.error("Failed to fetch subrental companies:", err));
   };
 
-  const fetchSubrentalAssets = (companyId: string) => {
-    apiFetch(`${API_BASE}/api/assets/?subrental_company_id=${companyId}`)
-      .then(async res => {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const mapped = data.map((asset: any) => ({
-            ...asset,
-            id: asset.id.toString(),
-            aliasName: asset.alias_name,
-            serialNumber: asset.serial_number,
-            quantity: parseInt(asset.quantity, 10) || 1,
-            itemPrice: parseFloat(asset.item_price),
-            purchasedDate: asset.purchased_date,
-            flag: asset.flag || AssetFlag.NONE,
-            isTemporary: asset.is_temporary
-          }));
-          setSubrentalAssets(mapped.filter((a: any) => !a.isTemporary));
-        }
-      })
-      .catch(err => console.error("Failed to fetch subrental assets:", err));
+  const fetchSubrentalAssets = async (companyId: string | number) => {
+    const requestId = ++subrentalRequestRef.current;
+    setSubrentalLoading(true);
+    setSubrentalError('');
+    setSubrentalAssets([]);
+    try {
+      const res = await apiFetch(`${API_BASE}/api/assets/?all=true&subrental_company_id=${encodeURIComponent(companyId)}`);
+      if (!res.ok) throw new Error('Could not load supplier inventory. Please retry.');
+      const rows = supplierInventoryRows(await res.json(), companyId);
+      if (requestId !== subrentalRequestRef.current) return;
+      const mapped = rows.map(mapRawAsset);
+      setSubrentalAssets(mapped);
+      registerKnownAssets(mapped);
+    } catch (error) {
+      if (requestId === subrentalRequestRef.current) setSubrentalError(error instanceof Error ? error.message : 'Could not load supplier inventory. Please retry.');
+    } finally {
+      if (requestId === subrentalRequestRef.current) setSubrentalLoading(false);
+    }
   };
 
   const mapTicketData = (data: any[]) => data.map((t: any) => ({
@@ -1361,7 +1364,7 @@ const App: React.FC = () => {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   // Upload result banner state
-  const [uploadResult, setUploadResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ created: number; updated: number; skipped: number; errors: string[] } | null>(null);
 
   // Scan toast state
   const [scanToast, setScanToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
@@ -2696,55 +2699,8 @@ const App: React.FC = () => {
   }, [currentPage, assetView, assetTab, conferenceView, viewingAsset]);
 
   const findAssetFromScan = (decodedText: string) => {
-    const scanned = (decodedText || '').trim();
-    if (!scanned) return null;
-
-    // Always search the COMPLETE scan-index (allAssetsRef) first — this contains
-    // ALL assets regardless of which page is displayed in the inventory UI.
-    // Fall back to the paginated `assets` state only if the index hasn't loaded yet.
-    const searchPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-
-    // A. FIRST: Check full string exact match (highest priority)
-    const exactMatch = searchPool.find(a =>
-      (a.sku && a.sku === scanned) ||
-      (a.barcode && a.barcode === scanned) ||
-      (a.qrCode && a.qrCode === scanned) ||
-      (a.serialNumber && a.serialNumber === scanned) ||
-      String(a.id) === scanned
-    );
-    if (exactMatch) return exactMatch;
-
-    // B. SECOND: Check normalized full string
-    const normScanned = normalizeId(scanned);
-    const normMatch = searchPool.find(a =>
-      normalizeId(a.sku) === normScanned ||
-      normalizeId(a.barcode) === normScanned ||
-      (a.qrCode && normalizeId(a.qrCode) === normScanned) ||
-      normalizeId(a.serialNumber) === normScanned ||
-      normalizeId(a.id) === normScanned
-    );
-    if (normMatch) return normMatch;
-
-    // C. THIRD: Split logic for multipart scans (legacy/special)
-    const scanParts = scanned.split(/[ ,;]+/).map(p => p.trim()).filter(Boolean);
-    const normalizedParts = scanParts.map(p => normalizeId(p));
-
-    const asset = searchPool.find(a => {
-      const aSkuNorm = normalizeId(a.sku);
-      const aBarcodeNorm = normalizeId(a.barcode);
-      const aQrCodeNorm = a.qrCode ? normalizeId(a.qrCode) : '';
-      const aSerialNorm = normalizeId(a.serialNumber);
-
-      for (let i = 0; i < scanParts.length; i++) {
-        const part = scanParts[i];
-        const partNorm = normalizedParts[i];
-        if (a.id === part || a.sku === part || a.barcode === part || (a.qrCode && a.qrCode === part) || a.serialNumber === part) return true;
-        if (normalizeId(a.id) === partNorm || aSkuNorm === partNorm || aBarcodeNorm === partNorm || (aQrCodeNorm && aQrCodeNorm === partNorm) || aSerialNorm === partNorm) return true;
-      }
-      return false;
-    });
-
-    return asset || null;
+    const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+    return resolveInventoryScan(pool, decodedText, normalizeId).asset;
   };
 
   const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove' | 'unassign', qty: number = 1) => {
@@ -3160,7 +3116,16 @@ const App: React.FC = () => {
       }
     }
 
-    const asset = findAssetFromScan(scanned);
+    const lookup = resolveInventoryScan(allAssetsRef.current.length > 0 ? allAssetsRef.current : assets, scanned, normalizeId);
+    if (lookup.ambiguous) {
+      showScanToast('Multiple assets match this code. Use the unique QR/barcode or review the duplicate identifiers.', 'error');
+      return;
+    }
+    const asset = lookup.asset;
+    if (asset?.subrental_company && (asset.quantity > 1 || asset.type === AssetCategory.CONSUMABLES)) {
+      showScanToast('Supplier bulk items and consumables need their quantity and return workflow enabled before scanning.', 'warning');
+      return;
+    }
 
     // 1. ASSET LINKING MODAL (Only for Assets Page)
     if (!asset && currentPage === 'Assets' && scanned.length > 2) {
@@ -3344,7 +3309,8 @@ const App: React.FC = () => {
                const scanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
                const matchingReqId = reqIds.find((reqId: string) => {
                   const reqAsset = scanPool.find((a: any) => String(a.id) === reqId);
-                  return reqAsset && reqAsset.aliasName === asset.aliasName;
+                  return reqAsset && reqAsset.aliasName === asset.aliasName &&
+                    String(reqAsset.subrental_company || '') === String(asset.subrental_company || '');
                });
 
                if (matchingReqId) {
@@ -3415,44 +3381,30 @@ const App: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, companyId?: string) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, companyId?: string) => {
     const file = event.target.files?.[0];
+    const input = event.target;
     if (!file) return;
-
-    setUploadFeedback({ type: 'loading', text: 'Uploading and processing data...' });
-
-    const formData = new FormData();
-    formData.append('file', file);
-    if (companyId) {
-      formData.append('subrental_company_id', companyId);
+    setUploadFeedback({ type: 'loading', text: 'Uploading and validating inventory...' });
+    const body = new FormData();
+    body.append('file', file);
+    if (companyId) body.append('subrental_company_id', companyId);
+    try {
+      const res = await apiFetch(`${API_BASE}/api/upload-assets/`, { method: 'POST', body });
+      const result = importOutcome(await res.json(), res.ok);
+      setUploadResult(result);
+      setUploadFeedback({ type: result.success ? 'success' : 'error', text: result.text });
+      if (result.success) {
+        if (companyId) await fetchSubrentalAssets(companyId);
+        await fetchAssets();
+        fetchAllAssetsForScan();
+      }
+    } catch {
+      setUploadResult({ created: 0, updated: 0, skipped: 0, errors: ['The import result could not be confirmed. Reload inventory before retrying.'] });
+      setUploadFeedback({ type: 'error', text: 'The import result could not be confirmed. Reload inventory before retrying.' });
+    } finally {
+      input.value = '';
     }
-
-    apiFetch(`${API_BASE}/api/upload-assets/`, {
-      method: 'POST',
-      body: formData
-    })
-      .then(async res => {
-        const data = await res.json();
-        if (res.ok || data.created !== undefined) {
-          setUploadResult({ created: data.created ?? 0, skipped: data.skipped ?? 0, errors: data.errors ?? [] });
-          setUploadFeedback({ type: 'success', text: 'Success: Inventory updated perfectly!' });
-          setTimeout(() => setUploadFeedback(null), 5000);
-          if (companyId) {
-            fetchSubrentalAssets(companyId);
-          } else {
-            fetchAssets();
-          }
-        } else {
-          setUploadResult({ created: 0, skipped: 0, errors: [data.error || 'Upload failed'] });
-          setUploadFeedback({ type: 'error', text: 'Error: Failed to upload file.' });
-        }
-      })
-      .catch(() => {
-        setUploadResult({ created: 0, skipped: 0, errors: ['Could not connect to server'] });
-        setUploadFeedback({ type: 'error', text: 'Error: Failed to upload file.' });
-      });
-
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleExportInventory = (mode: 'template' | 'master' = 'template') => {
@@ -6236,7 +6188,7 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={() => handleExportInventory('template')}
+            onClick={handleDownloadTemplate}
             className="px-6 py-4 bg-slate-800 text-slate-300 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-700 transition flex items-center gap-2"
           >
             <i className="fa-solid fa-download"></i> Template
@@ -6279,6 +6231,14 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {uploadResult?.errors.length > 0 && (
+        <ul className="mb-4 p-4 rounded-xl bg-red-50 text-red-700 text-xs list-disc list-inside" role="alert">
+          {uploadResult.errors.map((error, index) => <li key={index}>{error}</li>)}
+        </ul>
+      )}
+      {subrentalError && <div role="alert" className="mb-4 p-4 rounded-xl bg-red-50 text-red-700 text-sm">
+        {subrentalError} <button className="ml-3 underline font-bold" onClick={() => fetchSubrentalAssets(selectedSubrentalCompany.id)}>Retry</button>
+      </div>}
       <div className="flex flex-col md:flex-row gap-4 items-center mb-8">
         <div className="relative group flex-1 w-full">
           <i className="fa-solid fa-magnifying-glass absolute left-3.5 sm:left-4 md:left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors text-xs md:text-sm pointer-events-none" />
@@ -6378,7 +6338,7 @@ const App: React.FC = () => {
                   <tr>
                     <td colSpan={7} className="px-6 py-20 text-center">
                       <p className="text-xs font-black text-slate-600 uppercase tracking-widest">
-                        {subrentalSearchQuery ? 'No results matching search' : 'Inventory is empty'}
+                        {subrentalLoading ? 'Loading supplier inventory...' : subrentalError ? 'Inventory could not be loaded' : subrentalSearchQuery ? 'No results matching search' : 'Inventory is empty'}
                       </p>
                     </td>
                   </tr>
@@ -8317,7 +8277,7 @@ const App: React.FC = () => {
                                      }
                                      // F-3: Cart view — group by display alias (MacBook/Windows Laptop for laptops)
                                       const groups = filteredReqs.reduce((acc: Record<string, Asset[]>, a) => {
-                                        const key = getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown';
+                                        const key = `${assetOwnerLabel(a)} • ${getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown'}`;
                                         if (!acc[key]) acc[key] = [];
                                         acc[key].push(a);
                                         return acc;
@@ -8413,7 +8373,7 @@ const App: React.FC = () => {
                                        .filter(Boolean) as Asset[];
                                      const groups = pendingAssets.reduce((acc: Record<string, Asset[]>, a) => {
                                        // Group laptops under MacBook / Windows Laptop; all others by raw alias
-                                       const key = getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown';
+                                       const key = `${assetOwnerLabel(a)} • ${getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown'}`;
                                        if (!acc[key]) acc[key] = [];
                                        acc[key].push(a);
                                        return acc;
@@ -8622,7 +8582,7 @@ const App: React.FC = () => {
                                          ...stagedList.map(a => ({ asset: a, type: 'staged' }))
                                        ];
                                        const groups = allItems.reduce((acc: Record<string, {asset: Asset, type: string}[]>, item) => {
-                                         const key = getLaptopSubGroup(item.asset) ?? item.asset.aliasName ?? item.asset.sku ?? 'Unknown';
+                                         const key = `${assetOwnerLabel(item.asset)} • ${getLaptopSubGroup(item.asset) ?? item.asset.aliasName ?? item.asset.sku ?? 'Unknown'}`;
                                          if (!acc[key]) acc[key] = [];
                                          acc[key].push(item);
                                          return acc;
@@ -8863,7 +8823,7 @@ const App: React.FC = () => {
                                       ...assignedList.map(a => ({ asset: a, type: requirementIds.has(String(a.id)) ? 'assigned' as const : 'extra' as const }))
                                     ];
                                     const groups = allItems.reduce((acc: Record<string, CartEntry[]>, item) => {
-                                      const key = item.asset.aliasName || item.asset.sku || 'Unknown';
+                                      const key = `${assetOwnerLabel(item.asset)} • ${item.asset.aliasName || item.asset.sku || 'Unknown'}`;
                                       if (!acc[key]) acc[key] = [];
                                       acc[key].push(item);
                                       return acc;
@@ -9012,7 +8972,7 @@ const App: React.FC = () => {
                               // across batches always collapse into a single group.
                               // Laptops are grouped as MacBook or Windows Laptop by getLaptopSubGroup.
                               const groups = packupList.reduce((acc: Record<string, Asset[]>, a) => {
-                                const key = (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown').trim();
+                                const key = `${assetOwnerLabel(a)} • ${(getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown').trim()}`;
                                 if (!acc[key]) acc[key] = [];
                                 acc[key].push(a);
                                 return acc;
@@ -9126,7 +9086,7 @@ const App: React.FC = () => {
                              const crosscheckList = crossPool.filter(a => new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(String(a.id)));
                              const groups = crosscheckList.reduce((acc: Record<string, Asset[]>, a) => {
                                // Group laptops as MacBook / Windows Laptop
-                               const key = getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown';
+                               const key = `${assetOwnerLabel(a)} • ${getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? 'Unknown'}`;
                                if (!acc[key]) acc[key] = [];
                                acc[key].push(a);
                                return acc;
