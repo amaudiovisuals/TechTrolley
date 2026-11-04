@@ -1,0 +1,61 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {spawn}=require('node:child_process'),{pathToFileURL}=require('node:url');
+const root=path.resolve(__dirname,'../..');
+const {chromium}=require(process.env.TT_PLAYWRIGHT_MODULE||'/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+(async()=>{
+ const backend=spawn(process.env.TT_TEST_PYTHON||'python3',['-B',path.join(__dirname,'warehouse_quantity_test_server.py')],{cwd:root,stdio:['ignore','pipe','pipe']});
+ let log='',server,browser,page,closing=false,transport=Promise.resolve(),timer;const checks=[],errors=[],writes=[];
+ const check=async(name,fn)=>{console.error('Checking: '+name);await fn();checks.push(name);};
+ try{
+  await new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error(log)),15000);backend.stdout.on('data',d=>{log+=d;if(log.includes('SYNTHETIC_WAREHOUSE_QUANTITY_READY')){clearTimeout(timer);resolve();}});backend.stderr.on('data',d=>log+=d);backend.once('exit',code=>reject(Error(`Backend ${code}: ${log}`)));});
+  const {createServer}=await import(pathToFileURL(path.join(root,'frontend/node_modules/vite/dist/node/index.js')).href);
+  server=await createServer({root:path.join(root,'frontend'),configFile:path.join(root,'frontend/vite.config.ts'),server:{host:'127.0.0.1',port:4371,strictPort:true}});await server.listen();
+  browser=await chromium.launch({headless:true,executablePath:process.env.TT_CHROME_EXECUTABLE||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+  const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1400,height:1100}});
+  await context.route('**/*',async route=>{const req=route.request(),url=new URL(req.url());
+   if(url.origin==='http://127.0.0.1:4371'&&!url.pathname.startsWith('/api/'))return route.continue();
+   if(!['http://127.0.0.1:4371','http://127.0.0.1:8000'].includes(url.origin))return route.abort();
+   const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'};
+   if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
+   if(req.method()!=='GET')writes.push({path:url.pathname,body:req.postDataJSON()});
+   try{const task=transport.then(()=>route.fetch({url:`http://127.0.0.1:4372${url.pathname}${url.search}`}));transport=task.then(()=>{},()=>{});const response=await task;return route.fulfill({response,headers:{...response.headers(),...headers}});}catch(e){if(!closing)errors.push(e.message);return route.abort().catch(()=>{});}
+  });
+  await context.addInitScript(()=>{localStorage.setItem('token','synthetic-warehouse-quantity-token');localStorage.setItem('user',JSON.stringify({user_id:1,email:'quantity@example.test',role:'admin',is_staff:true}));});
+  page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+  const waitFor=(predicate)=>{const promise=page.waitForResponse(predicate);promise.catch(()=>{});return promise;};
+  const inspect=async()=>(await page.request.get('http://127.0.0.1:4372/_fixture/inspect/')).json();
+  const open=async()=>{await page.getByRole('button',{name:'Conference',exact:true}).first().click();await page.getByTitle('Edit Conference Details',{exact:true}).first().click();};
+  const scan=async(code,amount,action)=>{
+   const input=page.locator('input[placeholder="Search or scan requirement..."]:visible, input[placeholder="Scan to remove/verify..."]:visible, input[placeholder="Scan to add equipment..."]:visible').first();
+   await input.fill(code);await input.press('Enter');
+   const modal=page.getByRole('heading',{name:'Select Quantity',exact:true}).locator('..').locator('..').locator('..');
+   await modal.locator('input[type=number]').fill(String(amount));
+   const saved=action==='consumable-draft'?null:waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/quantity-commands/'));
+   await modal.getByRole('button',{name:new RegExp(action==='consumable-draft'?'^Add':`^${action.replace('_',' ')}`,'i')}).click();
+   if(saved){const response=await saved;assert.equal(response.status(),200,await response.text());}
+   await page.getByRole('heading',{name:'Select Quantity',exact:true}).waitFor({state:'hidden'});
+  };
+  await page.goto('http://127.0.0.1:4371/');await open();await page.getByRole('button',{name:'Requirements',exact:true}).click();
+  await check('Supplier bulk scan reserves a partial count on the original master',async()=>{await scan('AM-BULK',6,'stage');const state=await inspect();assert.equal(state.allocation.reserved,6);assert.equal(state.stock,10);assert.equal(state.bulk_records,1);assert.equal(state.owner_id,1);});
+  await check('Actual dispatch button moves exactly the reserved count',async()=>{const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/quantity-commands/'));await page.getByRole('button',{name:'Submit Dispatch to Show',exact:true}).click();assert.equal((await saved).status(),200);assert.equal((await inspect()).allocation.dispatched,6);});
+  await page.getByRole('button',{name:'Requirements',exact:true}).click();
+  await check('Supplier consumable scan saves and dispatches a recorded four-unit request',async()=>{await scan('AM-TAPE',4,'consumable-draft');
+   for(const name of ['Save consumable requests','Dispatch consumables']){const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/consumable-commands/'));await page.getByRole('button',{name,exact:true}).click();assert.equal((await saved).status(),200);}
+   const state=await inspect();assert.equal(state.consumer.requested,4);assert.equal(state.consumer.state,'dispatched');assert.equal(state.consumable_stock,10);
+  });
+  await page.getByRole('button',{name:'Challans',exact:true}).first().click();await page.getByRole('row').filter({hasText:'Synthetic shared quantity event'}).getByRole('button',{name:'View',exact:true}).click();
+  await check('Reviewed customer challan and new supplier packet use event quantities, not master stock',async()=>{
+   await page.getByRole('button',{name:'Edit Mode',exact:true}).click();const saved=waitFor(r=>r.request().method()==='PUT'&&r.url().includes('/challan-documents/'));await page.getByRole('button',{name:'Save Changes',exact:true}).click();assert.equal((await saved).status(),200);
+   await page.getByRole('button',{name:'New delivery',exact:true}).click();await page.getByLabel('Quantity AM-BULK').waitFor();assert.equal(await page.getByLabel('Quantity AM-BULK').inputValue(),'6');assert.equal(await page.getByLabel('Quantity AM-TAPE').inputValue(),'4');
+   await page.getByRole('button',{name:'Issue delivery challans',exact:true}).click();await page.getByText(/OUT-000001 — saved copy/).waitFor();const state=await inspect();const rows=state.packets[0].supplier_documents[0].rows;assert.equal(rows.find(r=>r.sku==='AM-BULK').quantity,6);assert.equal(rows.find(r=>r.sku==='AM-TAPE').quantity,4);
+  });
+  await page.reload();await open();await page.getByRole('button',{name:'Packup',exact:true}).click();
+  await check('Partial bulk return and verification keep the remainder on site',async()=>{await scan('AM-BULK',2,'return');let state=await inspect();assert.equal(state.allocation.dispatched,4);assert.equal(state.allocation.awaiting_verification,2);
+   await page.getByRole('button',{name:'Crosscheck',exact:true}).click();await scan('AM-BULK',2,'verify_return');state=await inspect();assert.equal(state.allocation.awaiting_verification,0);assert.equal(state.allocation.dispatched,4);assert.equal(state.stock,10);assert.equal(state.bulk_records,1);
+  });
+  await check('Explicit consumable count and settlement deduct three consumed units once',async()=>{await page.getByLabel('Returned to warehouse',{exact:true}).fill('1');await page.getByLabel('I verified this return count',{exact:true}).check();const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/consumable-commands/'));await page.getByRole('button',{name:'SUBMIT',exact:true}).click();assert.equal((await saved).status(),200);const state=await inspect();assert.equal(state.consumer.returned,1);assert.equal(state.consumer.consumed,3);assert.equal(state.consumable_stock,7);assert.equal(state.packets[0].supplier_documents[0].rows.find(r=>r.sku==='AM-TAPE').quantity,4);});
+  assert(!writes.some(w=>w.path.includes('assign-quantity')));assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({checks,passed:checks.length,actual_App_and_Django:true,private_memory_database:true,production_or_audit_staging_changed:false},null,2));
+ }catch(e){console.error(log.slice(-5000));if(page)console.error((await page.locator('body').innerText()).slice(-4500));throw e;}
+ finally{closing=true;clearTimeout(timer);if(browser)await browser.close();if(server)await server.close();backend.kill();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

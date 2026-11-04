@@ -22,14 +22,9 @@ STOPWORDS = {
 }
 
 def check_ai_permission(user):
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    profile = UserProfile.objects.filter(user=user).first()
-    if profile and profile.role in ['admin', 'boss']:
-        return True
-    return False
+    from .permissions import is_business_administrator
+    return is_business_administrator(user)
+
 
 def clean_tokens(query):
     words = [w.strip() for w in re.split(r'[^a-zA-Z0-9_-]+', query.lower()) if len(w.strip()) >= 2]
@@ -502,7 +497,7 @@ def ai_assistant_chat(request):
     # Compile rich, sanitized, privacy-safe context
     context = build_inventory_context(user_query)
 
-    gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+    gemini_key = (os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)) if getattr(settings, 'EXTERNAL_AI_ENABLED', True) else None
 
     if not gemini_key:
         local_reply = fallback_local_ai(user_query, context)

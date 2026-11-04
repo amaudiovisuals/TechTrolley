@@ -15,13 +15,10 @@ from rest_framework.response import Response
 from .models import Asset, CompanySettings, Conference, ProgramDelivery, SubrentalTicketItem, TruckChallan
 
 
-def role(user):
-    return getattr(getattr(user, 'profile', None), 'role', '')
-
-
 def access(user, write=False):
-    allowed = {'admin', 'boss', 'godown_incharge'} | (set() if write else {'accounts'})
-    if role(user) not in allowed and not (user.is_staff and role(user) not in {'accounts', 'technician'}):
+    from .permissions import get_business_role, WAREHOUSE_ROLES
+    allowed = WAREHOUSE_ROLES | (set() if write else {'accounts'})
+    if get_business_role(user) not in allowed:
         raise PermissionDenied('This login cannot issue delivery challans.' if write else 'This login cannot access delivery challans.')
 
 
@@ -46,78 +43,70 @@ def party(obj):
 
 
 def sources(conference, truck_id=None, lock=False):
-    settings = CompanySettings.objects.select_for_update().first() if lock else CompanySettings.objects.first()
-    if settings is None:
-        raise ValidationError('Save the issuing company details before issuing a delivery.')
-    ids = set(conference.challan_assets.values_list('pk', flat=True))
-    if not ids:
-        ids = set(conference.assets.values_list('pk', flat=True)) | set(conference.staged_assets.values_list('pk', flat=True))
-    quantities = {}
-    vehicle, phone = conference.vehicle_number, conference.driver_phone
+    """Use reviewed durable lines and ledger capacity, never today's stock total."""
+    from .models import ChallanDocument
+    scope = f'truck-{truck_id}' if truck_id is not None else 'master'
     if truck_id is not None:
-        truck = get_object_or_404(TruckChallan, pk=truck_id, conference=conference)
-        ids = set(truck.assets.values_list('pk', flat=True))
-        quantities = truck.asset_quantities or {}
-        vehicle, phone = truck.vehicle_number, truck.driver_phone
-    elif conference.truck_challans.exists():
-        vehicle, phone = '', ''
-    # Legacy consumables are separate from the event M2M; include recorded requests.
-    consumables = conference.consumable_data or {}
-    if not isinstance(consumables, dict):
-        raise ValidationError('Review the program consumable data first.')
-    if truck_id is None:
-        for aid, data in consumables.items():
-            if not isinstance(data, dict):
-                raise ValidationError('Review the program consumable quantities first.')
-            if data.get('requested'):
-                try:
-                    ids.add(int(aid))
-                    quantities[str(aid)] = integer(data['requested'])
-                except (ValueError, TypeError):
-                    raise ValidationError('Review the program consumable quantities first.')
-    assets = Asset.objects.filter(pk__in=ids).order_by('pk')
-    if lock:
-        assets = assets.select_for_update()
-    # Lock only the assets, not a nullable joined owner (PostgreSQL outer-join rule).
-    assets = list(assets)
-    if len(assets) != len(ids):
-        raise ValidationError('Some source equipment no longer exists. Reload the program.')
-    rows = []
-    for asset in assets:
-        quantity = integer(quantities.get(str(asset.pk), asset.quantity))
-        if quantity > asset.quantity:
-            raise ValidationError('A truck/program quantity exceeds its current stock record. Review it first.')
-        if asset.subrental_company_id and (asset.quantity > 1 or asset.type == 'Consumables') and not asset.is_temporary:
-            raise ValidationError('Supplier bulk/consumable custody needs review before issuing these papers.')
-        owner = asset.subrental_company
-        rows.append({'key': f'asset:{asset.pk}', 'asset_id': asset.pk, 'quantity': quantity,
-                     'name': asset.alias_name or asset.name or asset.sku or f'Asset {asset.pk}',
-                     'sku': asset.sku or '', 'serial': asset.serial_number or '',
-                     'owner_id': asset.subrental_company_id, 'owner': party(owner) if owner else None})
-    tickets = SubrentalTicketItem.objects.filter(ticket__conference=conference).order_by('pk')
-    if lock:
-        tickets = tickets.select_for_update()
-    seen = set(ids)
-    # Tickets have no truck allocation in the legacy system. Keep them on the
-    # program scope, where the operator can select the actual delivered subset.
-    if truck_id is None:
-        for item in tickets:
-            asset, owner = item.asset, item.ticket.company
+        get_object_or_404(TruckChallan, pk=truck_id, conference=conference)
+    document = ChallanDocument.objects.filter(conference=conference, scope=scope).first()
+    if document is None:
+        raise ValidationError('Save a reviewed customer challan before creating this delivery. Existing saved delivery copies remain available.')
+    header = document.header
+    issuer = header.get('company')
+    if not isinstance(issuer, dict) or not issuer.get('name'):
+        raise ValidationError('The saved customer challan needs its issuing-company details reviewed.')
+    quantities = {row.asset_id: row for row in conference.quantity_allocations.all()}
+    consumers = {row.asset_id: row for row in conference.consumable_allocations.all()}
+    rows, seen = [], set()
+    for line in document.lines.select_related('asset__subrental_company', 'supplier', 'ticket_item__ticket').order_by('position', 'id'):
+        asset, owner, item = line.asset, line.supplier, line.ticket_item
+        snapshot = line.snapshot
+        quantity = integer(line.quantity)
+        if line.source_kind == 'manual':
+            key = f'line:{line.pk}'
+            if asset or owner or item:
+                raise ValidationError('Review the manual challan source before issuing.')
+        else:
+            if not asset or asset.subrental_company_id != line.supplier_id:
+                raise ValidationError('The saved equipment owner changed. Review the customer challan before issuing a new delivery.')
+            key = f'ticket:{item.pk}' if item else f'asset:{asset.pk}'
             if asset.pk in seen:
-                raise ValidationError('The same equipment appears in multiple inventory/ticket sources. Review the duplicate before issuing.')
-            if asset.subrental_company_id != owner.pk:
-                raise ValidationError('A ticket company does not match the equipment owner. Review it first.')
+                raise ValidationError('The same equipment appears in multiple saved challan sources. Review the duplicate before issuing.')
             seen.add(asset.pk)
-            rows.append({'key': f'ticket:{item.pk}', 'asset_id': asset.pk, 'quantity': integer(item.quantity),
-                         'name': asset.alias_name or asset.name or asset.sku or f'Asset {asset.pk}',
-                         'sku': asset.sku or '', 'serial': asset.serial_number or '',
-                         'owner_id': owner.pk, 'owner': party(owner)})
-    return {'version': 1, 'conference_id': conference.pk, 'truck_id': truck_id,
-            'program': {'name': conference.name, 'start_date': str(conference.start_date or ''), 'end_date': str(conference.end_date or '')},
-            'issuer': party(settings),
-            'customer': {'name': conference.association_name or conference.name, 'address': conference.billing_address,
-                         'gst_number': conference.gst_number},
-            'destination': conference.transport_address, 'vehicle_number': vehicle or '', 'driver_phone': phone or '', 'rows': rows}
+            if item:
+                from .supplier_balances import balance_data
+                if item.ticket.conference_id != conference.pk or item.ticket.company_id != line.supplier_id:
+                    raise ValidationError('Review the saved supplier ticket identity before issuing.')
+                if owner and owner.inventory_mode == 'shared_warehouse':
+                    raise ValidationError('Shared godown stock uses its warehouse allocation, not a supplier order.')
+                balance = balance_data(item)
+                if balance['state'] != 'recorded' or quantity > balance['received']:
+                    raise ValidationError('The supplier receipt balance needs review before issuing this delivery.')
+            elif asset.type == 'Consumables':
+                allocation = consumers.get(asset.pk)
+                if allocation is None or quantity > allocation.requested:
+                    raise ValidationError('The saved consumable quantity exceeds its recorded program allocation.')
+            elif asset.quantity_tracking or asset.quantity != 1:
+                allocation = quantities.get(asset.pk)
+                if allocation is None or quantity > allocation.dispatched_total + allocation.reserved:
+                    raise ValidationError('The saved bulk quantity exceeds its recorded program allocation.')
+            elif quantity > 1:
+                raise ValidationError('A single physical unit cannot have a delivery quantity above one.')
+        owner_snapshot = party(owner) if owner else None
+        if owner_snapshot:
+            owner_snapshot['name'] = snapshot.get('supplier_name') or owner.name
+        rows.append({'key': key, 'line_id': str(line.pk), 'asset_id': asset.pk if asset else None,
+            'quantity': quantity, 'name': snapshot.get('alias_name') or snapshot.get('description') or snapshot.get('sku') or 'Manual addition',
+            'sku': snapshot.get('sku') or '', 'serial': snapshot.get('serial_number') or '',
+            'owner_id': line.supplier_id, 'owner': owner_snapshot})
+    return {'version': 2, 'conference_id': conference.pk, 'truck_id': truck_id,
+        'document_id': str(document.pk), 'document_revision': document.revision,
+        'event_revision': conference.revision,
+        'program': {'name': header.get('name', ''), 'start_date': header.get('start_date', ''), 'end_date': header.get('end_date', '')},
+        'issuer': issuer, 'customer': {'name': header.get('association_name') or header.get('name', ''),
+            'address': header.get('billing_address', ''), 'gst_number': header.get('gst_number', '')},
+        'destination': header.get('transport_address', ''), 'vehicle_number': header.get('vehicle_number', ''),
+        'driver_phone': header.get('driver_phone', ''), 'rows': rows}
 
 
 def serialized(delivery):
@@ -132,7 +121,7 @@ def serialized(delivery):
 def delivery_preview(request, pk):
     access(request.user, write=True)
     conference = get_object_or_404(Conference, pk=pk)
-    if conference.is_audit:
+    if conference.is_audit or conference.lifecycle_state != 'open':
         raise ValidationError('Audit programs cannot issue delivery papers.')
     raw = request.query_params.get('truck_id')
     try:
@@ -165,13 +154,14 @@ def program_deliveries(request, pk):
     request_hash = digest(data)
     try:
         with transaction.atomic():
-            conference = Conference.objects.select_for_update().get(pk=pk)
+            from .revisions import lock_conference_for_write
+            conference = lock_conference_for_write(pk, {})
             existing = ProgramDelivery.objects.filter(request_key=key).first()
             if existing:
                 if existing.conference_id != pk or existing.request_hash != request_hash:
                     return Response({'detail': 'This request key was already used for another delivery.'}, status=409)
                 return Response(serialized(existing))
-            if conference.is_audit:
+            if conference.is_audit or conference.lifecycle_state != 'open':
                 raise ValidationError('Audit programs cannot issue delivery papers.')
             truck_id = data.get('truck_id')
             if truck_id is not None:

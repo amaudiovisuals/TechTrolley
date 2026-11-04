@@ -1,0 +1,8 @@
+/* Vite bundles these files and their fonts; the worker precaches CSS/WOFF2. */
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+@import '@fontsource-variable/plus-jakarta-sans/index.css';
+@import '@fontsource-variable/plus-jakarta-sans/wght-italic.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

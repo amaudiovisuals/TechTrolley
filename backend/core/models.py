@@ -1,9 +1,20 @@
 
+import django
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 
+class CredentialAttempt(models.Model):
+    """HMAC identifiers only; no emails, IPs, passwords or tokens."""
+    key = models.CharField(max_length=64, primary_key=True)
+    attempts = models.PositiveIntegerField(default=0)
+    expires_at = models.DateTimeField(db_index=True)
+
+
 class SubrentalCompany(models.Model):
+    ownership_revision = models.PositiveBigIntegerField(default=0, editable=False)
+    inventory_mode = models.CharField(max_length=24, default='unreviewed', editable=False,
+        choices=[('unreviewed', 'Inventory classification pending'), ('shared_warehouse', 'Stock managed in our godown'), ('external_supplier', 'External supplier catalogue')])
     name = models.CharField(max_length=200)
     address = models.TextField(null=True, blank=True)
     gst_number = models.CharField(max_length=20, null=True, blank=True)
@@ -13,6 +24,8 @@ class SubrentalCompany(models.Model):
         return self.name
 
 class Asset(models.Model):
+    ownership_revision = models.PositiveBigIntegerField(default=0, editable=False)
+    custody_revision = models.PositiveBigIntegerField(default=0, editable=False)
     STATUS_CHOICES = [
         ('Available', 'Available'),
         ('In Use', 'In Use'),
@@ -65,6 +78,9 @@ class Asset(models.Model):
     is_barcode_added = models.BooleanField(default=False)
     type = models.CharField(max_length=100, choices=CATEGORY_CHOICES, default='Other')
     quantity = models.PositiveIntegerField(default=1)
+    # Kept once bulk tracking starts, even if stock is later reduced to one unit.
+    quantity_tracking = models.BooleanField(default=False, editable=False)
+    staff_revision = models.PositiveBigIntegerField(default=0, editable=False)
     purchased_date = models.DateField(null=True, blank=True)
     item_price = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True, default=Decimal('0.00'))
     depreciation_percentage = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True, default=Decimal('0.00'))
@@ -85,7 +101,7 @@ class Asset(models.Model):
     return_date = models.DateField(null=True, blank=True)
     assigned_to = models.ForeignKey('Employee', on_delete=models.SET_NULL, null=True, blank=True, related_name='assets')
     parent_asset = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='sub_assets')
-    subrental_company = models.ForeignKey(SubrentalCompany, on_delete=models.CASCADE, null=True, blank=True, related_name='assets')
+    subrental_company = models.ForeignKey(SubrentalCompany, on_delete=models.PROTECT, null=True, blank=True, related_name='assets')
     
     # Deprecated fields (will be removed after migration)
     # name, brand, model_number are now part of description or alias_name in the new structure
@@ -132,31 +148,40 @@ class Asset(models.Model):
         return int(value)
 
     def save(self, *args, **kwargs):
+        existing = not self._state.adding
+        if existing:
+            # Generic metadata/import saves cannot release an unproved healthy lock.
+            # Reviewed corrections and actual movement verification update explicitly.
+            stored = Asset.objects.only('status', 'flag', 'condition').get(pk=self.pk)
+            if self.status == 'Available' and stored.status in {'In Use', 'Crosscheck'} and not stored.flag and not self.flag and stored.condition != 'Damaged' and self.condition != 'Damaged':
+                self.status = stored.status
+            from django.db.models import F
+            self.custody_revision = F('custody_revision') + 1
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'custody_revision'}
+        if self.quantity != 1 and self.type != 'Consumables':
+            self.quantity_tracking = True
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'quantity_tracking'}
         # Ensure QR Code is permanently embedded on creation/save if blank
         if not self.qr_code and self.sku:
             self.qr_code = self.sku
             
-        # Automate Status Update based on Flag Selection
-        if self.flag == 'Expired':
-            self.status = 'Expired'
-        elif self.flag == 'Required Service':
-            self.status = 'Damaged'
-        elif self.flag == 'On Service':
-            self.status = 'On Service'
-        elif self.flag == 'Missing':
-            self.status = 'Missing'
-        elif not self.flag:
-            # When flag is cleared, reset special statuses to 'Available' 
-            # but preserve 'In Use' or 'Crosscheck' if they were manually set
-            if self.status in ['Expired', 'On Service', 'Missing', 'Damaged']:
-                self.status = 'Available'
-        
+        from .custody import derived_status
+        self.status = derived_status(self, preserve_unproved_custody=True)
+        if kwargs.get('update_fields') is not None:
+            kwargs['update_fields'] = set(kwargs['update_fields']) | {'status'}
+
         super().save(*args, **kwargs)
+        if existing:
+            self.refresh_from_db(fields=['custody_revision'])
 
     def __str__(self):
         return f"{self.sku} - {self.alias_name or self.serial_number}"
 
 class Employee(models.Model):
+    user = models.OneToOneField('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='employee_identity')
+    identity_revision = models.PositiveBigIntegerField(default=0, editable=False)
     name = models.CharField(max_length=100)
     employee_id = models.CharField(max_length=50, unique=True)
     department = models.CharField(max_length=100)
@@ -187,7 +212,56 @@ class SubrentalTicketItem(models.Model):
     def __str__(self):
         return f"{self.asset.alias_name or self.asset.sku} ({self.quantity}) in Ticket {self.ticket.id}"
 
+
+class SupplierBalance(models.Model):
+    """External order obligation, separate from shared warehouse stock/custody."""
+    item = models.OneToOneField(SubrentalTicketItem, on_delete=models.PROTECT, related_name='supplier_balance')
+    opening_receipt = models.ForeignKey('MovementReceipt', on_delete=models.PROTECT, related_name='supplier_openings')
+    order_receipt = models.ForeignKey('MovementReceipt', null=True, on_delete=models.PROTECT, related_name='supplier_orders')
+    provenance = models.CharField(max_length=40, choices=[('new_order', 'New recorded order'), ('reviewed_legacy_opening', 'Reviewed legacy opening')])
+    ordered = models.PositiveIntegerField()
+    received = models.PositiveIntegerField(default=0)
+    returned = models.PositiveIntegerField(default=0)
+    cancelled = models.PositiveIntegerField(default=0)
+    revision = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.CheckConstraint(**{'condition' if django.VERSION >= (5, 1) else 'check': models.Q(ordered__gt=0, received__lte=models.F('ordered')-models.F('cancelled'), returned__lte=models.F('received'))}, name='valid_supplier_balance')]
+
+
+class SupplierMovement(models.Model):
+    balance = models.ForeignKey(SupplierBalance, on_delete=models.PROTECT, related_name='movements')
+    receipt = models.OneToOneField('MovementReceipt', on_delete=models.PROTECT, related_name='supplier_movement')
+    action = models.CharField(max_length=40)
+    quantity = models.PositiveIntegerField(default=0)
+    reason = models.CharField(max_length=1000)
+    evidence_reference = models.CharField(max_length=1000)
+    source_snapshot = models.JSONField(default=dict)
+    before = models.JSONField(null=True)
+    after = models.JSONField()
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+
+class SupplierChange(models.Model):
+    """Protected documentary edits; these are not receipt or return movements."""
+    receipt = models.OneToOneField('MovementReceipt', on_delete=models.PROTECT, related_name='supplier_change')
+    company = models.ForeignKey(SubrentalCompany, on_delete=models.PROTECT, related_name='changes')
+    ticket = models.ForeignKey(SubrentalTicket, on_delete=models.PROTECT, related_name='changes')
+    item = models.ForeignKey(SubrentalTicketItem, null=True, on_delete=models.PROTECT, related_name='changes')
+    asset = models.ForeignKey(Asset, null=True, on_delete=models.PROTECT, related_name='supplier_changes')
+    action = models.CharField(max_length=30)
+    reason = models.CharField(max_length=1000)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
 class Conference(models.Model):
+    revision = models.PositiveBigIntegerField(default=0, editable=False)
+    lifecycle_state = models.CharField(max_length=12, default='open', choices=[('open', 'Open'), ('completed', 'Verified complete'), ('archived', 'Archived')], editable=False, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True, editable=False)
+    completed_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='completed_events', editable=False)
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False)
+    archived_by = models.ForeignKey('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='archived_events', editable=False)
     TYPE_CHOICES = [
         ('Medical Conference', 'Medical Conference'),
         ('Personal Rental', 'Personal Rental'),
@@ -224,27 +298,9 @@ class Conference(models.Model):
     is_invoiced = models.BooleanField(default=False, help_text="Track if challan has been marked invoiced by accounts")
 
     def recalculate_related_asset_statuses(self):
-        pk_set = set(self.assets.values_list('pk', flat=True))
-        if not pk_set:
-            return
-            
-        if self.is_audit:
-            # Audit mode is now True: release assets if not used in other non-audit conferences
-            others_using = set(
-                Conference.objects
-                .exclude(pk=self.pk)
-                .exclude(is_audit=True)
-                .filter(assets__in=pk_set)
-                .values_list('assets__id', flat=True)
-            )
-            crosscheck_using = set(Conference.objects.filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
-            
-            to_revert = [aid for aid in pk_set if aid not in others_using and aid not in crosscheck_using]
-            if to_revert:
-                Asset.objects.filter(pk__in=to_revert, status='In Use').update(status='Available')
-        else:
-            # Audit mode is now False: lock all assets in this conference
-            Asset.objects.filter(pk__in=pk_set).update(status='In Use')
+        from .custody import synchronize_statuses
+        ids = set(self.assets.values_list('pk', flat=True)) | set(self.crosscheck_assets.values_list('pk', flat=True))
+        synchronize_statuses(ids)
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -255,7 +311,14 @@ class Conference(models.Model):
             except Conference.DoesNotExist:
                 pass
                 
+        if not is_new:
+            from django.db.models import F
+            self.revision = F('revision') + 1
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'revision'}
         super().save(*args, **kwargs)
+        if not is_new:
+            self.refresh_from_db(fields=['revision'])
         
         # If is_audit was toggled, propagate status recalculation to its assets
         if not is_new and old_is_audit != self.is_audit:
@@ -263,6 +326,53 @@ class Conference(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class QuantityAllocation(models.Model):
+    """Reusable bulk stock; allocations never split or decrement the asset row."""
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='quantity_allocations')
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='quantity_allocations')
+    reserved = models.PositiveIntegerField(default=0)
+    dispatched = models.PositiveIntegerField(default=0)
+    awaiting_verification = models.PositiveIntegerField(default=0)
+    dispatched_total = models.PositiveBigIntegerField(default=0)
+    verified_total = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['asset', 'conference'], name='unique_quantity_event_asset')]
+
+
+class ConsumableAllocation(models.Model):
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='consumable_allocations')
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='consumable_allocations')
+    requested = models.PositiveIntegerField(default=0)
+    returned = models.PositiveIntegerField(null=True, blank=True)
+    consumed = models.PositiveIntegerField(default=0)
+    state = models.CharField(max_length=20, default='reserved', choices=[('reserved', 'Reserved'), ('dispatched', 'Dispatched'), ('settled', 'Settled')])
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['asset', 'conference'], name='unique_consumable_event_asset')]
+
+
+class ConsumableMovement(models.Model):
+    allocation = models.ForeignKey(ConsumableAllocation, on_delete=models.PROTECT, related_name='movements')
+    receipt = models.ForeignKey('MovementReceipt', on_delete=models.PROTECT, related_name='consumable_movements')
+    action = models.CharField(max_length=30)
+    before = models.JSONField()
+    after = models.JSONField()
+    stock_before = models.PositiveIntegerField()
+    stock_after = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class QuantityMovement(models.Model):
+    allocation = models.ForeignKey(QuantityAllocation, on_delete=models.PROTECT, related_name='movements')
+    receipt = models.ForeignKey('MovementReceipt', on_delete=models.PROTECT, related_name='quantity_movements')
+    action = models.CharField(max_length=30)
+    quantity = models.PositiveIntegerField()
+    before = models.JSONField()
+    after = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
 
 class TruckChallan(models.Model):
     conference = models.ForeignKey(
@@ -301,26 +411,82 @@ class DeliveryChallan(models.Model):
         return self.challan_number
 
 
-class ProgramDelivery(models.Model):
-    """An issued delivery's immutable customer and supplier paper snapshots.
+class ChallanNumberLock(models.Model):
+    """Singleton mutex shared by number allocation and document reservations."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
 
-    These are documents, not a second warehouse movement or a rental invoice.
-    No live asset/company foreign keys are used inside the snapshots.
-    """
-    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='issued_deliveries')
-    request_key = models.UUIDField(unique=True)
-    request_hash = models.CharField(max_length=64)
-    reference = models.CharField(max_length=100)
-    snapshot = models.JSONField(default=dict)
-    issued_at = models.DateTimeField(auto_now_add=True)
-    issued_by = models.CharField(max_length=150)
-    voided_at = models.DateTimeField(null=True, blank=True)
-    voided_by = models.CharField(max_length=150, blank=True, default='')
-    void_reason = models.CharField(max_length=500, blank=True, default='')
+
+class ChallanNumberReservation(models.Model):
+    number = models.CharField(max_length=50, unique=True)
+    conference = models.ForeignKey(Conference, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ChallanDocument(models.Model):
+    import uuid
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='challan_documents')
+    truck = models.OneToOneField(TruckChallan, null=True, blank=True, on_delete=models.PROTECT, related_name='document')
+    scope = models.CharField(max_length=50)
+    number = models.CharField(max_length=50)
+    revision = models.PositiveBigIntegerField(default=0)
+    state = models.CharField(max_length=10, choices=[('draft', 'Draft'), ('issued', 'Issued')], default='draft')
+    document_date = models.DateField(null=True, blank=True)
+    total_override = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+    header = models.JSONField(default=dict)
+    provenance = models.CharField(max_length=50, default='saved_document')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-id']
-        constraints = [models.UniqueConstraint(fields=['conference', 'reference'], name='unique_program_delivery_reference')]
+        constraints = [models.UniqueConstraint(fields=['conference', 'scope'], name='unique_challan_scope')]
+
+
+class ChallanLine(models.Model):
+    import uuid
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(ChallanDocument, on_delete=models.CASCADE, related_name='lines')
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, null=True, blank=True)
+    ticket_item = models.ForeignKey(SubrentalTicketItem, on_delete=models.PROTECT, null=True, blank=True)
+    supplier = models.ForeignKey(SubrentalCompany, on_delete=models.PROTECT, null=True, blank=True)
+    source_kind = models.CharField(max_length=10, choices=[('owned', 'Owned'), ('supplier', 'Supplier'), ('manual', 'Manual')])
+    snapshot = models.JSONField(default=dict)
+    quantity = models.PositiveIntegerField()
+    unit_value = models.DecimalField(max_digits=20, decimal_places=2)
+    position = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ['position', 'id']
+        constraints = [models.UniqueConstraint(fields=['document', 'position'], name='unique_challan_position')]
+
+
+class ChallanRevision(models.Model):
+    document = models.ForeignKey(ChallanDocument, on_delete=models.PROTECT, related_name='history')
+    revision = models.PositiveBigIntegerField()
+    actor = models.ForeignKey('auth.User', on_delete=models.PROTECT)
+    reason = models.TextField(blank=True)
+    snapshot = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['document', 'revision'], name='unique_challan_revision')]
+
+
+class TruckManifest(models.Model):
+    conference = models.OneToOneField(Conference, on_delete=models.PROTECT, related_name='truck_manifest')
+    master = models.OneToOneField(ChallanDocument, on_delete=models.PROTECT, related_name='manifest')
+
+
+class TruckManifestEntry(models.Model):
+    import uuid
+    manifest = models.ForeignKey(TruckManifest, on_delete=models.PROTECT, related_name='entries')
+    master_line = models.ForeignKey(ChallanLine, on_delete=models.PROTECT, related_name='manifest_entries')
+    truck = models.ForeignKey(TruckChallan, on_delete=models.PROTECT, related_name='manifest_entries')
+    quantity = models.PositiveIntegerField(default=0)
+    document_line_id = models.UUIDField(default=uuid.uuid4, unique=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['master_line', 'truck'], name='unique_manifest_source_truck')]
 
 class CompanySettings(models.Model):
     name = models.CharField(max_length=200, default="AM AUDIOVISUALS PVT LTD")
@@ -383,32 +549,8 @@ def get_current_financial_year() -> str:
 
 
 def generate_challan_number(settings_obj) -> str:
-    """
-    Generates a challan number in the format "26-27/AMDL-00122".
-    Automatically resets the counter to 1 when a new financial year begins.
-    Increments next_challan_number and saves settings_obj in one atomic call.
-    """
-    current_fy = get_current_financial_year()
-    prefix = (settings_obj.challan_prefix or 'AMDL').strip()
-
-    stored_fy = (settings_obj.challan_fy or '').strip()
-    if stored_fy != current_fy:
-        # New financial year detected — reset counter to 1
-        settings_obj.challan_fy = current_fy
-        settings_obj.next_challan_number = 1
-
-    seq = settings_obj.next_challan_number
-    candidate = f"{current_fy}/{prefix}-{seq:05d}"
-
-    # Ensure no collision with existing conferences or trucks in this FY
-    while Conference.objects.filter(challan_number=candidate).exists() or TruckChallan.objects.filter(challan_number=candidate).exists():
-        seq += 1
-        candidate = f"{current_fy}/{prefix}-{seq:05d}"
-
-    settings_obj.next_challan_number = seq + 1
-    settings_obj.save(update_fields=['next_challan_number', 'challan_fy', 'challan_prefix'])
-
-    return candidate
+    from .challan_documents import allocate_number
+    return allocate_number(settings_obj)
 
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
@@ -443,62 +585,255 @@ def create_or_save_user_profile(sender, instance, created, **kwargs):
             instance.profile.save()
 from django.db.models.signals import m2m_changed
 
-@receiver(m2m_changed, sender=Conference.assets.through)
-def update_asset_status_on_assets_change(sender, instance, action, pk_set, **kwargs):
-    # BUG J-2: When .clear() is called, Django fires 'pre_clear' with pk_set=None.
-    # We must snapshot the current relationship BEFORE Django wipes it.
+def membership_custody_change(instance, action, reverse, pk_set, field):
+    # Clear must derive AFTER deletion, when the current relationships are visible.
+    key = '_custody_clear_' + field
+    if reverse:
+        relation = 'assigned_conferences' if field == 'assets' else 'crosscheck_conferences'
+        if action == 'pre_clear':
+            ids = {instance.pk} if getattr(instance, relation).filter(is_audit=False).exists() else set()
+        else:
+            ids = {instance.pk} if pk_set and Conference.objects.filter(pk__in=pk_set, is_audit=False).exists() else set()
+    else:
+        ids = set(getattr(instance, field).values_list('pk', flat=True)) if action == 'pre_clear' else set(pk_set or [])
+        if instance.is_audit:
+            ids = set()  # An observation change never repairs physical custody.
     if action == 'pre_clear':
-        pk_set = set(instance.assets.values_list('pk', flat=True))
+        setattr(instance, key, ids)
+    elif action == 'post_clear':
+        from .custody import synchronize_statuses
+        synchronize_statuses(getattr(instance, key, set()))
+        if hasattr(instance, key):
+            delattr(instance, key)
+    elif action in ('post_add', 'post_remove') and ids:
+        from .custody import synchronize_statuses
+        synchronize_statuses(ids)
 
-    if not pk_set:
-        return
 
-    if action == 'post_add':
-        # J-110: Audit conferences are non-blocking — do NOT stamp assets as 'In Use'
-        # when the holding conference is an audit list. This prevents the phantom lock
-        # where asset.status === 'In Use' short-circuits LOCK 3 in the frontend even
-        # though the .isAudit bypass would have cleared it.
-        if not instance.is_audit:
-            # Intentional bypass of Asset.save() flag logic for bulk performance
-            Asset.objects.filter(pk__in=pk_set).update(status='In Use')
-    elif action in ('post_remove', 'pre_clear'):
-        # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
-        # J-110: Exclude audit conferences from the 'others_using' check so that
-        # removing an asset from a real conference isn't blocked by an audit holder.
-        others_using = set(
-            Conference.objects
-            .exclude(pk=instance.pk)
-            .exclude(is_audit=True)  # J-110: audit conferences don't count as real holders
-            .filter(assets__in=pk_set)
-            .values_list('assets__id', flat=True)
-        )
-        crosscheck_using = set(Conference.objects.filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
-        
-        to_revert = [aid for aid in pk_set if aid not in others_using and aid not in crosscheck_using]
-        if to_revert:
-            # Intentional bypass of Asset.save() flag logic for bulk performance
-            Asset.objects.filter(pk__in=to_revert).exclude(status='Damaged').update(status='Available')
+@receiver(m2m_changed, sender=Conference.assets.through)
+def update_asset_status_on_assets_change(sender, instance, action, pk_set, reverse=False, **kwargs):
+    membership_custody_change(instance, action, reverse, pk_set, 'assets')
+
 
 @receiver(m2m_changed, sender=Conference.crosscheck_assets.through)
-def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, **kwargs):
-    # BUG J-2: When .clear() is called, Django fires 'pre_clear' with pk_set=None.
-    # We must snapshot the current relationship BEFORE Django wipes it.
-    if action == 'pre_clear':
-        pk_set = set(instance.crosscheck_assets.values_list('pk', flat=True))
+def update_asset_status_on_crosscheck_change(sender, instance, action, pk_set, reverse=False, **kwargs):
+    membership_custody_change(instance, action, reverse, pk_set, 'crosscheck_assets')
 
-    if not pk_set:
+
+@receiver(models.signals.pre_delete, sender=Conference)
+def remember_deleted_conference_custody(sender, instance, **kwargs):
+    instance._deleted_custody_ids = (set(instance.assets.values_list('pk', flat=True)) |
+                                     set(instance.crosscheck_assets.values_list('pk', flat=True))) if not instance.is_audit else set()
+
+
+@receiver(models.signals.post_delete, sender=Conference)
+def derive_deleted_conference_custody(sender, instance, **kwargs):
+    from .custody import synchronize_statuses
+    synchronize_statuses(getattr(instance, '_deleted_custody_ids', set()))
+
+
+class MovementReceipt(models.Model):
+    """One committed command and canonical receipt per actor/request UUID."""
+    actor = models.ForeignKey(User, on_delete=models.PROTECT)
+    request_id = models.UUIDField()
+    payload_hash = models.CharField(max_length=64)
+    result = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['actor', 'request_id'], name='unique_actor_movement_request')]
+
+
+class PhysicalMovement(models.Model):
+    """Future physical commands only. Never infer an old return from paperwork."""
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='physical_movements')
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='physical_movements')
+    target_conference = models.ForeignKey(Conference, null=True, blank=True, on_delete=models.PROTECT, related_name='incoming_physical_movements')
+    receipt = models.ForeignKey(MovementReceipt, on_delete=models.PROTECT, related_name='physical_movements')
+    action = models.CharField(max_length=32, choices=[(v, v) for v in ('dispatch', 'return', 'verify_return', 'transfer_out', 'transfer_in', 'legacy_return_review', 'legacy_return_review_revoked')])
+    snapshot = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['receipt', 'conference', 'asset'], name='unique_physical_receipt_event_asset')]
+
+
+class EventLifecycleHistory(models.Model):
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='lifecycle_history')
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name='event_lifecycle_actions')
+    receipt = models.OneToOneField(MovementReceipt, on_delete=models.PROTECT, related_name='event_lifecycle_history')
+    action = models.CharField(max_length=12, choices=[(v, v) for v in ('complete', 'archive', 'reopen')])
+    before_state = models.CharField(max_length=12)
+    after_state = models.CharField(max_length=12)
+    reason = models.TextField()
+    evidence_sha256 = models.CharField(max_length=64)
+    snapshot = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReconciliationHistory(models.Model):
+    import uuid
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name='reviewed_reconciliations')
+    receipt = models.OneToOneField(MovementReceipt, on_delete=models.PROTECT, related_name='reconciliation_history')
+    action = models.CharField(max_length=30)
+    reason = models.TextField()
+    evidence_reference = models.TextField()
+    database_identity = models.JSONField()
+    before_snapshot = models.JSONField()
+    after_snapshot = models.JSONField(default=dict)
+    before_sha256 = models.CharField(max_length=64)
+    after_sha256 = models.CharField(max_length=64, blank=True)
+    effects = models.JSONField(default=dict)
+    reverses = models.OneToOneField('self', null=True, blank=True, on_delete=models.PROTECT, related_name='reversed_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReconciliationTarget(models.Model):
+    history = models.ForeignKey(ReconciliationHistory, on_delete=models.PROTECT, related_name='targets')
+    asset = models.ForeignKey(Asset, null=True, blank=True, on_delete=models.PROTECT, related_name='reconciliation_targets')
+    conference = models.ForeignKey(Conference, null=True, blank=True, on_delete=models.PROTECT, related_name='reconciliation_targets')
+
+    class Meta:
+        constraints = [models.CheckConstraint(**{'condition' if django.VERSION >= (5, 1) else 'check': models.Q(asset__isnull=False, conference__isnull=True) | models.Q(asset__isnull=True, conference__isnull=False)}, name='one_reconciliation_target_kind')]
+
+
+class OwnershipHistory(models.Model):
+    import uuid
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name='ownership_reviews')
+    receipt = models.OneToOneField(MovementReceipt, on_delete=models.PROTECT, related_name='ownership_history')
+    action = models.CharField(max_length=30)
+    reason = models.TextField()
+    evidence_reference = models.TextField()
+    database_identity = models.JSONField()
+    before_snapshot = models.JSONField()
+    after_snapshot = models.JSONField(default=dict)
+    before_sha256 = models.CharField(max_length=64)
+    after_sha256 = models.CharField(max_length=64, blank=True)
+    effects = models.JSONField(default=dict)
+    reverses = models.OneToOneField('self', null=True, blank=True, on_delete=models.PROTECT, related_name='reversed_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class OwnershipTarget(models.Model):
+    history = models.ForeignKey(OwnershipHistory, on_delete=models.PROTECT, related_name='targets')
+    asset = models.ForeignKey(Asset, null=True, blank=True, on_delete=models.PROTECT, related_name='ownership_targets')
+    company = models.ForeignKey(SubrentalCompany, null=True, blank=True, on_delete=models.PROTECT, related_name='ownership_targets')
+
+    class Meta:
+        constraints = [models.CheckConstraint(**{'condition' if django.VERSION >= (5, 1) else 'check': models.Q(asset__isnull=False, company__isnull=True) | models.Q(asset__isnull=True, company__isnull=False)}, name='one_ownership_target_kind')]
+
+
+class PreservedAuditObservation(models.Model):
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='preserved_audit_observations')
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='preserved_audit_observations')
+    history = models.ForeignKey(ReconciliationHistory, on_delete=models.PROTECT, related_name='preserved_observations')
+    phase = models.CharField(max_length=30)
+    snapshot = models.JSONField()
+    original_observed_at = models.DateTimeField(null=True, blank=True)
+    preserved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['history', 'asset', 'phase'], name='unique_preserved_audit_phase')]
+
+
+class StaffAllocation(models.Model):
+    import uuid
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name='staff_allocations')
+    employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='staff_allocations')
+    issued_at = models.DateTimeField(null=True, blank=True)
+    issued_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name='staff_issues')
+    issue_receipt = models.ForeignKey(MovementReceipt, null=True, blank=True, on_delete=models.PROTECT, related_name='staff_issues')
+    issue_reason = models.TextField(blank=True)
+    issue_snapshot = models.JSONField(default=dict)
+    provenance = models.CharField(max_length=50, default='recorded_issue')
+    returned_at = models.DateTimeField(null=True, blank=True)
+    returned_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT, related_name='staff_returns')
+    return_receipt = models.ForeignKey(MovementReceipt, null=True, blank=True, on_delete=models.PROTECT, related_name='staff_returns')
+    return_reason = models.TextField(blank=True)
+    return_snapshot = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['asset'], condition=models.Q(returned_at__isnull=True), name='one_open_staff_allocation')]
+
+
+class EmployeeIdentityHistory(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='identity_history')
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name='employee_link_history')
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name='performed_employee_links')
+    receipt = models.OneToOneField(MovementReceipt, on_delete=models.PROTECT, related_name='employee_link_history')
+    reason = models.TextField()
+    snapshot = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+# Every document-affecting relation changes the same monotonic revision.
+def bump_conference_relation_revision(sender, instance, action, reverse, pk_set, **kwargs):
+    from django.db.models import F
+    if action not in {'post_add', 'post_remove', 'pre_clear'} or (action != 'pre_clear' and not pk_set):
         return
+    field = next(f for f in Conference._meta.many_to_many if f.remote_field.through == sender)
+    if field.remote_field.model == Asset:
+        ids = set(getattr(instance, field.name).values_list('pk', flat=True)) if isinstance(instance, Conference) and action == 'pre_clear' else set(pk_set or []) if isinstance(instance, Conference) else {instance.pk}
+        Asset.objects.filter(pk__in=ids).update(custody_revision=F('custody_revision') + 1)
+    if isinstance(instance, Conference):
+        Conference.objects.filter(pk=instance.pk).update(revision=F('revision') + 1)
+        instance.refresh_from_db(fields=['revision'])
+    elif pk_set:
+        Conference.objects.filter(pk__in=pk_set).update(revision=F('revision') + 1)
+    elif action == 'pre_clear':
+        field = next(f for f in Conference._meta.many_to_many if f.remote_field.through == sender)
+        ids = getattr(instance, field.remote_field.related_name).values_list('pk', flat=True)
+        Conference.objects.filter(pk__in=list(ids)).update(revision=F('revision') + 1)
 
-    if action == 'post_add':
-        # Intentional bypass of Asset.save() flag logic for bulk performance
-        Asset.objects.filter(pk__in=pk_set).update(status='Crosscheck')
-    elif action in ('post_remove', 'pre_clear'):
-        # PERFORMANCE OPTIMIZATION: One bulk query instead of a loop
-        actual_using = set(Conference.objects.filter(assets__in=pk_set).values_list('assets__id', flat=True))
-        others_cc_using = set(Conference.objects.exclude(pk=instance.pk).filter(crosscheck_assets__in=pk_set).values_list('crosscheck_assets__id', flat=True))
-        
-        to_revert = [aid for aid in pk_set if aid not in actual_using and aid not in others_cc_using]
-        if to_revert:
-            # Intentional bypass of Asset.save() flag logic for bulk performance
-            Asset.objects.filter(pk__in=to_revert).exclude(status='Damaged').update(status='Available')
 
+for _field_name in ('assets', 'crosscheck_assets', 'staged_assets', 'challan_assets', 'requirements', 'assigned_employees'):
+    m2m_changed.connect(bump_conference_relation_revision, sender=Conference._meta.get_field(_field_name).remote_field.through,
+                        dispatch_uid=f'conference_revision_{_field_name}')
+
+
+@receiver(m2m_changed, sender=TruckChallan.assets.through)
+def bump_truck_membership_revision(sender, instance, action, reverse, pk_set, **kwargs):
+    from django.db.models import F
+    if action not in {'post_add', 'post_remove', 'pre_clear'} or (action != 'pre_clear' and not pk_set):
+        return
+    asset_ids = set(instance.assets.values_list('pk', flat=True)) if isinstance(instance, TruckChallan) and action == 'pre_clear' else set(pk_set or []) if isinstance(instance, TruckChallan) else {instance.pk}
+    Asset.objects.filter(pk__in=asset_ids).update(custody_revision=F('custody_revision') + 1)
+    if isinstance(instance, TruckChallan):
+        ids = [instance.conference_id]
+    elif pk_set:
+        ids = TruckChallan.objects.filter(pk__in=pk_set).values_list('conference_id', flat=True)
+    else:
+        ids = instance.truck_challans.values_list('conference_id', flat=True)
+    Conference.objects.filter(pk__in=list(ids)).update(revision=F('revision') + 1)
+
+
+@receiver(post_save, sender=TruckChallan)
+@receiver(models.signals.post_delete, sender=TruckChallan)
+def bump_truck_document_revision(sender, instance, **kwargs):
+    from django.db.models import F
+    Conference.objects.filter(pk=instance.conference_id).update(revision=F('revision') + 1)
+
+
+class ProgramDelivery(models.Model):
+    """An issued delivery's immutable customer and supplier paper snapshots.
+
+    These are documents, not a second warehouse movement or a rental invoice.
+    No live asset/company foreign keys are used inside the snapshots.
+    """
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='issued_deliveries')
+    request_key = models.UUIDField(unique=True)
+    request_hash = models.CharField(max_length=64)
+    reference = models.CharField(max_length=100)
+    snapshot = models.JSONField(default=dict)
+    issued_at = models.DateTimeField(auto_now_add=True)
+    issued_by = models.CharField(max_length=150)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.CharField(max_length=150, blank=True, default='')
+    void_reason = models.CharField(max_length=500, blank=True, default='')
+
+    class Meta:
+        ordering = ['-id']
+        constraints = [models.UniqueConstraint(fields=['conference', 'reference'], name='unique_program_delivery_reference')]

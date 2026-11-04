@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
@@ -21,13 +22,15 @@ from django.http import JsonResponse
 def home(request):
     return JsonResponse({"message": "Backend is running successfully!"})
 
-from django.conf import settings
-from django.conf.urls.static import static
-
 urlpatterns = [
     path('', home),
-    path('admin/', admin.site.urls),
     path('api/', include('core.urls')),
 ]
 
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Business administrators use the scoped application screens. Keep the generic
+# Django admin outside secure web runtimes so it cannot bypass API login budgets.
+if getattr(settings, 'RUNTIME_ENVIRONMENT', None) == 'development':
+    urlpatterns.append(path('admin/', admin.site.urls))
+
+# Uploaded event documents are private even in development. Do not add a blanket
+# media route or a reverse-proxy media alias; branding has one explicit endpoint.

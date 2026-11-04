@@ -1,3 +1,7 @@
+> Earlier production release notes. The shared-warehouse integration branch
+> supersedes the pending quantity boundary and uses the audited durable customer
+> document as the source for new deliveries. See WAREHOUSE_INTEGRATION_CANDIDATE.md.
+
 # Saved program delivery challans
 
 Open Billing, select a program (or an individual truck), then use **New delivery**
