@@ -45,11 +45,24 @@ jobs:
           node scripts/testing/frontend_step4b.cjs
           node scripts/testing/frontend_step4b2.cjs
           node scripts/testing/frontend_step6b.cjs
+          node scripts/testing/frontend_program_deliveries.cjs
       - name: Typecheck and build exact reviewed frontend
         working-directory: frontend
         run: |
           npm run typecheck
           npm run build
+      - name: Install the locked browser test engine
+        working-directory: frontend
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Exercise shared stock scans, saved supplier papers and recovery
+        env:
+          TT_TEST_PYTHON: python
+        run: |
+          node scripts/testing/browser_warehouse_quantities.cjs
+          node scripts/testing/browser_program_deliveries.cjs
+          node scripts/testing/browser_conference_camera.cjs
+          node scripts/testing/browser_step6b.cjs
+          node scripts/testing/browser_worker_step3.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: warehouse-review-frontend-${{ github.sha }}

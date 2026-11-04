@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {spawn}=require('node:child_process'),{pathToFileURL}=require('node:url');
 const ROOT=path.resolve(__dirname,'../..');
-const {chromium}=require(process.env.TT_PLAYWRIGHT_MODULE||'/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const { chromium, launchOptions } = require('./browser_runtime.cjs');
 const QR=require(path.join(ROOT,'frontend/node_modules/qrcode'));
 (async()=>{
  const backend=spawn(process.env.TT_TEST_PYTHON||path.join(ROOT,'backend/venv/bin/python'),[path.join(__dirname,'conference_camera_test_server.py')],{cwd:ROOT,env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'},stdio:['ignore','pipe','pipe']});
@@ -12,7 +12,7 @@ const QR=require(path.join(ROOT,'frontend/node_modules/qrcode'));
  try{
   await ready;const {createServer}=await import(pathToFileURL(path.join(ROOT,'frontend/node_modules/vite/dist/node/index.js')).href);
   server=await createServer({root:path.join(ROOT,'frontend'),configFile:path.join(ROOT,'frontend/vite.config.ts'),server:{host:'127.0.0.1',port:4361,strictPort:true}});await server.listen();
-  browser=await chromium.launch({headless:true,executablePath:process.env.TT_CHROME_EXECUTABLE||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+  browser=await chromium.launch(launchOptions());
   const context=await browser.newContext({viewport:{width:1280,height:900}});
   await context.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url());

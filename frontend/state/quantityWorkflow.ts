@@ -45,3 +45,7 @@ export function eventQuantity(form: any, assetId: string | number, phase: 'requi
 export function eventQuantityTotal(form: any, ids: (string | number)[], phase: 'requirements' | 'packup' | 'crosscheck'): number {
   return [...new Set(ids.map(String))].reduce((sum, id) => sum + eventQuantity(form, id, phase), 0);
 }
+
+export function canVerifyReturns(user: { role?: string } | null | undefined): boolean {
+  return ['admin', 'boss', 'godown_incharge'].includes(user?.role || '');
+}

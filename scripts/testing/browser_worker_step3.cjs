@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), http = require('node:http');
 const path = require('node:path'), os = require('node:os');
 const ROOT = path.resolve(__dirname, '../..');
-const { chromium } = require(process.env.TT_PLAYWRIGHT_MODULE || '/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const { chromium, launchOptions } = require('./browser_runtime.cjs');
 const { build } = require(path.join(ROOT, 'frontend/node_modules/esbuild'));
 const checks = [];
 async function check(name, run) { await run(); checks.push(name); }
@@ -37,7 +37,7 @@ async function check(name, run) { await run(); checks.push(name); }
       response.end(fs.readFileSync(file));
     });
     await new Promise(resolve => server.listen(4312, '127.0.0.1', resolve));
-    browser = await chromium.launch({ headless: true, executablePath: process.env.TT_CHROME_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+    browser = await chromium.launch(launchOptions());
     const context = await browser.newContext();
     await context.route('**/*', route => route.request().url().startsWith('http://127.0.0.1:4312/') ? route.continue() : route.abort());
     const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));

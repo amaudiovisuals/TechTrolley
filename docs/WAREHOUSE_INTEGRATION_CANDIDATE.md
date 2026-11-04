@@ -27,12 +27,25 @@ within the same event/action still use the scan guard and durable command receip
 scanning stops when a quantity/picker decision opens; held QR reads cannot reset
 the selected count or replace its source during the decision/save.
 
+Program badges and on-site totals use the event's recorded quantities, including
+partial returns, rather than stock-master quantities or inventory-record counts.
+Business admins, bosses and warehouse managers can verify returns without a
+Django staff flag; accounts and technicians retain their existing restrictions.
+Supplier-paper issuance stores its exact pending request in browser storage,
+scoped to the origin, account, program and truck. An uncertain save must be
+recovered with the same request before another delivery can be issued. Reopening
+the screen does not send that request automatically.
+
 Run the full disposable SQLite suite with scripts/testing/run_backend_tests.py.
 The PostgreSQL harness creates its own private cluster with no TCP listener and
 verifies its identity on every connection. Its production_0054 baseline preserves
 a preupgrade supplier delivery snapshot through schema upgrade and backup restores.
 The workflow on this branch validates and produces a frontend review artifact.
 It does not activate this broader schema/configuration/dependency release on live.
+It also runs the actual browser scan/quantity/return flow, lost-response supplier
+paper recovery, mixed-owner papers/reports and the generated worker's safe update
+checks with an exact locked development-only Playwright dependency. These tests
+use isolated synthetic fixtures; they do not select business databases.
 
 Physical device and full release acceptance remain as recorded in the audit's
 CURRENT_STATUS and release runbooks. The phone-test environment is separate from

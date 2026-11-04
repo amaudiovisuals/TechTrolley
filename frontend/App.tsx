@@ -4,7 +4,7 @@ import { downloadEventPdf } from './state/privateDownloads';
 import { eventEditorData, eventMetadata, eventDraftKey, readEventDraft } from './state/eventDrafts';
 import { resolveScan } from './state/scanIdentity';
 import { MovementOutbox, RejectedMovement } from './state/movementOutbox';
-import { isBulkStock, quantityLimit, dispatchQuantities, quantityLabel, eventQuantityTotal } from './state/quantityWorkflow';
+import { isBulkStock, quantityLimit, dispatchQuantities, quantityLabel, eventQuantityTotal, canVerifyReturns } from './state/quantityWorkflow';
 import { consumableDraftHash, consumablePayload, consumableLimit, editConsumableRequest, editConsumableReturn } from './state/consumableWorkflow';
 import { hasRecordedQuantities, masterQuantityPreview } from './state/challanDocuments';
 import { manifestCommand } from './state/truckManifests';
@@ -1541,6 +1541,10 @@ const App: React.FC = () => {
   const getChallanTotalItemsCount = useCallback((conf: Booking): number => {
     const document = conf.challan_documents?.find(document => document.scope === 'master');
     if (document) return document.lines.reduce((total, line) => total + line.quantity, 0);
+    if (hasRecordedQuantities(conf)) {
+      const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
+      return masterQuantityPreview(conf, pool, 'dispatch').reduce((total, row) => total + row.quantity, 0);
+    }
     const targetAssetIds = (conf.challanAssets && conf.challanAssets.length > 0)
       ? conf.challanAssets.map(String)
       : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
@@ -2623,7 +2627,7 @@ const App: React.FC = () => {
     void submitAssetCommand(conferenceMovementAction(action), [String(asset.id)]);
   };
   const verifyCrosscheckAsset = (asset: Asset) => {
-    if (user?.role !== 'godown_incharge' && !user?.is_staff) { showScanToast('Only warehouse managers can verify returns.', 'error'); return; }
+    if (!canVerifyReturns(user)) { showScanToast('Only warehouse managers can verify returns.', 'error'); return; }
     if (isBulkStock(asset) && !conferenceFormData.is_audit) { openQuantityAction(asset, 'verify_return'); return; }
     if (asset.sub_assets?.length) {
       setPendingParentAsset(asset); setPendingAction('verify_crosscheck'); setScannedSubAssetIds([]); return;
@@ -2870,7 +2874,7 @@ const App: React.FC = () => {
 
         triggerAssetConferenceAction(asset, scanAction);
       } else if (assetTab === 'crosscheck') {
-        if (user?.role === 'godown_incharge' || user?.is_staff) {
+        if (canVerifyReturns(user)) {
           verifyCrosscheckAsset(asset);
         } else {
           showScanToast(`❌ Technicians cannot verify assets. Please wait for Godown Incharge.`, 'error');
@@ -7523,7 +7527,7 @@ const App: React.FC = () => {
                       {user?.role !== 'accounts' && ((assetTab === 'available') || 
                         ((user?.is_staff || (user?.role !== 'godown_incharge' && user?.role !== 'technician')) && assetTab === 'assigned') || 
                         (assetTab === 'packup') ||
-                        ((user?.role === 'godown_incharge' || user?.is_staff) && assetTab === 'crosscheck')) && (
+                        (canVerifyReturns(user) && assetTab === 'crosscheck')) && (
                           <div className="relative group">
                             <div className="absolute left-4 md:left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-sky-500 transition-colors pointer-events-none">
                               <i aria-hidden="true" className="fa-solid fa-magnifying-glass"></i>
@@ -8342,7 +8346,7 @@ const App: React.FC = () => {
                             {canTransfer && packupList.length > 0 && (
                               <div className="flex items-center justify-between px-1 mb-1">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                  {packupList.length} Item{packupList.length !== 1 ? 's' : ''} On-Site
+                                  {eventQuantityTotal(conferenceFormData, packupList.map(asset => asset.id), 'packup')} units on site
                                 </p>
                                 <button
                                   type="button"
@@ -8545,7 +8549,7 @@ const App: React.FC = () => {
                                                : (asset.sku || asset.serialNumber)}
                                            </span>
                                            {quantityLabel(conferenceFormData, asset.id) && <span className="text-[10px] font-bold text-slate-600">{quantityLabel(conferenceFormData, asset.id)}</span>}
-                                           {(user?.role === 'godown_incharge' || user?.is_staff) && (
+                                           {canVerifyReturns(user) && (
                                              <div className="flex gap-1.5 shrink-0">
                                                <button 
                                                  onClick={() => setFlagMenuAssetId(flagMenuAssetId === asset.id ? null : asset.id)}
@@ -9341,7 +9345,8 @@ const App: React.FC = () => {
 
                   <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
                     {['admin', 'boss', 'godown_incharge', 'accounts'].includes(user?.role || '') && <ProgramDeliveries
-                      key={`deliveries_${conf.id}_${activeTruck?.id || 'master'}`}
+                      key={`deliveries_${user?.user_id || user?.email || ''}_${conf.id}_${activeTruck?.id || 'master'}`}
+                      accountId={String(user?.user_id || user?.email || '')}
                       conferenceId={String(conf.id)} truckId={activeTruck?.id}
                       canIssue={['admin', 'boss', 'godown_incharge'].includes(user?.role || '')}
                       apiFetch={apiFetch} apiBase={API_BASE}

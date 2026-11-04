@@ -29,6 +29,30 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
     for (const [action, amount] of [['stage', 4], ['unstage', 6], ['return', 2], ['verify_return', 1]]) assert.equal(helpers.quantityLimit(bulk, form, action), amount);
     assert.equal(helpers.quantityLimit({ ...bulk, quantity_available: 0 }, form, 'stage'), 0);
   });
+  await check('Event badges use phase balances, deduplicate master IDs and retain physical units and zero', () => {
+    assert.equal(helpers.eventQuantityTotal(form, ['1', 1, '2'], 'requirements'), 9);
+    assert.equal(helpers.eventQuantityTotal(form, ['1', '2'], 'packup'), 3);
+    assert.equal(helpers.eventQuantityTotal(form, ['1', '2'], 'crosscheck'), 2);
+    const empty = { quantity_allocations: { '1': { reserved: 0, dispatched: 0, awaiting_verification: 0 } } };
+    for (const phase of ['requirements', 'packup', 'crosscheck']) assert.equal(helpers.eventQuantityTotal(empty, ['1'], phase), 0);
+  });
+  await check('Business administrators and warehouse managers verify returns without a staff flag', () => {
+    for (const role of ['admin', 'boss', 'godown_incharge']) assert.equal(helpers.canVerifyReturns({ role, is_staff: false }), true);
+    for (const role of ['accounts', 'technician', 'unknown', undefined]) assert.equal(helpers.canVerifyReturns({ role, is_staff: true }), false);
+    assert.equal(helpers.canVerifyReturns(null), false);
+    let opened;
+    const verify = user => appFunction('verifyCrosscheckAsset', { user, ...helpers, conferenceFormData: {}, showScanToast() {}, openQuantityAction: (_asset, action) => { opened = action; } });
+    verify({ role: 'admin', is_staff: false })(bulk); assert.equal(opened, 'verify_return');
+    opened = null; verify({ role: 'accounts', is_staff: true })(bulk); assert.equal(opened, null);
+  });
+  await check('Actual challan list keeps recorded dispatch totals and frozen document counts', () => {
+    const total = appFunction('getChallanTotalItemsCount', { useCallback: fn => fn, ...documents, assets: [bulk], allAssetsRef: { current: [bulk] } });
+    assert.equal(total({ ...form, assets: ['1'] }), 8);
+    assert.equal(total({ ...form, assets: ['1'], quantity_allocations: { '1': { ...form.quantity_allocations['1'], dispatched: 0, awaiting_verification: 0 } } }), 8);
+    assert.equal(total({ ...form, challan_documents: [{ scope: 'master', lines: [{ quantity: 3 }] }] }), 3);
+    const consumer = { id: '3', sku: 'TAPE', type: 'Consumables', quantity: 7 };
+    assert.equal(total({ assets: [], consumable_assets_details: [consumer], consumable_ledger: { '3': { ledger: true, requested: 4, returned: 1, status: 'settled' } } }), 4);
+  });
   await check('Mixed dispatch sends recorded event quantity and physical IDs together', () => {
     assert.deepEqual(helpers.dispatchQuantities(form, [bulk, { id: '2', quantity: 1 }]), { action: 'dispatch', expected_revision: 3, items: [{ asset_id: 1, quantity: 6 }], physical_asset_ids: [2] });
     assert.throws(() => helpers.dispatchQuantities({ ...form, quantity_allocations: {} }, [bulk, { id: '2', quantity: 1 }]));

@@ -1,4 +1,6 @@
 import React from 'react';
+import { clearPendingDelivery, deliveryPendingKey, readPendingDelivery, savePendingDelivery, validDeliveryRequest, type DeliveryIssueRequest } from '../state/programDeliveryDrafts';
+import { setWorkBlocker } from '../state/workSafety';
 
 type Party = { name: string; address?: string; gst_number?: string; phone?: string; email?: string; website?: string };
 type Row = { key: string; name: string; sku: string; serial: string; quantity: number; owner_id: number | null; owner: Party | null };
@@ -45,8 +47,8 @@ export function deliveryPaperHtml(paper: Paper, delivery: Delivery): string {
 }
 
 export const ProgramDeliveries: React.FC<{
-  conferenceId: string; truckId?: number | string; canIssue: boolean; apiFetch: (url: string, options?: any) => Promise<Response>; apiBase: string;
-}> = ({ conferenceId, truckId, canIssue, apiFetch, apiBase }) => {
+  conferenceId: string; truckId?: number | string; accountId: string; canIssue: boolean; apiFetch: (url: string, options?: any) => Promise<Response>; apiBase: string;
+}> = ({ conferenceId, truckId, accountId, canIssue, apiFetch, apiBase }) => {
   const endpoint = `${apiBase}/api/conferences/${conferenceId}/deliveries/`;
   const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -62,10 +64,13 @@ export const ProgramDeliveries: React.FC<{
   const [phone, setPhone] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const [recoveryReady, setRecoveryReady] = React.useState(false);
+  const [storageError, setStorageError] = React.useState('');
   const [opened, setOpened] = React.useState<{ delivery: Delivery; paper: Paper } | null>(null);
   const [voidId, setVoidId] = React.useState<number | null>(null);
   const [voidReason, setVoidReason] = React.useState('');
-  const requestRef = React.useRef<any>(null);
+  const requestRef = React.useRef<DeliveryIssueRequest | null>(null);
+  const pendingKey = React.useMemo(() => accountId ? deliveryPendingKey(window.location.origin, accountId, conferenceId, truckId) : '', [accountId, conferenceId, truckId]);
   const busyRef = React.useRef(false);
   const frame = React.useRef<HTMLIFrameElement>(null);
   const [printReadyFor, setPrintReadyFor] = React.useState('');
@@ -86,8 +91,26 @@ export const ProgramDeliveries: React.FC<{
     finally { setLoading(false); }
   }, [endpoint, apiFetch]);
   React.useEffect(() => { void reload(); }, [reload]);
+  React.useEffect(() => {
+    requestRef.current = null; setPending(false); setPreview(null); setOpened(null); setStorageError(''); setRecoveryReady(false);
+    try {
+      if (!pendingKey) throw Error('Sign in again before issuing a delivery.');
+      requestRef.current = readPendingDelivery(localStorage, pendingKey);
+      setPending(Boolean(requestRef.current));
+      setRecoveryReady(true);
+    } catch (e) { setStorageError(`Delivery recovery is unavailable: ${(e as Error).message}`); }
+  }, [pendingKey]);
+  React.useEffect(() => {
+    const key = `delivery-review:${pendingKey}`;
+    const active = Boolean(preview || pending || busy || storageError);
+    setWorkBlocker(key, active);
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    if (active) window.addEventListener('beforeunload', warn);
+    return () => { setWorkBlocker(key, false); window.removeEventListener('beforeunload', warn); };
+  }, [pendingKey, preview, pending, busy, storageError]);
 
   async function start() {
+    if (busyRef.current || pending || !recoveryReady || storageError) return;
     setBusy(true); setError(''); setOpened(null);
     try {
       const data: Preview = await json(await apiFetch(`${endpoint}preview/${truckId ? `?truck_id=${truckId}` : ''}`));
@@ -101,19 +124,36 @@ export const ProgramDeliveries: React.FC<{
     finally { setBusy(false); }
   }
   async function issue() {
-    if (busyRef.current || !preview) return;
+    if (busyRef.current || (!preview && !requestRef.current) || !recoveryReady || storageError) return;
     busyRef.current = true; setBusy(true); setError('');
-    if (!requestRef.current) requestRef.current = {
+    if (!requestRef.current && preview) requestRef.current = {
       request_key: crypto.randomUUID(), source_hash: preview.source_hash, truck_id: truckId ? Number(truckId) : null,
       reference, delivery_date: deliveryDate, vehicle_number: vehicle, driver_phone: phone,
       rows: (Object.entries(selected) as [string, Selection][]).filter(([, row]) => row.checked).map(([key, row]) => ({ key, name: row.name, quantity: row.quantity })),
     };
+    const request = requestRef.current!;
+    if (!validDeliveryRequest(request)) {
+      requestRef.current = null; setPending(false); setError('Review the delivery date, quantities and details before issuing.');
+      busyRef.current = false; setBusy(false); return;
+    }
     try {
-      const response = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(requestRef.current) });
-      // A server rejection is definite. A transport failure retains the exact
-      // payload/key, so retrying cannot silently issue another numbered paper.
-      if (!response.ok) { requestRef.current = null; setPending(false); }
+      try { savePendingDelivery(localStorage, pendingKey, request); }
+      catch (e) { setStorageError(`No delivery was sent: ${(e as Error).message}`); throw e; }
+      setPending(true);
+      const response = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(request) });
+      // Authentication/transport/server failures can follow an earlier committed
+      // attempt. Keep the exact request until its save is positively recovered.
+      if ([400, 404, 409].includes(response.status)) {
+        clearPendingDelivery(localStorage, pendingKey, request.request_key);
+        requestRef.current = null; setPending(false);
+      }
       const saved: Delivery = await json(response);
+      if (!saved || !Number.isInteger(saved.id) || saved.reference !== request.reference.trim() ||
+          !saved.snapshot?.customer_document?.number || !Array.isArray(saved.snapshot.customer_document.rows) ||
+          !Array.isArray(saved.snapshot.supplier_documents)) {
+        throw Error('The save reply was incomplete. Retry the same delivery to recover its saved number.');
+      }
+      clearPendingDelivery(localStorage, pendingKey, request.request_key);
       setPreview(null); requestRef.current = null; setPending(false);
       setOpened({ delivery: saved, paper: saved.snapshot.customer_document });
       await reload();
@@ -134,11 +174,16 @@ export const ProgramDeliveries: React.FC<{
     <h2 className="font-bold text-lg">Saved delivery challans</h2>
     <p className="text-sm">Each delivery saves a customer challan and a separate challan from each supplier to the issuing company. Reprints keep the saved details and numbers.</p>
     <div className="flex gap-3">
-      {canIssue && <button className={button} disabled={busy || loading || pending} onClick={start}>New delivery{truckId ? ' for this truck' : ''}</button>}
+      {canIssue && <button className={button} disabled={busy || loading || pending || !recoveryReady || Boolean(storageError)} onClick={start}>New delivery{truckId ? ' for this truck' : ''}</button>}
       <button className={button} disabled={busy || loading} onClick={reload}>Reload saved deliveries</button>
     </div>
     {loading && <p role="status">Loading saved deliveries…</p>}
     {error && <p role="alert" className="text-red-700 whitespace-pre-wrap">{error}</p>}
+    {storageError && <p role="alert" className="text-red-700 whitespace-pre-wrap">{storageError}</p>}
+    {pending && !preview && <div className="border border-amber-400 p-3 space-y-2">
+      <p role="alert">A delivery save is awaiting confirmation: {requestRef.current?.reference}. Recover the same request before starting another delivery.</p>
+      {canIssue && <button className={button} disabled={busy || Boolean(storageError)} onClick={issue}>{busy ? 'Recovering…' : 'Retry saving same delivery'}</button>}
+    </div>}
     {!loading && !deliveries.length && <p>No saved deliveries yet. Existing challans remain available below.</p>}
     {deliveries.map(delivery => <div key={delivery.id} className="border border-slate-200 rounded-lg p-3 space-y-2">
       <p className="font-bold">{delivery.reference} — {delivery.snapshot.customer_document.delivery_date}{delivery.voided_at ? ' — VOID' : ''}</p>

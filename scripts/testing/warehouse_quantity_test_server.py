@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='tt-shared-quantity-') as media:
     from rest_framework.authtoken.models import Token
     from core.models import Asset,CompanySettings,Conference,SubrentalCompany,QuantityAllocation,ConsumableAllocation,ProgramDelivery,MovementReceipt
     call_command('migrate',verbosity=0)
-    user=User.objects.create_user('quantity-admin',email='quantity@example.test',is_staff=True)
+    user=User.objects.create_user('quantity-admin',email='quantity@example.test',is_staff=False)
     user.profile.role='admin';user.profile.save();Token.objects.create(user=user,key='synthetic-warehouse-quantity-token')
     CompanySettings.objects.create(name='Pvt Ltd synthetic issuer')
     owner=SubrentalCompany.objects.create(name='AM synthetic shared owner',inventory_mode='shared_warehouse')
