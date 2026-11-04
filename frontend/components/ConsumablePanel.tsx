@@ -43,7 +43,7 @@ export function ConsumablePanel({ mode, data, ledger, assets, warehouse, disable
     })}
     <div className="flex flex-wrap gap-3">
       <button type="button" disabled={disabled} onClick={onSave} className="px-4 py-2 rounded-lg bg-slate-800 text-white font-bold text-xs">{mode === 'requests' ? 'Save consumable requests' : 'Save reported returns'}</button>
-      {warehouse && mode === 'requests' && entries.some(([, row]) => row.status === 'requested') && <button type="button" disabled={disabled} onClick={onDispatch} className="px-4 py-2 rounded-lg bg-emerald-700 text-white font-bold text-xs">Dispatch consumables</button>}
+      {warehouse && mode === 'requests' && entries.some(([, row]) => row.status === 'requested') && <button type="button" disabled={disabled} onClick={onDispatch} className="px-4 py-2 rounded-lg bg-emerald-700 text-slate-50 font-bold text-xs">Dispatch consumables</button>}
     </div>
   </section>;
 }

@@ -29,6 +29,22 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
   const waitFor=(predicate)=>{const promise=page.waitForResponse(predicate);promise.catch(()=>{});return promise;};
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4372/_fixture/inspect/')).json();
   const open=async()=>{await page.getByRole('button',{name:'Conference',exact:true}).first().click();await page.getByTitle('Edit Conference Details',{exact:true}).first().click();};
+  const readableConsumables=async(mode)=>{
+   const panel=page.locator(`[data-testid^="consumable-${mode}-"]`).locator('..');
+   await page.setViewportSize({width:390,height:844});
+   for(const theme of ['blue','green']){
+    await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
+    const failures=await panel.evaluate(section=>{
+     const rgb=value=>value.match(/[\d.]+/g).slice(0,3).map(Number);
+     const luminance=values=>values.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
+     return [...section.querySelectorAll('h4,p,label,input[type=number],button')].filter(el=>el.getBoundingClientRect().width>0).map(el=>{
+      const style=getComputedStyle(el);let node=el,bg='rgba(0, 0, 0, 0)';while(node&&bg==='rgba(0, 0, 0, 0)'){bg=getComputedStyle(node).backgroundColor;node=node.parentElement;}
+      const a=luminance(rgb(style.color)),b=luminance(rgb(bg));return {text:el.textContent||el.getAttribute('aria-label'),ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+     }).filter(result=>result.ratio<4.5);
+    });assert.deepEqual(failures,[],`${mode} panel contrast in ${theme} theme`);
+   }
+   await page.evaluate(()=>document.documentElement.dataset.theme='blue');await page.setViewportSize({width:1400,height:1100});
+  };
   const scan=async(code,amount,action)=>{
    const input=page.locator('input[placeholder="Search or scan requirement..."]:visible, input[placeholder="Scan to remove/verify..."]:visible, input[placeholder="Scan to add equipment..."]:visible').first();
    await input.fill(code);await input.press('Enter');
@@ -54,6 +70,7 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
   await page.getByRole('button',{name:'Requirements',exact:true}).click();
   await check('Requirements badge shows six event units rather than one master record',async()=>{assert.match(await page.getByRole('button').filter({hasText:'Shared cable master'}).innerText(), /x 6/);});
   await check('Supplier consumable scan saves and dispatches a recorded four-unit request',async()=>{await scan('AM-TAPE',4,'consumable-draft');
+   await readableConsumables('requests');
    for(const name of ['Save consumable requests','Dispatch consumables']){const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/consumable-commands/'));await page.getByRole('button',{name,exact:true}).click();assert.equal((await saved).status(),200);}
    const state=await inspect();assert.equal(state.consumer.requested,4);assert.equal(state.consumer.state,'dispatched');assert.equal(state.consumable_stock,10);
   });
@@ -71,7 +88,7 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
   await check('Partial bulk return and verification keep the remainder on site',async()=>{await scan('AM-BULK',2,'return');let state=await inspect();assert.equal(state.allocation.dispatched,4);assert.equal(state.allocation.awaiting_verification,2);
    await page.getByRole('button',{name:'Crosscheck',exact:true}).click();assert.match(await page.getByRole('button').filter({hasText:'Shared cable master'}).innerText(), /x 2/);await scan('AM-BULK',2,'verify_return');state=await inspect();assert.equal(state.allocation.awaiting_verification,0);assert.equal(state.allocation.dispatched,4);assert.equal(state.stock,10);assert.equal(state.bulk_records,1);
   });
-  await check('Explicit consumable count and settlement deduct three consumed units once',async()=>{await page.getByLabel('Returned to warehouse',{exact:true}).fill('1');await page.getByLabel('I verified this return count',{exact:true}).check();const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/consumable-commands/'));await page.getByRole('button',{name:'SUBMIT',exact:true}).click();assert.equal((await saved).status(),200);const state=await inspect();assert.equal(state.consumer.returned,1);assert.equal(state.consumer.consumed,3);assert.equal(state.consumable_stock,7);assert.equal(state.packets[0].supplier_documents[0].rows.find(r=>r.sku==='AM-TAPE').quantity,4);});
+  await check('Explicit consumable count and settlement deduct three consumed units once',async()=>{await readableConsumables('returns');await page.getByLabel('Returned to warehouse',{exact:true}).fill('1');await page.getByLabel('I verified this return count',{exact:true}).check();const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/consumable-commands/'));await page.getByRole('button',{name:'SUBMIT',exact:true}).click();assert.equal((await saved).status(),200);const state=await inspect();assert.equal(state.consumer.returned,1);assert.equal(state.consumer.consumed,3);assert.equal(state.consumable_stock,7);assert.equal(state.packets[0].supplier_documents[0].rows.find(r=>r.sku==='AM-TAPE').quantity,4);});
   assert(!writes.some(w=>w.path.includes('assign-quantity')));assert.deepEqual(errors,[]);
   console.log(JSON.stringify({checks,passed:checks.length,actual_App_and_Django:true,private_memory_database:true,production_or_audit_staging_changed:false},null,2));
  }catch(e){console.error(log.slice(-5000));if(page)console.error((await page.locator('body').innerText()).slice(-4500));throw e;}
