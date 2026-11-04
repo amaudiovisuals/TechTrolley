@@ -32,3 +32,16 @@ export function quantityLabel(form: Booking | any, assetId: string | number): st
   const a = form.quantity_allocations?.[String(assetId)];
   return a ? `${a.reserved} packed · ${a.dispatched} on site · ${a.awaiting_verification} unchecked` : '';
 }
+
+// Event totals must never use the warehouse master's stock quantity.
+export function eventQuantity(form: any, assetId: string | number, phase: 'requirements' | 'packup' | 'crosscheck'): number {
+  const a = form.quantity_allocations?.[String(assetId)];
+  if (!a) return 1;
+  if (phase === 'packup') return Number(a.dispatched) || 0;
+  if (phase === 'crosscheck') return Number(a.awaiting_verification) || 0;
+  return (Number(a.reserved) || 0) + (Number(a.dispatched) || 0);
+}
+
+export function eventQuantityTotal(form: any, ids: (string | number)[], phase: 'requirements' | 'packup' | 'crosscheck'): number {
+  return [...new Set(ids.map(String))].reduce((sum, id) => sum + eventQuantity(form, id, phase), 0);
+}

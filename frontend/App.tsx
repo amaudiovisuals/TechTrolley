@@ -4,7 +4,7 @@ import { downloadEventPdf } from './state/privateDownloads';
 import { eventEditorData, eventMetadata, eventDraftKey, readEventDraft } from './state/eventDrafts';
 import { resolveScan } from './state/scanIdentity';
 import { MovementOutbox, RejectedMovement } from './state/movementOutbox';
-import { isBulkStock, quantityLimit, dispatchQuantities, quantityLabel } from './state/quantityWorkflow';
+import { isBulkStock, quantityLimit, dispatchQuantities, quantityLabel, eventQuantityTotal } from './state/quantityWorkflow';
 import { consumableDraftHash, consumablePayload, consumableLimit, editConsumableRequest, editConsumableReturn } from './state/consumableWorkflow';
 import { hasRecordedQuantities, masterQuantityPreview } from './state/challanDocuments';
 import { manifestCommand } from './state/truckManifests';
@@ -8125,7 +8125,7 @@ const App: React.FC = () => {
                                         ) : null;
                                       })()}
                                     </div>
-                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{(conferenceFormData.assets || []).length + (conferenceFormData.staged_assets || []).length} READY</span>
+                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">{eventQuantityTotal(conferenceFormData, [...(conferenceFormData.assets || []), ...(conferenceFormData.staged_assets || [])], 'requirements')} READY</span>
                                   </div>
                                   
                                    {/* F-3: Cart view for godown staged/assigned items */}
@@ -8163,7 +8163,7 @@ const App: React.FC = () => {
                                                  <i aria-hidden="true" className={`fa-solid ${colors.icon}`}></i>
                                                </div>
                                                <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                               <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {items.length}</span>
+                                               <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {eventQuantityTotal(conferenceFormData, items.map(i => i.asset.id), 'requirements')}</span>
                                                <i aria-hidden="true" className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                              </button>
                                              {isOpen && (
@@ -8251,7 +8251,7 @@ const App: React.FC = () => {
                                                   <i aria-hidden="true" className={`fa-solid ${colors.icon}`}></i>
                                                 </div>
                                                 <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                                <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {items.length}</span>
+                                                <span className={`shrink-0 px-2 py-0.5 ${colors.badge} text-white text-[9px] font-black rounded-full`}>x {eventQuantityTotal(conferenceFormData, items.map(i => i.asset.id), 'requirements')}</span>
                                                 <i aria-hidden="true" className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                               </button>
                                               {isOpen && (
@@ -8266,6 +8266,7 @@ const App: React.FC = () => {
                                                       <span className={`shrink-0 px-1.5 py-0.5 text-white text-[8px] font-black rounded-full ${colors.badge}`}>
                                                         {type === 'staged' ? 'STAGED' : type === 'extra' ? 'EXTRA' : type === 'pending' ? 'PENDING' : 'ASSIGNED'}
                                                       </span>
+                                                      {quantityLabel(conferenceFormData, asset.id) && <span className="text-[10px] font-bold text-slate-600">{quantityLabel(conferenceFormData, asset.id)}</span>}
                                                       {(type === 'extra' || type === 'assigned' || type === 'staged') && (
                                                         <button onClick={() => triggerAssetConferenceAction(asset, 'unassign')} className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-all flex items-center justify-center shrink-0" title="Remove">
                                                           <i aria-hidden="true" className="fa-solid fa-trash-can text-[9px]"></i>
@@ -8419,7 +8420,7 @@ const App: React.FC = () => {
                                             <i aria-hidden="true" className="fa-solid fa-check-double"></i>
                                           </div>
                                           <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                          <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {items.reduce((sum, i) => sum + (i.quantity || 1), 0)}</span>
+                                          <span className="shrink-0 px-2 py-0.5 bg-emerald-500 text-white text-[9px] font-black rounded-full">x {eventQuantityTotal(conferenceFormData, items.map(i => i.id), 'packup')}</span>
                                           <i aria-hidden="true" className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                         </button>
                                         {isOpen && (
@@ -8531,7 +8532,7 @@ const App: React.FC = () => {
                                        <i aria-hidden="true" className="fa-solid fa-box"></i>
                                      </div>
                                      <span className="truncate flex-1 min-w-0 font-black uppercase text-xs text-slate-800 text-left">{name}</span>
-                                     <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {items.length}</span>
+                                     <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {eventQuantityTotal(conferenceFormData, items.map(i => i.id), 'crosscheck')}</span>
                                      <i aria-hidden="true" className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                    </button>
                                    {isOpen && (
