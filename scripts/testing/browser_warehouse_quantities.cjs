@@ -87,6 +87,17 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
   await page.getByRole('button',{name:'Challans',exact:true}).first().click();
   await check('Challan list uses six delivered cables plus four consumables before first document save',async()=>{const row=page.getByRole('row').filter({hasText:'Synthetic shared quantity event'});assert.match(await row.innerText(), /10 items/i);});
   await page.getByRole('row').filter({hasText:'Synthetic shared quantity event'}).getByRole('button',{name:'View',exact:true}).click();
+  await check('Phone challan stacks details and scrolls its table while print retains three copies',async()=>{
+   await page.locator('.challan-copy').first().waitFor();await page.setViewportSize({width:390,height:844});
+   assert.equal(await page.locator('.challan-copy:visible').count(),1);
+   const layout=await page.locator('.challan-copy[data-copy-index="0"]').evaluate(el=>{
+    const header=el.querySelector('.challan-paper-header'),issuer=header.children[0].getBoundingClientRect(),meta=header.children[1].getBoundingClientRect(),table=el.querySelector('.challan-table-scroll'),rect=table.getBoundingClientRect();
+    return {stacked:meta.top>=issuer.bottom,font:parseFloat(getComputedStyle(el.querySelector('.challan-paper p')).fontSize),scrolls:table.scrollWidth>table.clientWidth,contained:rect.left>=0&&rect.right<=innerWidth};
+   });assert.deepEqual(layout,{stacked:true,font:11,scrolls:true,contained:true});
+   await page.emulateMedia({media:'print'});assert.deepEqual(await page.locator('.challan-copy').evaluateAll(els=>els.map(el=>getComputedStyle(el).display)),['flex','flex','flex']);
+   assert.equal(await page.locator('.challan-table-scroll').first().evaluate(el=>getComputedStyle(el).overflowX),'visible');
+   await page.emulateMedia({media:'screen'});await page.setViewportSize({width:1400,height:1100});
+  });
   await check('Reviewed customer challan and new supplier packet use event quantities, not master stock',async()=>{
    await page.getByRole('button',{name:'Edit Mode',exact:true}).click();const saved=waitFor(r=>r.request().method()==='PUT'&&r.url().includes('/challan-documents/'));await page.getByRole('button',{name:'Save Changes',exact:true}).click();assert.equal((await saved).status(),200);
    await page.getByRole('button',{name:'New delivery',exact:true}).click();await page.getByLabel('Quantity AM-BULK').waitFor();assert.equal(await page.getByLabel('Quantity AM-BULK').inputValue(),'6');assert.equal(await page.getByLabel('Quantity AM-TAPE').inputValue(),'4');

@@ -6,3 +6,30 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* The phone preview is a reading/editing surface. A4 sizing remains print-only. */
+@media screen and (max-width: 767px) {
+  .challan-container, .challan-view, .challan-copy, .challan-paper {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .challan-copy:not([data-copy-index="0"]) { display: none; }
+  .challan-paper { width: 100%; padding: 12px !important; }
+  .challan-paper-header { flex-direction: column; gap: 16px; }
+  .challan-paper-header > div { width: 100%; min-width: 0; }
+  .challan-document-meta, .challan-document-meta .text-right { text-align: left; }
+  .challan-document-meta .justify-end { justify-content: flex-start; }
+  .challan-document-meta input { max-width: 100%; }
+  .challan-parties, .challan-signatures { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .challan-paper p, .challan-paper span, .challan-paper h4, .challan-paper h5 {
+    font-size: 11px;
+    line-height: 1.5;
+    letter-spacing: .02em;
+    overflow-wrap: anywhere;
+  }
+  .challan-paper h2 { font-size: 20px; line-height: 1.3; }
+  .challan-table-scroll { max-width: 100%; overflow-x: auto; }
+  .challan-table-scroll table { min-width: 640px; }
+  .challan-table-scroll th, .challan-table-scroll td { font-size: 11px; padding: 8px; }
+  .challan-table-scroll input { min-width: 64px; }
+}

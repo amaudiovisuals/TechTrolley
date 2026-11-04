@@ -470,7 +470,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   </div>;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="challan-view flex flex-col gap-4">
       {sourceWarnings.length > 0 && <div role="alert" className="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-slate-900">
         <p className="font-bold">Source quantity review required</p>
         {sourceWarnings.map(warning => <p key={warning.assetId}>{warning.message}</p>)}
@@ -672,10 +672,12 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         </div>
       )}
 
+      <p className="md:hidden print:hidden text-sm text-slate-700">Original copy preview. Swipe across the equipment table to see all columns. Printing includes all three copies.</p>
       {copies.map((copy, index) => (
         <div
           key={copy.key}
-          className="print:w-full print:flex print:flex-col"
+          className="challan-copy print:w-full print:flex print:flex-col"
+          data-copy-index={index}
           style={{ pageBreakAfter: index < copies.length - 1 ? 'always' : 'auto' }}
         >
           <ChallanTemplate
@@ -896,9 +898,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   };
 
   return (
-    <div className="p-6 bg-white max-w-[210mm] mx-auto shadow-sm border border-gray-200 rounded-md my-4 font-sans print:shadow-none print:m-0 print:p-[10mm] print:w-[210mm] print:min-h-[297mm] print:box-border print:border-none print:rounded-none relative flex flex-col justify-between print:block">
+    <div className="challan-paper p-6 bg-white max-w-[210mm] mx-auto shadow-sm border border-gray-200 rounded-md my-4 font-sans print:shadow-none print:m-0 print:p-[10mm] print:w-[210mm] print:min-h-[297mm] print:box-border print:border-none print:rounded-none relative flex flex-col justify-between print:block">
       {/* Header, Consignee sections remain unchanged (already premium) */}
-      <div className="flex justify-between items-start pb-2 mb-2" style={{ borderBottom: `2px solid ${accent}` }}>
+      <div className="challan-paper-header flex justify-between items-start pb-2 mb-2" style={{ borderBottom: `2px solid ${accent}` }}>
         <div>
           <Logo size="sm" companySettings={companySettings} variant="challan" showText={false} />
           <div className="mt-1 text-[9px] text-gray-900 font-medium leading-snug">
@@ -908,7 +910,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <p>Tel: {companySettings?.phone || '+91 9999 888 777'} | Email: {companySettings?.email || 'support@amaudiovisuals.in'}</p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="challan-document-meta text-right">
           <div className="mb-0.5">
             <span className="text-[8px] font-black uppercase tracking-widest border border-gray-900 px-2 py-0.5 rounded text-gray-900">{copyLabel}</span>
           </div>
@@ -952,7 +954,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-2">
+      <div className="challan-parties grid grid-cols-2 gap-2 mb-2">
         <div>
           <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Service Receiver</h4>
           <div className="mt-1 space-y-1">
@@ -994,6 +996,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       </div>
 
       {/* Dynamic Asset Table */}
+      <div className="challan-table-scroll" role="region" aria-label="Challan equipment table" tabIndex={0}>
       <table className="w-full mb-2 border-collapse">
         <thead>
           <tr className="challan-header-target border-y border-gray-900" style={{ backgroundColor: hdrBg, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
@@ -1126,6 +1129,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
           </tr>
         </tfoot>
       </table>
+      </div>
 
       <div className="mt-2 page-break-inside-avoid">
         <div className="px-3 py-2 mb-3 rounded-md bg-gray-50" style={{ border: '1px dashed #999' }}>
@@ -1134,7 +1138,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
             <span className="font-black uppercase tracking-wide">{fmtDate(booking.endDate)}</span>.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-12">
+        <div className="challan-signatures grid grid-cols-2 gap-12">
           <div className="text-center pt-2" style={{ borderTop: '2px double #555' }}>
             <p className="text-[8px] font-black text-gray-900 uppercase tracking-[0.4em]">Receiver Acknowledgement</p>
             <div className="mt-4 h-8 mx-auto w-36" style={{ borderBottom: '1px solid #555' }}></div>
