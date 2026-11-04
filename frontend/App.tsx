@@ -659,6 +659,9 @@ const App: React.FC = () => {
   // Global Consumables Picker State
   const [showConsumablesPicker, setShowConsumablesPicker] = useState(false);
   const [consumablesPickerSearchQuery, setConsumablesPickerSearchQuery] = useState('');
+  useEffect(() => {
+    if (showQuantityModal || showConsumablesPicker) setShowScanner(false);
+  }, [showQuantityModal, showConsumablesPicker]);
 
   // Asset Transfer Modal State
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -2673,6 +2676,9 @@ const App: React.FC = () => {
   };
 
   const handleScan = (decodedText: string, isAddingVal: boolean | null = null) => {
+    // A quantity selection is an operator decision. Further reads must not
+    // replace its asset/count while that decision or its save is in progress.
+    if (showQuantityModal || quantitySaving || consumableSaving) return;
     // setShowScanner(false); // REMOVED: Allow continuous scanning
     const scanned = (decodedText || '').trim();
     if (!scanned) return;

@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {spawn}=require('node:child_process'),{pathToFileURL}=require('node:url');
 const root=path.resolve(__dirname,'../..');
+const QR=require(path.join(root,'frontend/node_modules/qrcode'));
 const {chromium}=require(process.env.TT_PLAYWRIGHT_MODULE||'/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 (async()=>{
  const backend=spawn(process.env.TT_TEST_PYTHON||'python3',['-B',path.join(__dirname,'warehouse_quantity_test_server.py')],{cwd:root,stdio:['ignore','pipe','pipe']});
@@ -20,7 +21,10 @@ const {chromium}=require(process.env.TT_PLAYWRIGHT_MODULE||'/Users/user/.cache/c
    if(req.method()!=='GET')writes.push({path:url.pathname,body:req.postDataJSON()});
    try{const task=transport.then(()=>route.fetch({url:`http://127.0.0.1:4372${url.pathname}${url.search}`}));transport=task.then(()=>{},()=>{});const response=await task;return route.fulfill({response,headers:{...response.headers(),...headers}});}catch(e){if(!closing)errors.push(e.message);return route.abort().catch(()=>{});}
   });
-  await context.addInitScript(()=>{localStorage.setItem('token','synthetic-warehouse-quantity-token');localStorage.setItem('user',JSON.stringify({user_id:1,email:'quantity@example.test',role:'admin',is_staff:true}));});
+  const qr=await QR.toDataURL('AM-BULK',{width:220,margin:4});
+  await context.addInitScript(qr=>{localStorage.setItem('token','synthetic-warehouse-quantity-token');localStorage.setItem('user',JSON.stringify({user_id:1,email:'quantity@example.test',role:'admin',is_staff:true}));
+   window.__streams=[];navigator.mediaDevices.getUserMedia=async()=>{const img=new Image();img.src=qr;await img.decode();const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const ctx=canvas.getContext('2d');const draw=()=>{ctx.fillStyle='white';ctx.fillRect(0,0,640,480);ctx.drawImage(img,210,130,220,220);};draw();const stream=canvas.captureStream(15),timer=setInterval(draw,60);stream.getTracks().forEach(track=>{const stop=track.stop.bind(track);track.stop=()=>{clearInterval(timer);stop();};});window.__streams.push(stream);return stream;};
+  },qr);
   page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   const waitFor=(predicate)=>{const promise=page.waitForResponse(predicate);promise.catch(()=>{});return promise;};
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4372/_fixture/inspect/')).json();
@@ -36,7 +40,16 @@ const {chromium}=require(process.env.TT_PLAYWRIGHT_MODULE||'/Users/user/.cache/c
    await page.getByRole('heading',{name:'Select Quantity',exact:true}).waitFor({state:'hidden'});
   };
   await page.goto('http://127.0.0.1:4371/');await open();await page.getByRole('button',{name:'Requirements',exact:true}).click();
-  await check('Supplier bulk scan reserves a partial count on the original master',async()=>{await scan('AM-BULK',6,'stage');const state=await inspect();assert.equal(state.allocation.reserved,6);assert.equal(state.stock,10);assert.equal(state.bulk_records,1);assert.equal(state.owner_id,1);});
+  await check('Supplier camera scan hands off one selected partial count without repeated-read resets',async()=>{
+   await page.getByTitle('Scan with Camera',{exact:true}).first().click();
+   const modal=page.getByRole('heading',{name:'Select Quantity',exact:true}).locator('..').locator('..').locator('..');
+   await modal.locator('input[type=number]').waitFor();await modal.locator('input[type=number]').fill('6');
+   await page.getByRole('dialog',{name:'Camera scanner'}).waitFor({state:'hidden'});
+   await page.waitForFunction(()=>window.__streams.length>0&&window.__streams.every(s=>s.getTracks().every(t=>t.readyState==='ended')));
+   await page.waitForTimeout(2300);assert.equal(await modal.locator('input[type=number]').inputValue(),'6');
+   const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/quantity-commands/'));
+   await modal.getByRole('button',{name:/^stage/i}).click();assert.equal((await saved).status(),200);
+   await page.getByRole('heading',{name:'Select Quantity',exact:true}).waitFor({state:'hidden'});const state=await inspect();assert.equal(state.allocation.reserved,6);assert.equal(state.stock,10);assert.equal(state.bulk_records,1);assert.equal(state.owner_id,1);});
   await check('Actual dispatch button moves exactly the reserved count',async()=>{const saved=waitFor(r=>r.request().method()==='POST'&&r.url().endsWith('/quantity-commands/'));await page.getByRole('button',{name:'Submit Dispatch to Show',exact:true}).click();assert.equal((await saved).status(),200);assert.equal((await inspect()).allocation.dispatched,6);});
   await page.getByRole('button',{name:'Requirements',exact:true}).click();
   await check('Supplier consumable scan saves and dispatches a recorded four-unit request',async()=>{await scan('AM-TAPE',4,'consumable-draft');

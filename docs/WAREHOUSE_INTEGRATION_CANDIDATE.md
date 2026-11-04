@@ -23,7 +23,9 @@ Unsupported or uncertain legacy balances require reconciliation.
 
 Integration tests also cover the admin dispatch button and immediate scanning of
 the same code after switching between return and verification. Duplicate reads
-within the same event/action still use the scan guard and durable command receipts.
+within the same event/action still use the scan guard and durable command receipts. Camera
+scanning stops when a quantity/picker decision opens; held QR reads cannot reset
+the selected count or replace its source during the decision/save.
 
 Run the full disposable SQLite suite with scripts/testing/run_backend_tests.py.
 The PostgreSQL harness creates its own private cluster with no TCP listener and
