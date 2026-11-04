@@ -29,15 +29,14 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
   const waitFor=(predicate)=>{const promise=page.waitForResponse(predicate);promise.catch(()=>{});return promise;};
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4372/_fixture/inspect/')).json();
   const open=async()=>{await page.getByRole('button',{name:'Conference',exact:true}).first().click();await page.getByTitle('Edit Conference Details',{exact:true}).first().click();};
-  const readableConsumables=async(mode)=>{
-   const panel=page.locator(`[data-testid^="consumable-${mode}-"]`).locator('..');
+  const readablePanel=async(panel,mode)=>{
    await page.setViewportSize({width:390,height:844});
    for(const theme of ['blue','green']){
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     const failures=await panel.evaluate(section=>{
      const rgb=value=>value.match(/[\d.]+/g).slice(0,3).map(Number);
      const luminance=values=>values.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
-     return [...section.querySelectorAll('h4,p,label,input[type=number],button')].filter(el=>el.getBoundingClientRect().width>0).map(el=>{
+     return [...section.querySelectorAll('h2,h3,h4,p,label,th,td,input[type=number],button:not([disabled])')].filter(el=>el.getBoundingClientRect().width>0).map(el=>{
       const style=getComputedStyle(el);let node=el,bg='rgba(0, 0, 0, 0)';while(node&&bg==='rgba(0, 0, 0, 0)'){bg=getComputedStyle(node).backgroundColor;node=node.parentElement;}
       const a=luminance(rgb(style.color)),b=luminance(rgb(bg));return {text:el.textContent||el.getAttribute('aria-label'),ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
      }).filter(result=>result.ratio<4.5);
@@ -45,6 +44,7 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
    }
    await page.evaluate(()=>document.documentElement.dataset.theme='blue');await page.setViewportSize({width:1400,height:1100});
   };
+  const readableConsumables=mode=>readablePanel(page.locator(`[data-testid^="consumable-${mode}-"]`).locator('..'),mode);
   const scan=async(code,amount,action)=>{
    const input=page.locator('input[placeholder="Search or scan requirement..."]:visible, input[placeholder="Scan to remove/verify..."]:visible, input[placeholder="Scan to add equipment..."]:visible').first();
    await input.fill(code);await input.press('Enter');
@@ -55,7 +55,17 @@ const {chromium,launchOptions}=require('./browser_runtime.cjs');
    if(saved){const response=await saved;assert.equal(response.status(),200,await response.text());}
    await page.getByRole('heading',{name:'Select Quantity',exact:true}).waitFor({state:'hidden'});
   };
-  await page.goto('http://127.0.0.1:4371/');await open();await page.getByRole('button',{name:'Requirements',exact:true}).click();
+  await page.goto('http://127.0.0.1:4371/');
+  await check('Ownership dashboard and completion/reconciliation reviews remain readable in both phone themes without applying changes',async()=>{
+   const ownership=page.getByRole('region',{name:'Inventory by owner'});await ownership.getByRole('table').waitFor();await readablePanel(ownership,'ownership dashboard');
+   await page.getByRole('button',{name:'Conference',exact:true}).first().click();
+   await page.getByRole('button',{name:'Review completion for Synthetic shared quantity event',exact:true}).click();
+   const completion=page.getByRole('dialog');await completion.getByText('Recorded state: open',{exact:true}).waitFor();await readablePanel(completion,'completion');await completion.getByRole('button',{name:'Close event completion review',exact:true}).click();
+   await page.getByRole('button',{name:'Review reconciliation for Synthetic shared quantity event',exact:true}).click();
+   const reconciliation=page.getByRole('dialog');await reconciliation.getByRole('heading',{name:'Reviewed inventory reconciliation',exact:true}).waitFor();await reconciliation.getByText('Loading current evidence…',{exact:true}).waitFor({state:'hidden'});await readablePanel(reconciliation,'reconciliation');await reconciliation.getByRole('button',{name:'Close reconciliation review',exact:true}).click();
+   assert.equal(writes.length,0,'Opening readability reviews must not change stock or lifecycle');
+  });
+  await open();await page.getByRole('button',{name:'Requirements',exact:true}).click();
   await check('Supplier camera scan hands off one selected partial count without repeated-read resets',async()=>{
    await page.getByTitle('Scan with Camera',{exact:true}).first().click();
    const modal=page.getByRole('heading',{name:'Select Quantity',exact:true}).locator('..').locator('..').locator('..');

@@ -60,16 +60,16 @@ export default function CustodyReview({ conferenceId, loadReview, onClose }: {
   const rows = data?.rows.filter(row => !onlyReview || !row.status_matches || row.blockers.length > 0) || [];
   return (
     <div className="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="custody-review-title">
-      <div ref={panel} className="bg-slate-900 text-slate-100 rounded-2xl border border-slate-700 w-full max-w-5xl max-h-[90vh] flex flex-col">
+      <div ref={panel} className="bg-slate-900 text-slate-900 rounded-2xl border border-slate-700 w-full max-w-5xl max-h-[90vh] flex flex-col">
         <div className="p-5 flex items-start justify-between gap-4 border-b border-slate-700">
           <div><h2 id="custody-review-title" className="font-bold text-xl">Custody review</h2>
             <p className="text-sm text-slate-300 mt-1">{data?.name || `Event ${conferenceId}`}</p>
-            <p className="text-sm text-amber-200 mt-2">Read-only review. No inventory or history is changed.</p></div>
-          <button type="button" onClick={onClose} aria-label="Close custody review" className="px-3 py-2 rounded bg-slate-700">Close</button>
+            <p className="text-sm text-amber-800 mt-2">Read-only review. No inventory or history is changed.</p></div>
+          <button type="button" onClick={onClose} aria-label="Close custody review" className="px-3 py-2 rounded bg-slate-200">Close</button>
         </div>
         <div className="p-5 overflow-auto">
           {!data && !error && <p role="status">Loading current custody…</p>}
-          {error && <div role="alert"><p>{error}</p><button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-3 px-3 py-2 bg-slate-700 rounded">Retry review</button></div>}
+          {error && <div role="alert"><p>{error}</p><button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-3 px-3 py-2 bg-slate-200 rounded">Retry review</button></div>}
           {data && <>
             <p className="text-sm">{data.rows.length} items reviewed · {data.mismatch_count} status differences · {data.blocked_count} items needing confirmation</p>
             <p className="text-sm text-slate-300 mt-2">Audit observations, packing plans and challan history do not establish where equipment is now. Dates and empty return queues do not prove a completed return.</p>
@@ -80,11 +80,11 @@ export default function CustodyReview({ conferenceId, loadReview, onClose }: {
               <p className="text-sm mt-1">Stored: {row.stored_status} · Expected from current records: {row.expected_status}</p>
               <p className="text-sm text-slate-300 mt-1">Active events: {row.evidence.custody.active_event_ids.join(', ') || 'None'} · Awaiting verification: {row.evidence.custody.unchecked_event_ids.join(', ') || 'None'} · Staff custodian: {row.evidence.asset.assigned_to_id ?? 'None'}</p>
               {Boolean(row.evidence.custody.staff_issue_employee_ids?.length) && <p className="text-sm">Recorded staff issue: {row.evidence.custody.staff_issue_employee_ids?.join(', ')}</p>}
-              {(row.evidence.asset.flag || row.evidence.asset.condition === 'Damaged') && <p className="text-sm text-amber-200 mt-1">Restriction: {row.evidence.asset.flag || row.evidence.asset.condition}</p>}
-              {row.blockers.map(reason => <p key={reason} className="text-sm text-amber-200 mt-1">{reasons[reason] || reason}</p>)}
+              {(row.evidence.asset.flag || row.evidence.asset.condition === 'Damaged') && <p className="text-sm text-amber-800 mt-1">Restriction: {row.evidence.asset.flag || row.evidence.asset.condition}</p>}
+              {row.blockers.map(reason => <p key={reason} className="text-sm text-amber-800 mt-1">{reasons[reason] || reason}</p>)}
             </div>)}
             <p className="text-xs text-slate-400 mt-4">Reload this review after changes. Any future repair requires physical confirmation and a fresh comparison.</p>
-            <button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-3 px-3 py-2 bg-slate-700 rounded">Reload review</button>
+            <button type="button" onClick={() => setAttempt(value => value + 1)} className="mt-3 px-3 py-2 bg-slate-200 rounded">Reload review</button>
           </>}
         </div>
       </div>

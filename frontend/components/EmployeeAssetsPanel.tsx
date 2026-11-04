@@ -165,7 +165,7 @@ export default function EmployeeAssetsPanel({ apiFetch, user, refreshKey = 0, on
         if (mounted.current && id === historyGeneration.current)
             setHistoryError(textError(err));
     } };
-    return <section className="bg-slate-900/30 rounded-2xl p-5 text-slate-100 space-y-4">
+    return <section className="bg-slate-900/30 rounded-2xl p-5 text-slate-900 space-y-4">
   <h3 className="text-xl font-bold">Employee Assets</h3>
   <p>Issued equipment across all inventory categories and ownership sources.</p>
   <div className="flex flex-wrap gap-3"><input aria-label="Search employee allocations" value={search} onChange={e => setSearch(e.target.value)} placeholder="Employee name or ID" className="form-input-night"/><label><input type="checkbox" checked={laptopsOnly} onChange={e => setLaptopsOnly(e.target.checked)}/> Laptops category only</label><button type="button" onClick={() => void load().catch(() => { })}>Reload allocations</button><button type="button" disabled={loading || Boolean(error)} onClick={exportRows}>Export employee assets</button><button type="button" disabled={loading || Boolean(error)} onClick={exportPdf}>Export employee assets PDF</button></div>

@@ -189,7 +189,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                                 <div className="space-y-2">
                                     {assetDetailData.history.map((h, i) => (
                                         <div key={i} className="flex justify-between items-center bg-slate-950/20 p-4 rounded-xl border border-slate-800/50">
-                                            <p className="text-sm font-bold text-slate-200 uppercase">{h.name}</p>
+                                            <p className="text-sm font-bold text-slate-800 uppercase">{h.name}</p>
                                             <p className="text-xs font-mono text-slate-500">{h.date}</p>
                                         </div>
                                     ))}
@@ -307,7 +307,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
                                                         className="w-full flex items-center gap-3 p-4 text-left"
                                                     >
                                                         <div className="min-w-0 flex-1">
-                                                            <p className="text-sm font-bold text-slate-200 uppercase truncate">{name}</p>
+                                                            <p className="text-sm font-bold text-slate-800 uppercase truncate">{name}</p>
                                                         </div>
                                                         <span className="shrink-0 px-2 py-0.5 bg-sky-500/20 text-sky-400 text-[9px] font-black rounded-full border border-sky-500/30">x {items.length}</span>
                                                         <i aria-hidden="true" className="fa-solid fa-chevron-down text-slate-600 text-[10px] shrink-0 group-hover:text-slate-400 transition-colors"></i>
