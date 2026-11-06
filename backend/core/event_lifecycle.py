@@ -77,9 +77,21 @@ def build_review(event):
         if row.reserved or row.dispatched or row.awaiting_verification:
             block('quantity_balance_outstanding', asset_id=row.asset_id)
         verified = sum(m.quantity for m in row.movements.filter(action='verify_return'))
-        dispatched = sum(m.quantity for m in row.movements.filter(action='dispatch'))
-        if row.dispatched_total != row.verified_total or verified != row.verified_total or dispatched != row.dispatched_total:
+        dispatched = sum(m.quantity for m in row.movements.filter(action__in=['dispatch','transfer_in']))
+        received = sum(m.quantity for m in row.movements.filter(action='transfer_in'))
+        forwarded = sum(m.quantity for m in row.movements.filter(action='transfer_out'))
+        if row.dispatched_total != row.verified_total + row.transferred_out_total or verified != row.verified_total or dispatched != row.dispatched_total or received != row.transferred_in_total or forwarded != row.transferred_out_total:
             block('quantity_return_evidence_inconsistent', asset_id=row.asset_id)
+        from .models import QuantityMovement
+        for movement in row.movements.filter(action__in=['transfer_in','transfer_out']):
+            incoming = movement.action == 'transfer_in'
+            context = movement.context
+            other_id = context.get('source_conference_id' if incoming else 'target_conference_id')
+            this_id = context.get('target_conference_id' if incoming else 'source_conference_id')
+            if this_id != event.pk or other_id == event.pk or QuantityMovement.objects.filter(
+                receipt=movement.receipt, allocation__asset_id=row.asset_id, allocation__conference_id=other_id,
+                action='transfer_out' if incoming else 'transfer_in', quantity=movement.quantity, context=context).count() != 1:
+                block('quantity_transfer_evidence_inconsistent', asset_id=row.asset_id)
     for row in consumers:
         consumer_rows.append({'asset_id': row.asset_id, **consumer_data(row)})
         if row.requested == 0 and row.state == 'reserved':

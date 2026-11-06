@@ -2,6 +2,7 @@ from . import program_deliveries, address_book, led_cases
 from .asset_commands import asset_commands
 from .offline_packages import offline_package
 from .quantity_commands import quantity_commands
+from .quantity_transfers import quantity_transfers
 from .consumable_commands import consumable_commands
 from .truck_manifests import manifest_commands
 from django.urls import path
@@ -54,6 +55,7 @@ urlpatterns = [
     path('conferences/<int:pk>/manifest-commands/', manifest_commands, name='manifest_commands'),
     path('conferences/<int:pk>/consumable-commands/', consumable_commands, name='consumable_commands'),
     path('conferences/<int:pk>/quantity-commands/', quantity_commands, name='quantity_commands'),
+    path('conferences/<int:pk>/quantity-transfers/', quantity_transfers, name='quantity_transfers'),
     path('conferences/<int:pk>/challan-documents/<str:scope>/', challan_document, name='challan_document'),
     path('challan-documents/<uuid:document_id>/history/', challan_history, name='challan_history'),
     path('conferences/<int:pk>/asset-commands/', asset_commands, name='asset_commands'),

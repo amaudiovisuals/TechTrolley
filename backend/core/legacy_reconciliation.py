@@ -19,7 +19,7 @@ TABLES = {
     'core_truckchallan_assets': 'id truckchallan_id asset_id',
     'core_subrentalticket': 'id conference_id company_id',
     'core_subrentalticketitem': 'id ticket_id asset_id quantity',
-    'core_quantityallocation': 'id asset_id conference_id reserved dispatched awaiting_verification dispatched_total verified_total',
+    'core_quantityallocation': 'id asset_id conference_id reserved dispatched awaiting_verification dispatched_total verified_total transferred_in_total transferred_out_total',
     'core_consumableallocation': 'id asset_id conference_id requested returned consumed state',
     'core_challandocument': 'id conference_id truck_id scope number revision state total_override',
     'core_challanline': 'id document_id asset_id ticket_item_id supplier_id source_kind quantity unit_value position',

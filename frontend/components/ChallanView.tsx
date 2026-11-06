@@ -958,9 +958,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       {paperOrigins(booking, assets).length > 0 && <section aria-label="Dispatched from" className="mb-3 rounded border border-gray-300 p-2 text-gray-900">
         <h4 className="font-bold uppercase">Dispatched from</h4>
         {paperOrigins(booking, assets).map((origin, index) => <div key={index} className="mt-1">
-          <p className="font-bold">{origin.kind === 'venue' ? origin.name : `Godown — ${origin.name}`}</p>
+          <p className="font-bold">{origin.kind === 'warehouse' ? `Godown — ${origin.name}` : origin.name}</p>
           <p className="whitespace-pre-wrap">{origin.address || 'Address not recorded'}</p>
-          {paperOrigins(booking, assets).length > 1 && <p>Equipment: {assets.filter(asset => origin.asset_ids.includes(Number(asset.challanLine?.asset_id ?? asset.id))).map(asset => asset.sku || asset.aliasName).join(', ')}</p>}
+          {(paperOrigins(booking, assets).length > 1 || origin.asset_quantities) && <p>Equipment: {assets.filter(asset => origin.asset_ids.includes(Number(asset.challanLine?.asset_id ?? asset.id))).map(asset => `${asset.sku || asset.aliasName}${origin.asset_quantities ? ` × ${origin.asset_quantities[String(asset.challanLine?.asset_id ?? asset.id)]}` : ''}`).join(', ')}</p>}
         </div>)}
       </section>}
       <div className="challan-parties grid grid-cols-2 gap-2 mb-2">

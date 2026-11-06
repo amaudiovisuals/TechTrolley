@@ -189,7 +189,7 @@ export interface Booking {
   quantity_assets_details?: any[];
   truck_manifest?: { master_document_id: string; entries: { master_line_id: string; truck_id: number; quantity: number; document_line_id: string }[] } | null;
   quantity_allocations?: Record<string, { asset_id: number; reserved: number; dispatched: number;
-    awaiting_verification: number; dispatched_total: number; verified_total: number }>;
+    awaiting_verification: number; dispatched_total: number; verified_total: number; transferred_in_total?: number; transferred_out_total?: number }>;
   challan_documents?: ChallanDocument[];
   revision?: number;
   consumable_data?: Record<string, any>;
@@ -349,4 +349,4 @@ export interface SubrentalTicket {
   items: SubrentalTicketItem[];
 }
 
-export interface DispatchOrigin { kind: 'venue' | 'warehouse'; name: string; address: string; conference_id: number | null; asset_ids: number[] }
+export interface DispatchOrigin { kind: 'venue' | 'warehouse' | 'unknown'; name: string; address: string; conference_id: number | null; asset_ids: number[]; asset_quantities?: Record<string,number> }

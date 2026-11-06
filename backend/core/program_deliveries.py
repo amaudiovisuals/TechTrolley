@@ -136,8 +136,9 @@ def sources(conference, truck_id=None, lock=False):
             'quantity': quantity, 'name': snapshot.get('alias_name') or snapshot.get('description') or snapshot.get('sku') or 'Manual addition',
             'sku': snapshot.get('sku') or '', 'serial': snapshot.get('serial_number') or '',
             'owner_id': line.supplier_id, 'owner': owner_snapshot})
+    from .dispatch_origins import event_origins
     return {'version': 2, 'conference_id': conference.pk, 'truck_id': truck_id,
-        'dispatch_origins': header.get('dispatch_origins', []),
+        'dispatch_origins': event_origins(conference),
         'document_id': str(document.pk), 'document_revision': document.revision,
         'event_revision': conference.revision,
         'program': {'name': header.get('name', ''), 'start_date': header.get('start_date', ''), 'end_date': header.get('end_date', '')},
@@ -240,13 +241,20 @@ def program_deliveries(request, pk):
                           vehicle_number=label(data.get('vehicle_number', source['vehicle_number']), 50),
                           driver_phone=label(data.get('driver_phone', source['driver_phone']), 50))
             from .dispatch_origins import selected_origins
-            customer = {**common, 'dispatch_origins': selected_origins(source.get('dispatch_origins', []), [row['asset_id'] for row in selected]),
+            previous={}
+            for saved in conference.issued_deliveries.exclude(pk=delivery.pk).filter(voided_at__isnull=True):
+                for row in saved.snapshot['customer_document']['rows']:
+                    if row.get('asset_id') is not None:
+                        key=str(row['asset_id']);previous[key]=previous.get(key,0)+row['quantity']
+            delivery_origins=selected_origins(source.get('dispatch_origins',[]),[row['asset_id'] for row in selected],
+                quantities={str(row['asset_id']):row['quantity'] for row in selected if row['asset_id'] is not None},previously_delivered=previous)
+            customer = {**common, 'dispatch_origins': delivery_origins,
                         'number': f'{fy}/OUT-{delivery.pk:06d}', 'direction': 'customer',
                         'issuer': source['issuer'], 'recipient': source['customer'], 'rows': selected}
             suppliers = []
             for owner_id in sorted({row['owner_id'] for row in selected if row['owner_id']}):
                 rows = [row for row in selected if row['owner_id'] == owner_id]
-                suppliers.append(supplier_paper(common, source, rows, f'{fy}/SR{owner_id}-{delivery.pk:06d}', edits.get(str(owner_id), {})))
+                suppliers.append(supplier_paper(common, {**source,'dispatch_origins':delivery_origins}, rows, f'{fy}/SR{owner_id}-{delivery.pk:06d}', edits.get(str(owner_id), {})))
             delivery.snapshot = {'version': 1, 'customer_document': customer, 'supplier_documents': suppliers}
             delivery.save(update_fields=['snapshot'])
             return Response(serialized(delivery), status=201)

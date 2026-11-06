@@ -387,6 +387,8 @@ class QuantityAllocation(models.Model):
     awaiting_verification = models.PositiveIntegerField(default=0)
     dispatched_total = models.PositiveBigIntegerField(default=0)
     verified_total = models.PositiveBigIntegerField(default=0)
+    transferred_in_total = models.PositiveBigIntegerField(default=0)
+    transferred_out_total = models.PositiveBigIntegerField(default=0)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['asset', 'conference'], name='unique_quantity_event_asset')]
@@ -422,6 +424,7 @@ class QuantityMovement(models.Model):
     quantity = models.PositiveIntegerField()
     before = models.JSONField()
     after = models.JSONField()
+    context = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
 class TruckChallan(models.Model):

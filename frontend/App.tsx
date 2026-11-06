@@ -7,6 +7,7 @@ import { downloadEventPdf } from './state/privateDownloads';
 import { eventEditorData, eventMetadata, eventDraftKey, readEventDraft } from './state/eventDrafts';
 import { resolveScan } from './state/scanIdentity';
 import { challanAssetIds } from './state/challanSelection';
+import { transferSelection } from './state/quantityTransfers';
 import { MovementOutbox, RejectedMovement } from './state/movementOutbox';
 import { isBulkStock, quantityLimit, dispatchQuantities, quantityLabel, eventQuantityTotal, canVerifyReturns } from './state/quantityWorkflow';
 import { consumableDraftHash, consumablePayload, consumableLimit, editConsumableRequest, editConsumableReturn } from './state/consumableWorkflow';
@@ -671,6 +672,8 @@ const App: React.FC = () => {
   // Asset Transfer Modal State
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferSelectedIds, setTransferSelectedIds] = useState<Set<string>>(new Set());
+  const [transferQuantities, setTransferQuantities] = useState<Record<string,number>>({});
+  const transferFlightRef = useRef(false);
   const [transferTargetConfId, setTransferTargetConfId] = useState<string>('');
   const [transferScanInput, setTransferScanInput] = useState<string>('');
   const [transferring, setTransferring] = useState(false);
@@ -680,6 +683,7 @@ const App: React.FC = () => {
   // Print Selection & Challan Detail View state
   const [printSelectConf, setPrintSelectConf] = useState<Booking | null>(null);
   const [challanDetailTab, setChallanDetailTab] = useState<'dispatch' | 'return'>('dispatch');
+  useEffect(() => { setChallanDetailTab('dispatch'); }, [selectedBookingForChallan?.id]);
 
   // Multi-Truck Challan State
   const [activeTruckChallanId, setActiveTruckChallanId] = useState<string | null>(null);
@@ -2181,75 +2185,32 @@ const App: React.FC = () => {
       return;
     }
 
+    if (transferFlightRef.current) return;
     const targetConf = backendConferences.find(c => c.id === transferTargetConfId);
-    const assetNames = Array.from(transferSelectedIds).map(id => {
-      const pool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-      const a = pool.find(x => String(x.id) === id);
-      return a?.aliasName || a?.sku || `#${id}`;
-    });
-
-    const confirmed = window.confirm(
-      `⚠️ ASSET TRANSFER CONFIRMATION\n\n` +
-      `You are about to transfer ${transferSelectedIds.size} item(s):\n` +
-      assetNames.join(', ') + `\n\n` +
-      `FROM: ${fromAddress}\n` +
-      `TO:   ${targetConf?.conferenceName || targetConf?.name || 'Selected Conference'}\n\n` +
-      `This will:\n` +
-      `• Freeze the current dispatch challan (if not already frozen)\n` +
-      `• Remove these items from THIS conference's Packup list\n` +
-      `• Add them to the destination conference's Packup list\n\n` +
-      `This action CANNOT be undone. Proceed?`
-    );
-    if (!confirmed) return;
-
-    setTransferring(true);
+    if (!targetConf) { alert('Reopen the program list and choose the destination again.'); return; }
+    let selection: ReturnType<typeof transferSelection>;
     try {
-      const receipt = await getMovementOutbox().enqueue(String(sourceId), 'transfer', Array.from(transferSelectedIds).map(Number),
-        fromAddress, Number(transferTargetConfId));
-      const data = { success: true, source_conference: receipt.conference, target_conference: receipt.target_conference, transferred_count: receipt.asset_ids.length };
-      {
-        const src = data.source_conference;
-        setConferenceFormData((prev: any) => ({
-          ...prev,
-          assets: (src.assets || []).map(String),
-          challan_assets: (src.challan_assets || []).map(String),
-          transfer_log: src.transfer_log || []
-        }));
-
-        setBackendConferences(prev => prev.map(c => {
-          if (c.id === String(src.id)) {
-            return {
-              ...c,
-              assets: (src.assets || []).map(String),
-              challanAssets: (src.challan_assets || []).map(String),
-              transfer_log: src.transfer_log || []
-            };
-          }
-          if (c.id === String(data.target_conference.id)) {
-            const tgt = data.target_conference;
-            return {
-              ...c,
-              assets: (tgt.assets || []).map(String),
-              transfer_log: tgt.transfer_log || []
-            };
-          }
-          return c;
-        }));
-
-        setShowTransferModal(false);
-        setTransferSelectedIds(new Set());
-        setTransferTargetConfId('');
-        setTransferScanInput('');
-
-        setScanToast({ message: `✅ Transferred ${data.transferred_count} item(s) to ${targetConf?.conferenceName || targetConf?.name}`, type: 'success' });
-        setTimeout(() => { fetchConferences(); fetchAssets(); }, 500);
-      }
-    } catch (err) {
-      console.error('Asset transfer network error:', err);
-      alert(`❌ Network error during transfer.\n\n${err}`);
+      if (getMovementOutbox().pending().length) throw Error('Recover the saved movement queue before starting another transfer.');
+      const pool=allAssetsRef.current.length ? allAssetsRef.current : assets;
+      selection=transferSelection(Array.from(transferSelectedIds),transferQuantities,pool,conferenceFormData);
+    } catch(error) { alert((error as Error).message); return; }
+    const confirmed=window.confirm(`Transfer ${selection.total} unit(s) directly from ${fromAddress} to ${targetConf.conferenceName || targetConf.name}?\n\nThe remaining units stay at this program. The original dispatch paper remains unchanged.`);
+    if (!confirmed) return;
+    transferFlightRef.current=true;setTransferring(true);
+    try {
+      const outbox=getMovementOutbox();
+      const receipt=selection.items.length ? await outbox.enqueueQuantityTransfer(String(sourceId),{
+        expected_revision:conferenceFormData.revision ?? 0,expected_target_revision:targetConf.revision ?? 0,
+        target_conference_id:Number(transferTargetConfId),items:selection.items,physical_asset_ids:selection.physical_asset_ids,
+      }) : await outbox.enqueue(String(sourceId),'transfer',selection.physical_asset_ids,fromAddress,Number(transferTargetConfId));
+      // The common receipt handler updates both events using monotonic revisions.
+      setShowTransferModal(false);setTransferSelectedIds(new Set());setTransferQuantities({});setTransferTargetConfId('');setTransferScanInput('');
+      showScanToast(`Transferred ${receipt.transferred_quantity ?? receipt.asset_ids.length} unit(s) to ${targetConf.conferenceName || targetConf.name}.`,'success');
+      setTimeout(()=>{fetchConferences();fetchAssets();},500);
+    } catch(error) {
+      alert(`Transfer not confirmed: ${(error as Error).message}\nReview or recover saved movements before starting another transfer.`);
     } finally {
-      setPendingMovementCount(getMovementOutbox().pending().length);
-      setTransferring(false);
+      transferFlightRef.current=false;setTransferring(false);setPendingMovementCount(getMovementOutbox().pending().length);
     }
   };
 
@@ -2445,7 +2406,7 @@ const App: React.FC = () => {
         ...prev, revision: metadataUnchanged ? next.revision : prev.revision, assets: next.assets, requirements: next.requirements,
         staged_assets: next.staged_assets, crosscheck_assets: next.crosscheckAssets,
         challan_assets: next.challanAssets,
-        quantity_allocations: next.quantity_allocations,
+        quantity_allocations: next.quantity_allocations, transfer_log: next.transfer_log || [],
       } : prev);
     }
   };
@@ -2457,7 +2418,7 @@ const App: React.FC = () => {
       const assertQueueSession = () => { if (!queueSession || queueSession !== localStorage.getItem('token')) throw new Error('Sign in again to retry your saved movements'); };
       outbox = new MovementOutbox(key, localStorage, async operation => {
         assertQueueSession();
-        if (operation.endpoint && !/^\/api\/truck-challans\/\d+\/transfer\/$/.test(operation.endpoint) && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/consumable-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/manifest-commands/`) throw new Error('Invalid saved movement route');
+        if (operation.endpoint && !/^\/api\/truck-challans\/\d+\/transfer\/$/.test(operation.endpoint) && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-transfers/` && operation.endpoint !== `/api/conferences/${operation.eventId}/consumable-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/manifest-commands/`) throw new Error('Invalid saved movement route');
         const endpoint = operation.endpoint || `/api/conferences/${operation.eventId}/asset-commands/`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
@@ -8352,7 +8313,7 @@ const App: React.FC = () => {
                         });
 
                         // ── Transfer Assets header (admin/godown_incharge only) ──
-                        const canTransfer = user?.is_staff || user?.role === 'admin' || user?.role === 'godown_incharge';
+                        const canTransfer = ['admin','boss','godown_incharge'].includes(user?.role || '');
                         const transferLog: any[] = conferenceFormData.transfer_log || [];
 
                         return (
@@ -8366,7 +8327,7 @@ const App: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setTransferSelectedIds(new Set());
+                                    setTransferSelectedIds(new Set()); setTransferQuantities({});
                                     setTransferTargetConfId('');
                                     setTransferScanInput('');
                                     setShowTransferModal(true);
@@ -8393,7 +8354,7 @@ const App: React.FC = () => {
                                         {entry.direction === 'outgoing'
                                           ? `→ ${entry.to_conference_name}`
                                           : `← ${entry.from_conference_name}`}
-                                        <span className="ml-1.5 text-slate-400 font-normal">{entry.asset_names?.length || entry.transferred_asset_ids?.length || 0} items</span>
+                                        <span className="ml-1.5 text-slate-400 font-normal">{entry.quantity_total ?? entry.asset_names?.length ?? entry.transferred_asset_ids?.length ?? 0} units</span>
                                       </p>
                                       {entry.from_address && (
                                         <p className="text-slate-500 mt-0.5">From: {entry.from_address}</p>
@@ -9414,13 +9375,17 @@ const App: React.FC = () => {
         const onSiteAssets = packPool.filter(a =>
           new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))
         );
-        const modalPackupList = onSiteAssets.filter(a => !isBulkStock(a) && a.type !== 'Consumables');
+        const modalPackupList = onSiteAssets.filter(a => a.type !== 'Consumables' && a.stock_kind !== 'led_case');
         const excludedQuantities = onSiteAssets.length - modalPackupList.length;
         const otherConferences = backendConferences.filter(c =>
-          c.id !== conferenceFormData.id && !c.isAudit
+          String(c.id) !== String(conferenceFormData.id) && !c.isAudit && (c.lifecycle_state || 'open') === 'open'
         );
         const targetConf = otherConferences.find(c => c.id === transferTargetConfId);
         const allSelected = modalPackupList.length > 0 && modalPackupList.every(a => transferSelectedIds.has(String(a.id)));
+        const transferUnitCount = (() => {
+          try { return transferSelection(Array.from(transferSelectedIds),transferQuantities,packPool,conferenceFormData).total; }
+          catch { return 0; }
+        })();
 
         const selectTransferScan = (code: string) => {
           const asset = findAssetFromScan(code);
@@ -9434,7 +9399,7 @@ const App: React.FC = () => {
             found.forEach(row => remove ? next.delete(String(row.id)) : next.add(String(row.id)));
             return next;
           });
-          showScanToast(`Reviewed ${found.length} individually tracked item(s) from this code.`, 'success');
+          showScanToast(`Selected ${found.length} stock record(s). Review quantities before transfer.`, 'success');
         };
         const handleTransferScanKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
           if (e.key === 'Enter' && transferScanInput.trim()) { selectTransferScan(transferScanInput.trim()); setTransferScanInput(''); }
@@ -9468,7 +9433,8 @@ const App: React.FC = () => {
 
               {/* Scrollable body */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
-                {excludedQuantities > 0 && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Bulk stock and consumables cannot be moved through this transfer screen yet. This list contains individually tracked equipment only.</p>}
+                <p className="text-sm text-slate-800">Choose only the units moving directly to the other venue. Separate stock packed at the godown stays reserved. New delivery papers are reviewed and issued from the destination program.</p>
+                {excludedQuantities > 0 && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Consumables use their separate settlement workflow and are excluded here.</p>}
 
                 {/* ── Step 1: Select Assets ─────────────────────────── */}
                 <div>
@@ -9525,10 +9491,10 @@ const App: React.FC = () => {
                       {modalPackupList.map(asset => {
                         const sid = String(asset.id);
                         const checked = transferSelectedIds.has(sid);
-                        const inCrosscheck = new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(sid);
+                        const inCrosscheck = !isBulkStock(asset) && new Set((conferenceFormData.crosscheck_assets || []).map(String)).has(sid);
                         return (
+                          <div key={sid} className="space-y-2">
                           <button
-                            key={sid}
                             type="button"
                             disabled={inCrosscheck}
                             onClick={() => {
@@ -9563,6 +9529,14 @@ const App: React.FC = () => {
                               </span>
                             )}
                           </button>
+                          {checked && isBulkStock(asset) && <label className="block rounded border border-purple-200 p-3 text-sm text-slate-900">Quantity to transfer — {asset.sku}
+                            <input aria-label={`Transfer quantity ${asset.sku}`} type="number" min={1} step={1}
+                              max={Number(conferenceFormData.quantity_allocations?.[sid]?.dispatched || 0)}
+                              disabled={transferring} value={transferQuantities[sid] ?? Number(conferenceFormData.quantity_allocations?.[sid]?.dispatched || 0)}
+                              onChange={e=>setTransferQuantities(old=>({...old,[sid]:Number(e.target.value)}))} className="block w-full rounded border p-2 mt-1" />
+                            <span>{conferenceFormData.quantity_allocations?.[sid]?.dispatched || 0} units currently on site</span>
+                          </label>}
+                          </div>
                         );
                       })}
                     </div>
@@ -9640,7 +9614,7 @@ const App: React.FC = () => {
                 {transferSelectedIds.size > 0 && transferTargetConfId && (
                   <div className="px-4 py-3 bg-amber-50 rounded-xl border border-amber-200 text-[10px] text-amber-700 font-bold">
                     <i aria-hidden="true" className="fa-solid fa-triangle-exclamation mr-1.5"></i>
-                    The current challan will be frozen (if not already) and {transferSelectedIds.size} item(s) will be removed from this conference's Packup.
+                    Original dispatch papers stay unchanged. Only the selected quantities leave this program’s Packup; the remainder stays on site.
                   </div>
                 )}
                 <div className="flex gap-3">
@@ -9653,14 +9627,14 @@ const App: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    disabled={transferSelectedIds.size === 0 || !transferTargetConfId || transferring}
+                    disabled={transferUnitCount === 0 || !transferTargetConfId || transferring}
                     onClick={handleAssetTransfer}
                     className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
                   >
                     {transferring ? (
                       <><i aria-hidden="true" className="fa-solid fa-spinner fa-spin"></i> Transferring...</>
                     ) : (
-                      <><i aria-hidden="true" className="fa-solid fa-arrow-right-arrow-left"></i> Transfer {transferSelectedIds.size > 0 ? `(${transferSelectedIds.size})` : ''}</>
+                      <><i aria-hidden="true" className="fa-solid fa-arrow-right-arrow-left"></i> Transfer {transferUnitCount > 0 ? `(${transferUnitCount})` : ''}</>
                     )}
                   </button>
                 </div>

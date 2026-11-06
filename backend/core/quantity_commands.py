@@ -17,7 +17,7 @@ from .asset_commands import CommandError, RESTRICTED, canonical_conference, exec
 from .models import Asset, Conference, MovementReceipt, QuantityAllocation, QuantityMovement
 from .permissions import WAREHOUSE_ROLES, get_business_role, technician_has_event
 
-FIELDS = ('reserved', 'dispatched', 'awaiting_verification', 'dispatched_total', 'verified_total')
+FIELDS = ('reserved', 'dispatched', 'awaiting_verification', 'dispatched_total', 'verified_total', 'transferred_in_total', 'transferred_out_total')
 ACTIONS = {'stage', 'unstage', 'dispatch', 'return', 'verify_return'}
 
 
@@ -181,8 +181,10 @@ def execute_quantity_command(user, conference_id, payload):
             asset.quantity_tracking = True
             Asset.objects.filter(pk=asset.pk).update(quantity_tracking=True)
         synchronize_memberships(event, asset, allocation)
+        from .dispatch_origins import warehouse_origin
         QuantityMovement.objects.create(allocation=allocation, receipt=receipt, action=action,
-                                        quantity=amount, before=before, after=allocation_data(allocation))
+                                        quantity=amount, before=before, after=allocation_data(allocation),
+                                        context={'dispatch_origin':warehouse_origin()} if action == 'dispatch' else {})
     if command['physical_asset_ids']:
         # Nested transaction: any physical conflict rolls back the bulk part too.
         execute_command(user, conference_id, {'request_id': str(uuid.uuid5(uuid.UUID(command['request_id']), 'physical-dispatch')),
