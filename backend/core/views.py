@@ -15,9 +15,9 @@ import io
 import pandas as pd
 
 def dashboard(request):
-    total_assets = Asset.objects.filter(is_temporary=False).count()
-    assets_in_use = Asset.objects.filter(is_temporary=False, status='In Use').count()
-    assets_available = Asset.objects.filter(is_temporary=False, status='Available').count()
+    total_assets = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').count()
+    assets_in_use = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status='In Use').count()
+    assets_available = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status='Available').count()
     conferences = Conference.objects.all().order_by('-start_date')[:5]
     
     context = {
@@ -34,10 +34,10 @@ from .serializers import AssetSerializer, EmployeeSerializer
 
 @api_view(['GET'])
 def asset_stats(request):
-    total = Asset.objects.filter(is_temporary=False).count()
-    ready = Asset.objects.filter(is_temporary=False, status='Available').count()
-    in_use = Asset.objects.filter(is_temporary=False, status__in=['In Use', 'Dispatched']).count()
-    maintenance = Asset.objects.filter(is_temporary=False).filter(Q(status__in=['Maintenance', 'Damaged', 'On Service', 'Expired']) | Q(condition='Damaged') | Q(flag__in=['Required Service', 'On Service', 'Expired'])).count()
+    total = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').count()
+    ready = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status='Available').count()
+    in_use = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status__in=['In Use', 'Dispatched']).count()
+    maintenance = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').filter(Q(status__in=['Maintenance', 'Damaged', 'On Service', 'Expired']) | Q(condition='Damaged') | Q(flag__in=['Required Service', 'On Service', 'Expired'])).count()
     
     return Response({
         "total": total,
@@ -79,7 +79,7 @@ def staff_issue_candidates(request):
     from django.db.models import Exists, OuterRef, Value, CharField
     from .models import StaffAllocation
     held=Conference.objects.filter(is_audit=False).filter(Q(assets=OuterRef('pk'))|Q(crosscheck_assets=OuterRef('pk'))|Q(staged_assets=OuterRef('pk')))
-    rows=Asset.objects.filter(assigned_to__isnull=True,is_temporary=False,quantity=1,quantity_tracking=False,flag='',status='Available',parent_asset__isnull=True,sub_assets__isnull=True).exclude(type='Consumables').exclude(condition='Damaged').exclude(quantity_allocations__isnull=False).exclude(consumable_allocations__isnull=False)
+    rows=Asset.objects.exclude(stock_kind='led_case').filter(assigned_to__isnull=True,is_temporary=False,quantity=1,quantity_tracking=False,flag='',status='Available',parent_asset__isnull=True,sub_assets__isnull=True).exclude(type='Consumables').exclude(condition='Damaged').exclude(quantity_allocations__isnull=False).exclude(consumable_allocations__isnull=False)
     rows=rows.annotate(event_held=Exists(held),annotated_staff_open=Exists(StaffAllocation.objects.filter(asset=OuterRef('pk'),returned_at__isnull=True)),annotated_conference=Value(None,output_field=CharField())).filter(event_held=False,annotated_staff_open=False).select_related('subrental_company').order_by('pk')
     search=request.query_params.get('search','').strip()[:200]
     if search:rows=rows.filter(Q(sku__icontains=search)|Q(alias_name__icontains=search)|Q(serial_number__icontains=search)|Q(barcode__icontains=search))
@@ -92,7 +92,7 @@ def staff_issue_candidates(request):
 
 @api_view(['GET'])
 def unique_aliases(request):
-    data = Asset.objects.values('alias_name', 'type').distinct()
+    data = Asset.objects.exclude(stock_kind='led_case').values('alias_name', 'type').distinct()
     return Response(list(data))
 
 from datetime import date
@@ -122,7 +122,7 @@ def asset_list(request):
         
         assets_query = Asset.objects.annotate(
             annotated_conference=Coalesce(Subquery(assigned_qs), Subquery(crosscheck_qs), Value(None))
-        ).select_related('assigned_to', 'parent_asset', 'subrental_company').prefetch_related(
+        ).select_related('assigned_to', 'parent_asset', 'subrental_company', 'led_panel_record__case__source_asset', 'led_case_conversion').prefetch_related(
             'sub_assets',
             'sub_assets__assigned_to',
             'assigned_conferences',
@@ -139,6 +139,8 @@ def asset_list(request):
         ).distinct()
 
         is_all_query = request.GET.get('all') == 'true'
+        if not is_all_query:
+            assets_query = assets_query.exclude(stock_kind='led_case')
         if subrental_company_id:
             if subrental_company_id == 'null':
                 assets_query = assets_query.filter(subrental_company__isnull=True)
@@ -278,6 +280,8 @@ def asset_detail(request, pk):
         return Response(serializer.errors, status=400)
 
     elif request.method == 'DELETE':
+        if asset.stock_kind != 'equipment':
+            return Response({'error': 'LED_case_and_panel_history_is_protected'}, status=409)
         from django.db.models.deletion import ProtectedError
         if asset.ownership_targets.exists():
             return Response({'error': 'inventory_item_has_ownership_history'}, status=409)
@@ -292,6 +296,7 @@ def asset_detail(request, pk):
 
 @api_view(['GET', 'POST'])
 @permission_classes([WarehouseWriteAuthenticatedRead])
+@transaction.atomic
 def asset_sub_assets(request, pk):
     """
     GET  /api/assets/<pk>/sub-assets/  → list all sub-assets of this asset
@@ -308,6 +313,10 @@ def asset_sub_assets(request, pk):
         if not child_id:
             return Response({'error': 'child_id is required'}, status=400)
         child = get_object_or_404(Asset, pk=child_id)
+        locked = {a.pk: a for a in Asset.objects.select_for_update().filter(pk__in=[parent.pk, child.pk]).order_by('pk')}
+        parent, child = locked[parent.pk], locked[child.pk]
+        if parent.stock_kind != 'equipment' or child.stock_kind != 'equipment':
+            return Response({'error': 'LED_case_mapping_is_separate_from_kit_links'}, status=409)
         if child.pk == parent.pk:
             return Response({'error': 'An asset cannot be its own sub-asset'}, status=400)
         child.parent_asset = parent
@@ -645,7 +654,7 @@ def export_inventory(request):
         return download_asset_template(request)
     if export_type != 'master':
         return Response({'error': 'Choose template or master export.'}, status=400)
-    assets = Asset.objects.filter(is_temporary=False).select_related('assigned_to', 'parent_asset')  # BUG J-13: Exclude temp assets from export
+    assets = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').select_related('assigned_to', 'parent_asset')  # BUG J-13: Exclude temp assets from export
     owner = request.query_params.get('subrental_company_id')
     if owner and owner != 'null':
         if not owner.isdigit():

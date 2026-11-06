@@ -95,6 +95,8 @@ def sources(conference, truck_id=None, lock=False):
     rows, seen = [], set()
     for line in document.lines.select_related('asset__subrental_company', 'supplier', 'ticket_item__ticket').order_by('position', 'id'):
         asset, owner, item = line.asset, line.supplier, line.ticket_item
+        if asset and asset.stock_kind == 'led_case':
+            raise ValidationError('This historical LED box was converted to panels. Select its panels for a new delivery; existing saved papers remain available.')
         snapshot = line.snapshot
         quantity = integer(line.quantity)
         if line.source_kind == 'manual':

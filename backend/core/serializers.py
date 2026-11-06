@@ -81,7 +81,7 @@ class SimpleAssetSerializer(serializers.ModelSerializer):
         model = Asset
         read_only_fields = ['staff_revision', 'custody_revision', 'ownership_revision']
         fields = [
-            'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
+            'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity', 'stock_kind',
             'item_price', 'barcode_type', 'barcode', 'qr_code', 'description', 'status',
             'subrental_company', 'subrental_company_name', 'warehouse_managed', 'subrental_inventory_mode', 'mac_address', 'imei_number_1', 'imei_number_2',
             'purchased_date', 'depreciation_percentage', 'current_value'
@@ -104,6 +104,9 @@ class SubAssetSerializer(serializers.ModelSerializer):
         return current_conference_name(obj)
 
 class AssetSerializer(serializers.ModelSerializer):
+    led_case = serializers.SerializerMethodField()
+    led_panel_origin = serializers.SerializerMethodField()
+    current_value = serializers.SerializerMethodField()
     warehouse_managed = serializers.SerializerMethodField()
     subrental_inventory_mode = serializers.ReadOnlyField(source='subrental_company.inventory_mode')
     def get_warehouse_managed(self, obj):
@@ -125,7 +128,7 @@ class AssetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Asset
-        read_only_fields = ['staff_revision', 'custody_revision']
+        read_only_fields = ['staff_revision', 'custody_revision', 'stock_kind']
         fields = [
             'id', 'sku', 'alias_name', 'mac_address', 'imei_number_1', 'imei_number_2', 
             'serial_number', 'description', 'is_barcode_added', 'type', 'quantity',
@@ -134,19 +137,46 @@ class AssetSerializer(serializers.ModelSerializer):
             'barcode_type', 'barcode', 'qr_code', 'status', 'flag', 'condition', 'last_maintained', 
             'current_venue', 'return_date', 'assigned_to', 'assigned_to_name',
             'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'subrental_company_name', 'warehouse_managed', 'subrental_inventory_mode', 'deployment_history',
-            'is_temporary', 'quantity_tracking', 'quantity_available', 'staff_revision', 'custody_revision', 'ownership_revision',
+            'is_temporary', 'quantity_tracking', 'quantity_available', 'staff_revision', 'custody_revision', 'ownership_revision', 'stock_kind', 'led_case', 'led_panel_origin', 'current_value',
         ]
 
     def get_quantity_tracking(self, obj):
         from .quantity_commands import is_quantity_stock
         return is_quantity_stock(obj)
 
+    def get_current_value(self, obj):
+        # Preserve ordinary legacy display behaviour; converted panels use their
+        # exact share of the original case valuation rather than six round-downs.
+        return obj.current_value if obj.stock_kind == 'led_panel' else None
+
     def get_quantity_available(self, obj):
         from .custody import available_quantity
         return available_quantity(obj)
 
+    def get_led_case(self, obj):
+        if obj.stock_kind != 'led_case':
+            return None
+        from .led_cases import case_data
+        return case_data(obj.led_case_conversion)
+
+    def get_led_panel_origin(self, obj):
+        if obj.stock_kind != 'led_panel':
+            return None
+        row = obj.led_panel_record
+        return {'case_asset_id': row.case.source_asset_id, 'box_code': row.case.source_asset.sku, 'slot': row.slot}
+
     def validate(self, data):
+        if 'stock_kind' in self.initial_data and self.initial_data['stock_kind'] != (self.instance.stock_kind if self.instance else 'equipment'):
+            raise serializers.ValidationError({'stock_kind': 'Use the reviewed LED box conversion.'})
+        if self.instance and self.instance.stock_kind == 'led_case':
+            raise serializers.ValidationError('The converted box is a protected historical/container record. Edit its panels instead.')
+        if self.instance and self.instance.stock_kind == 'led_panel':
+            for field in ('quantity', 'item_price', 'purchased_date', 'depreciation_percentage', 'parent_asset', 'is_temporary', 'type', 'sku'):
+                if field in data and data[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError({field: 'Converted panel count, origin and valuation require a reviewed change. Individual QR/serial labels may be added normally.'})
         parent = data.get('parent_asset', self.instance.parent_asset if self.instance else None)
+        if parent and parent.stock_kind != 'equipment':
+            raise serializers.ValidationError({'parent_asset': 'Converted LED cases/panels are not a kit parent.'})
         owner = data.get('subrental_company', self.instance.subrental_company if self.instance else None)
         if parent and (not self.instance or 'parent_asset' in data or 'subrental_company' in data) and parent.subrental_company_id != (owner.pk if owner else None):
             raise serializers.ValidationError({'parent_asset': 'A kit and its components must have the same inventory owner. Use a reviewed complete-kit ownership change.'})

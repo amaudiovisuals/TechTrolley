@@ -91,6 +91,8 @@ def execute_staff_command(user, payload):
     assets = {a.pk:a for a in Asset.objects.select_for_update().filter(pk__in=ids).order_by('pk')}
     if len(assets) != len(ids):
         raise CommandError('unknown_assets', 404)
+    if any(asset.stock_kind == 'led_case' for asset in assets.values()):
+        raise CommandError('select_led_case_panels_not_historical_box', 400)
     employee = Employee.objects.select_for_update().filter(pk=command['employee_id']).first()
     if employee is None:
         raise CommandError('unknown_employee', 404)

@@ -121,6 +121,8 @@ def execute_quantity_command(user, conference_id, payload):
     assets = {a.pk: a for a in Asset.objects.select_for_update().filter(pk__in=ids).order_by('pk')}
     if len(assets) != len(ids):
         raise CommandError('unknown_assets', 400)
+    if any(asset.stock_kind == 'led_case' for asset in assets.values()):
+        raise CommandError('select_led_case_panels_not_historical_box', 400)
     event = Conference.objects.select_for_update().filter(pk=conference_id).first()
     if event is None:
         raise CommandError('unknown_conference', 404)

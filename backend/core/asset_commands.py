@@ -86,6 +86,8 @@ def execute_command(user, conference_id, payload):
     assets = list(Asset.objects.select_for_update().filter(pk__in=ids).order_by('pk'))
     if len(assets) != len(ids):
         raise CommandError('unknown_assets', 400, [{'asset_id': aid} for aid in set(ids) - {a.pk for a in assets}])
+    if any(asset.stock_kind == 'led_case' for asset in assets):
+        raise CommandError('select_led_case_panels_not_historical_box', 400)
     conference_ids = sorted({conference_id, command.get('target_conference_id', conference_id)})
     events = {c.pk: c for c in Conference.objects.select_for_update().filter(pk__in=conference_ids).order_by('pk')}
     if len(events) != len(conference_ids):

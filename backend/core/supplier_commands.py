@@ -166,6 +166,7 @@ def execute_supplier_command(user, payload):
         else:
             asset = Asset.objects.filter(pk=data['asset_id']).first()
             if asset is None: raise CommandError('unknown_assets', 400)
+            if asset.stock_kind == 'led_case': raise CommandError('select_led_case_panels_not_historical_box', 400)
             if asset.subrental_company_id != company.pk: raise CommandError('supplier_asset_owner_mismatch')
             if company.inventory_mode == 'shared_warehouse': raise CommandError('shared_stock_uses_warehouse_movements')
             if asset.is_temporary or asset.parent_asset_id or asset.sub_assets.exists() or asset.type == 'Consumables': raise CommandError('supplier_source_requires_review')

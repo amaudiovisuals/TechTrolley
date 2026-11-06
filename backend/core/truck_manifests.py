@@ -83,6 +83,7 @@ def validate_sources(event, lines):
         if line.asset_id in asset_sources and asset_sources[line.asset_id] != kind: raise CommandError('overlapping_inventory_and_supplier_ticket')
         asset_sources[line.asset_id] = kind
         asset = line.asset
+        if asset.stock_kind == 'led_case': raise CommandError('historical_LED_box_cannot_enter_new_truck_manifest')
         if line.ticket_item_id:
             item = tickets.get(line.ticket_item_id)
             if not item or item.ticket.conference_id != event.pk or item.asset_id != line.asset_id or item.ticket.company_id != line.supplier_id:

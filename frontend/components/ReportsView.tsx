@@ -126,6 +126,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
 
     const filteredFlaggedAssets = useMemo(() => {
         return assets.filter(a => {
+            if (a.stock_kind === 'led_case') return false;
             // Include if explicitly flagged OR if status is Damaged
             const isFlagged = a.flag && a.flag !== AssetFlag.NONE;
             const isDamaged = a.status === AssetStatus.DAMAGED || a.status === 'Damaged';

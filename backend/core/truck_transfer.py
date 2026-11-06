@@ -41,6 +41,7 @@ def transfer_truck_allocation(user, truck_id, payload):
         return {**receipt.result, 'replayed': True}
     assets = {a.pk: a for a in Asset.objects.select_for_update().filter(pk__in=ids).order_by('pk')}
     if len(assets) != len(ids): raise CommandError('unknown_assets', 400)
+    if any(asset.stock_kind == 'led_case' for asset in assets.values()): raise CommandError('select_led_case_panels_not_historical_box', 400)
     source_info = TruckChallan.objects.filter(pk=truck_id).values('conference_id').first()
     if not source_info: raise CommandError('unknown_source', 404)
     event = Conference.objects.select_for_update().get(pk=source_info['conference_id'])

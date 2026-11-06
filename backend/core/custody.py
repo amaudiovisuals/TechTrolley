@@ -51,6 +51,8 @@ def derived_status(asset, preserve_unproved_custody=False):
 
 
 def available_quantity(asset):
+    if asset.stock_kind == 'led_case':
+        return 0
     if asset.flag or asset.condition == 'Damaged' or asset.status in RESTRICTED_STATUSES or asset.assigned_to_id:
         return 0
     staff_open = asset.annotated_staff_open if hasattr(asset,'annotated_staff_open') else asset.staff_allocations.filter(returned_at__isnull=True).exists()

@@ -1,4 +1,4 @@
-from . import program_deliveries, address_book
+from . import program_deliveries, address_book, led_cases
 from .asset_commands import asset_commands
 from .offline_packages import offline_package
 from .quantity_commands import quantity_commands
@@ -25,6 +25,7 @@ from .challan_documents import challan_document, challan_history
 from . import staff_commands, event_lifecycle, reconciliation_commands
 
 urlpatterns = [
+    path('assets/<int:pk>/led-case-conversion/', led_cases.conversion_review, name='led_case_conversion'),
     path('saved-customers/', address_book.customers, name='saved_customers'),
     path('saved-customers/<int:pk>/', address_book.customer_detail, name='saved_customer'),
     path('saved-venues/', address_book.venues, name='saved_venues'),

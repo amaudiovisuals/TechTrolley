@@ -24,6 +24,8 @@ class SubrentalCompany(models.Model):
         return self.name
 
 class Asset(models.Model):
+    stock_kind = models.CharField(max_length=16, default='equipment', editable=False,
+        choices=[('equipment', 'Equipment'), ('led_panel', 'Individual LED panel'), ('led_case', 'Converted LED case — historical/container record')], db_index=True)
     ownership_revision = models.PositiveBigIntegerField(default=0, editable=False)
     custody_revision = models.PositiveBigIntegerField(default=0, editable=False)
     STATUS_CHOICES = [
@@ -111,6 +113,11 @@ class Asset(models.Model):
 
     @property
     def current_value(self):
+        if self.stock_kind == 'led_panel':
+            panel = self.led_panel_record
+            total = panel.case.source_asset.current_value
+            whole, remainder = divmod(total, 6)
+            return whole + (1 if panel.slot <= remainder else 0)
         from datetime import date
         
         if not self.item_price or not self.purchased_date:
@@ -178,6 +185,29 @@ class Asset(models.Model):
 
     def __str__(self):
         return f"{self.sku} - {self.alias_name or self.serial_number}"
+
+class LedCaseConversion(models.Model):
+    source_asset = models.OneToOneField(Asset, on_delete=models.PROTECT, related_name='led_case_conversion')
+    request_id = models.UUIDField(unique=True)
+    request_hash = models.CharField(max_length=64)
+    actor = models.ForeignKey('auth.User', on_delete=models.PROTECT)
+    actor_label = models.CharField(max_length=200)
+    reason = models.CharField(max_length=1000)
+    original_snapshot = models.JSONField()
+    review_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class LedCasePanel(models.Model):
+    case = models.ForeignKey(LedCaseConversion, on_delete=models.PROTECT, related_name='panels')
+    asset = models.OneToOneField(Asset, on_delete=models.PROTECT, related_name='led_panel_record')
+    slot = models.PositiveSmallIntegerField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['case', 'slot'], name='unique_led_case_panel_slot'),
+                       models.CheckConstraint(condition=models.Q(slot__gte=1, slot__lte=6), name='led_panel_slot_one_to_six')]
+        ordering = ['slot']
+
 
 class Employee(models.Model):
     user = models.OneToOneField('auth.User', null=True, blank=True, on_delete=models.PROTECT, related_name='employee_identity')

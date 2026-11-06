@@ -94,7 +94,7 @@ def source_allowed(name):
     if name != 'frontend/.npmrc' and any(part.startswith('.') for part in PurePosixPath(name).parts):
         return False
     p = PurePosixPath(name)
-    if name in DOCS or name in {'backend/manage.py', 'backend/requirements.txt',
+    if name in DOCS or name == 'docs/LED_CASE_CONVERSION.md' or name in {'backend/manage.py', 'backend/requirements.txt',
                               'backend/requirements.in', 'backend/requirements.lock'}:
         return True
     if name.startswith(('backend/core/', 'backend/config/')):

@@ -9,7 +9,7 @@ from .asset_commands import CommandError
 
 
 def warehouse_managed(asset):
-    return not asset.is_temporary and (asset.subrental_company_id is None or asset.subrental_company.inventory_mode == 'shared_warehouse')
+    return asset.stock_kind != 'led_case' and not asset.is_temporary and (asset.subrental_company_id is None or asset.subrental_company.inventory_mode == 'shared_warehouse')
 
 
 def require_warehouse_quantity_source(asset):
@@ -26,7 +26,7 @@ def require_warehouse_quantity_source(asset):
 
 
 def inventory_summary():
-    aggregates = Asset.objects.filter(is_temporary=False).values('subrental_company_id').annotate(
+    aggregates = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').values('subrental_company_id').annotate(
         records=Count('pk'), available_status_records=Count('pk',filter=Q(status='Available')),
         in_use_status_records=Count('pk',filter=Q(status='In Use')),
         crosscheck_status_records=Count('pk',filter=Q(status='Crosscheck')),

@@ -46,7 +46,7 @@ def offline_package(request, pk):
             quantity=1, quantity_tracking=False, is_temporary=False,
             parent_asset__isnull=True, sub_assets__isnull=True,
             quantity_allocations__isnull=True, consumable_allocations__isnull=True,
-        ).exclude(type='Consumables').filter(
+        ).exclude(type='Consumables').exclude(stock_kind='led_case').filter(
             Q(subrental_company__isnull=True) |
             Q(subrental_company__inventory_mode='shared_warehouse')
         ).select_related('subrental_company').order_by('pk')[:MAX_ASSETS + 1])

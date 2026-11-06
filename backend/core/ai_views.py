@@ -42,11 +42,11 @@ def build_inventory_context(query):
     tokens = clean_tokens(query)
     today = date.today()
 
-    total_assets = Asset.objects.count()
-    available_assets = Asset.objects.filter(status='Available').count()
-    in_use_assets = Asset.objects.filter(status='In Use').count()
-    crosscheck_assets = Asset.objects.filter(status='Crosscheck').count()
-    damaged_assets = Asset.objects.filter(status__in=['Damaged', 'On Service', 'Under Maintenance']).count()
+    total_assets = Asset.objects.exclude(stock_kind='led_case').count()
+    available_assets = Asset.objects.exclude(stock_kind='led_case').filter(status='Available').count()
+    in_use_assets = Asset.objects.exclude(stock_kind='led_case').filter(status='In Use').count()
+    crosscheck_assets = Asset.objects.exclude(stock_kind='led_case').filter(status='Crosscheck').count()
+    damaged_assets = Asset.objects.exclude(stock_kind='led_case').filter(status__in=['Damaged', 'On Service', 'Under Maintenance']).count()
 
     context = {
         "query": query,
@@ -102,7 +102,7 @@ def build_inventory_context(query):
     is_laptop = any(w in q_lower for w in ["laptop", "laptops", "notebook", "macbook"])
     spec_targets = [s for s in ["i3", "i5", "i7", "i9", "m1", "m2", "m3", "intel", "ryzen"] if s in q_lower]
     if is_laptop and spec_targets:
-        all_laptops = Asset.objects.filter(
+        all_laptops = Asset.objects.exclude(stock_kind='led_case').filter(
             Q(type__icontains="laptop") | Q(alias_name__icontains="laptop") | Q(sku__icontains="laptop") | Q(sku__icontains="macbook")
         ).distinct()
         macs = all_laptops.filter(Q(sku__icontains="macbook") | Q(alias_name__icontains="macbook") | Q(sku__icontains="apple") | Q(brand__icontains="apple"))
@@ -155,7 +155,7 @@ def build_inventory_context(query):
 
     # 3. Maintenance / Damaged gear query
     if any(w in q_lower for w in ['damage', 'damaged', 'broken', 'repair', 'service', 'maintenance', 'faulty']):
-        maint_qs = Asset.objects.filter(status__in=['Damaged', 'On Service', 'Under Maintenance'])
+        maint_qs = Asset.objects.exclude(stock_kind='led_case').filter(status__in=['Damaged', 'On Service', 'Under Maintenance'])
         maint_list = []
         for a in maint_qs[:35]:
             maint_list.append({
@@ -182,7 +182,7 @@ def build_inventory_context(query):
                 Q(description__icontains=t) |
                 Q(type__icontains=t)
             )
-        matched_assets = Asset.objects.filter(q_and).distinct()
+        matched_assets = Asset.objects.exclude(stock_kind='led_case').filter(q_and).distinct()
 
         # If AND produced zero matches (e.g. disjoint synonyms), fallback to OR
         if not matched_assets.exists():
@@ -196,7 +196,7 @@ def build_inventory_context(query):
                     Q(description__icontains=t) |
                     Q(type__icontains=t)
                 )
-            matched_assets = Asset.objects.filter(q_or).distinct()
+            matched_assets = Asset.objects.exclude(stock_kind='led_case').filter(q_or).distinct()
 
         if matched_assets.exists():
             matched_count = sum(a.quantity or 1 for a in matched_assets)

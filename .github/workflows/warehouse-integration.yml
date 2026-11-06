@@ -61,6 +61,7 @@ jobs:
         run: |
           node scripts/testing/browser_warehouse_quantities.cjs
           node scripts/testing/browser_contacts_transfers.cjs
+          node scripts/testing/browser_led_cases.cjs
           node scripts/testing/browser_program_deliveries.cjs
           node scripts/testing/browser_conference_camera.cjs
           node scripts/testing/browser_step6b.cjs

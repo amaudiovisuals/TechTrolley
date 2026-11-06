@@ -94,6 +94,9 @@ export interface SubrentalCompany {
 
 
 export interface Asset {
+  stock_kind?: 'equipment' | 'led_case' | 'led_panel';
+  led_case?: { source_id: number; box_code: string; panels: { slot: number; asset_id: number; sku: string; owner_id: number | null; owner_name: string; status: string; available: number }[] } | null;
+  led_panel_origin?: { case_asset_id: number; box_code: string; slot: number } | null;
   challanLine?: ChallanLine;
   id: string | number;
   sku: string;

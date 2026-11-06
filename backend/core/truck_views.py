@@ -90,6 +90,8 @@ def conference_trucks(request, pk):
         if conference.revision != int(expected): return Response({'error': 'document_changed', 'revision': conference.revision}, status=409)
         if conference.quantity_allocations.exists():
             return Response({'error': 'quantity_trucks_require_coordinated_workflow'}, status=409)
+        if Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('asset_ids', []) if str(aid).isdigit()], stock_kind='led_case').exists():
+            return Response({'error':'select_led_case_panels_not_historical_box'}, status=409)
         if (conference.consumable_allocations.exists() or conference.consumable_data
                 or conference.challan_assets.filter(type='Consumables').exists()
                 or conference.assets.filter(type='Consumables').exists()
@@ -177,6 +179,8 @@ def truck_challan_detail(request, truck_pk):
     from .models import TruckManifest
     if TruckManifest.objects.filter(conference=conference).exists() and (request.method == 'DELETE' or {'assets', 'asset_quantities', 'challan_number'} & set(request.data)):
         return Response({'error': 'use_manifest_commands'}, status=409)
+    if Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('assets', []) if str(aid).isdigit()], stock_kind='led_case').exists():
+        return Response({'error':'select_led_case_panels_not_historical_box'}, status=409)
     has_consumables = (conference.consumable_allocations.exists() or conference.consumable_data
                        or truck.assets.filter(type='Consumables').exists()
                        or Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('assets', []) if str(aid).isdigit()], type='Consumables').exists())
@@ -257,6 +261,8 @@ def add_asset_to_truck(request, pk):
     if conference.revision != int(expected): return Response({'error': 'document_changed', 'revision': conference.revision}, status=409)
     raw_asset_ids = request.data.get('asset_ids', [])
     clean_asset_ids = [int(aid) for aid in raw_asset_ids if str(aid).isdigit()]
+    if Asset.objects.filter(pk__in=clean_asset_ids, stock_kind='led_case').exists():
+        return Response({'error':'select_led_case_panels_not_historical_box'}, status=409)
     if (conference.consumable_allocations.exists() or conference.consumable_data
             or Asset.objects.filter(pk__in=clean_asset_ids, type='Consumables').exists()):
         return Response({'error': 'consumable_trucks_require_coordinated_workflow'}, status=409)

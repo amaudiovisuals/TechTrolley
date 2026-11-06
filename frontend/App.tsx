@@ -1,4 +1,6 @@
 import { SavedContacts } from './components/SavedContacts';
+import { LedCasePicker } from './components/LedCasePicker';
+import { LedCaseRecord } from './components/LedCaseRecord';
 import { SavedWorkRecovery } from './components/SavedWorkRecovery';
 import OfflineScanning from './components/OfflineScanning';
 import { downloadEventPdf } from './state/privateDownloads';
@@ -510,7 +512,7 @@ const App: React.FC = () => {
     setDashboardStats(null);
     setSubrentalCompanies([]); setSubrentalAssets([]); setSubrentalTickets([]); setConfSubrentalTickets([]);
     setSelectedSubrentalCompany(null); setSelectedTicket(null); setViewingAsset(null);
-    setEditingEmployee(null); setEditingConference(null); setConferenceView('List'); setShowScanner(false);
+    setEditingEmployee(null); setEditingConference(null); setConferenceView('List'); setShowScanner(false); setLedCasePicker(null);
     setEmployeeInitialPassword('');
     setAssetView('List'); setEmployeeView('List'); setIsTicketFormOpen(false); setIsSubrentalFormOpen(false);
     setAllocationAssets(null); dashboardFetchIdRef.current++;
@@ -652,6 +654,7 @@ const App: React.FC = () => {
 
   // Partial Quantity Modal State
   const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [ledCasePicker, setLedCasePicker] = useState<{asset: Asset; action: string} | null>(null);
   const [quantityAsset, setQuantityAsset] = useState<Asset | null>(null);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [quantityAction, setQuantityAction] = useState('stage');
@@ -662,8 +665,8 @@ const App: React.FC = () => {
   const [showConsumablesPicker, setShowConsumablesPicker] = useState(false);
   const [consumablesPickerSearchQuery, setConsumablesPickerSearchQuery] = useState('');
   useEffect(() => {
-    if (showQuantityModal || showConsumablesPicker) setShowScanner(false);
-  }, [showQuantityModal, showConsumablesPicker]);
+    if (showQuantityModal || showConsumablesPicker || ledCasePicker) setShowScanner(false);
+  }, [showQuantityModal, showConsumablesPicker, ledCasePicker]);
 
   // Asset Transfer Modal State
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1414,6 +1417,7 @@ const App: React.FC = () => {
     
     // 2. Category & Alias Filter
     const filtered = assets.filter(asset => {
+      if (asset.stock_kind === 'led_case') return false;
       // Main inventory belongs to the issuing company; the shared scan pool includes all owners.
       if (asset.isTemporary || asset.subrental_company) return false;
 
@@ -2566,14 +2570,16 @@ const App: React.FC = () => {
   };
   const submitAssetCommand = async (action: string, ids: string[]) => {
     const eventId = String(editingConference?.id || conferenceFormData.id || '');
-    if (!eventId) { showScanToast('Save the event details before scanning equipment.', 'warning'); return; }
+    if (!eventId) { showScanToast('Save the event details before scanning equipment.', 'warning'); return false; }
     const outbox = getMovementOutbox();
     try {
       setPendingMovementCount(outbox.pending().length + 1);
       await outbox.enqueue(eventId, action, ids.map(Number));
       showScanToast('✅ Movement saved', 'success');
+      return true;
     } catch (error) {
       showScanToast(`Movement not confirmed: ${(error as Error).message}`, 'error');
+      return false;
     } finally { setPendingMovementCount(outbox.pending().length); }
   };
   const conferenceMovementAction = (action: 'add' | 'remove' | 'unassign' | 'verify_crosscheck') => {
@@ -2619,6 +2625,9 @@ const App: React.FC = () => {
   };
   const triggerAssetConferenceAction = (asset: Asset, action: 'add' | 'remove' | 'unassign', qty = 1) => {
     if (user?.role === 'accounts') { showScanToast('Accounts cannot move equipment.', 'error'); return; }
+    if (asset.stock_kind === 'led_case') {
+      setLedCasePicker({asset, action: conferenceMovementAction(action)}); return;
+    }
     if (asset.type === AssetCategory.CONSUMABLES && action === 'add') {
       setQuantityAsset(asset); setSelectedQuantity(asset.quantity); setShowQuantityModal(true); return;
     }
@@ -2633,6 +2642,7 @@ const App: React.FC = () => {
   };
   const verifyCrosscheckAsset = (asset: Asset) => {
     if (!canVerifyReturns(user)) { showScanToast('Only warehouse managers can verify returns.', 'error'); return; }
+    if (asset.stock_kind === 'led_case') { setLedCasePicker({asset, action: conferenceMovementAction('verify_crosscheck')}); return; }
     if (isBulkStock(asset) && !conferenceFormData.is_audit) { openQuantityAction(asset, 'verify_return'); return; }
     if (asset.sub_assets?.length) {
       setPendingParentAsset(asset); setPendingAction('verify_crosscheck'); setScannedSubAssetIds([]); return;
@@ -2687,7 +2697,7 @@ const App: React.FC = () => {
   const handleScan = (decodedText: string, isAddingVal: boolean | null = null) => {
     // A quantity selection is an operator decision. Further reads must not
     // replace its asset/count while that decision or its save is in progress.
-    if (showQuantityModal || quantitySaving || consumableSaving) return;
+    if (showQuantityModal || quantitySaving || consumableSaving || ledCasePicker) return;
     // setShowScanner(false); // REMOVED: Allow continuous scanning
     const scanned = (decodedText || '').trim();
     if (!scanned) return;
@@ -2779,6 +2789,11 @@ const App: React.FC = () => {
       }
 
       const strId = String(asset.id);
+      if (asset.stock_kind === 'led_case') {
+        if (assetTab === 'crosscheck') verifyCrosscheckAsset(asset);
+        else triggerAssetConferenceAction(asset, assetTab === 'packup' ? 'remove' : 'add');
+        setQuickAddInput(''); setQuickRemoveInput(''); return;
+      }
       if (isBulkStock(asset) && !conferenceFormData.is_audit && (user?.role !== 'technician' || assetTab === 'packup')) {
         if (assetTab === 'crosscheck') verifyCrosscheckAsset(asset);
         else triggerAssetConferenceAction(asset, assetTab === 'packup' ? 'remove' : 'add');
@@ -3350,6 +3365,7 @@ const App: React.FC = () => {
   };
 
   const openEditAssetForm = (asset: Asset) => {
+    if (asset.stock_kind === 'led_case') { showScanToast('This is the protected original box record. Open its registered panels to edit stock details.', 'warning'); return; }
     if (mainRef.current) inventoryScrollPos.current = mainRef.current.scrollTop;
     setEditingAsset(asset);
     setAssetFormData({
@@ -3711,7 +3727,7 @@ const App: React.FC = () => {
           <h2 className="min-w-0 text-3xl sm:text-4xl lg:text-5xl leading-tight font-black text-white uppercase tracking-tighter">Asset Details</h2>
           <button onClick={() => { handleViewChange('Assets', 'List'); setSearchQuery(''); }} className="shrink-0 whitespace-nowrap px-6 py-3 bg-slate-800 text-white rounded-xl font-black uppercase text-xs hover:bg-slate-700 transition">Back to List</button>
         </div>
-
+        <LedCaseRecord key={viewingAsset.id} asset={viewingAsset} canReview={['admin', 'boss'].includes(user?.role || '')} apiFetch={reportApiFetch} />
         <div className="bg-slate-900/30 p-10 rounded-[2.5rem] border border-slate-800/50 space-y-8 shadow-2xl">
           <div className="flex flex-col items-start gap-4 sm:flex-row sm:justify-between border-b border-slate-800/50 pb-8">
             <div className="min-w-0 w-full sm:w-auto sm:flex-1">
@@ -3726,7 +3742,7 @@ const App: React.FC = () => {
                 viewingAsset.status === AssetStatus.IN_USE ? 'bg-orange-500/10 text-orange-400' :
                   viewingAsset.status === AssetStatus.CROSSCHECK ? 'bg-indigo-500/10 text-indigo-400' :
                     'bg-red-500/10 text-red-400'}`}>
-                {viewingAsset.status}
+                {viewingAsset.stock_kind === 'led_case' ? 'Container record' : viewingAsset.status}
               </div>
             </div>
           </div>
@@ -9406,45 +9422,24 @@ const App: React.FC = () => {
         const targetConf = otherConferences.find(c => c.id === transferTargetConfId);
         const allSelected = modalPackupList.length > 0 && modalPackupList.every(a => transferSelectedIds.has(String(a.id)));
 
-        // Handle hardware scanner input in the transfer modal
-        const handleTransferScanKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-          if (e.key === 'Enter') {
-            const val = transferScanInput.trim();
-            if (!val) return;
-            const asset = findAssetFromScan(val);
-            const found = asset ? modalPackupList.find(a => String(a.id) === String(asset.id)) : undefined;
-            if (found) {
-              setTransferSelectedIds(prev => {
-                const next = new Set(prev);
-                if (next.has(String(found.id))) next.delete(String(found.id));
-                else next.add(String(found.id));
-                return next;
-              });
-              setScanToast({ message: `✅ Selected "${found.aliasName || found.sku}"`, type: 'success' });
-            } else {
-              setScanToast({ message: `⚠️ "${val}" not found in this conference's packup`, type: 'warning' });
-            }
-            setTransferScanInput('');
-          }
-        };
-
-        // Handle phone camera scan into transfer modal
-        const handleTransferCameraScan = (code: string) => {
-          setShowTransferScanner(false);
+        const selectTransferScan = (code: string) => {
           const asset = findAssetFromScan(code);
-          const found = asset ? modalPackupList.find(a => String(a.id) === String(asset.id)) : undefined;
-          if (found) {
-            setTransferSelectedIds(prev => {
-              const next = new Set(prev);
-              if (next.has(String(found.id))) next.delete(String(found.id));
-              else next.add(String(found.id));
-              return next;
-            });
-            setScanToast({ message: `✅ Selected "${found.aliasName || found.sku}"`, type: 'success' });
-          } else {
-            setScanToast({ message: `⚠️ "${code}" not found in this conference's packup`, type: 'warning' });
-          }
+          const ids = new Set(asset?.stock_kind === 'led_case'
+            ? (asset.led_case?.panels || []).map(panel => String(panel.asset_id))
+            : asset ? [String(asset.id)] : []);
+          const found = modalPackupList.filter(row => ids.has(String(row.id)));
+          if (!found.length) { showScanToast(`No registered equipment from "${code}" is on site for this program.`, 'warning'); return; }
+          setTransferSelectedIds(previous => {
+            const next = new Set(previous), remove = found.every(row => next.has(String(row.id)));
+            found.forEach(row => remove ? next.delete(String(row.id)) : next.add(String(row.id)));
+            return next;
+          });
+          showScanToast(`Reviewed ${found.length} individually tracked item(s) from this code.`, 'success');
         };
+        const handleTransferScanKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+          if (e.key === 'Enter' && transferScanInput.trim()) { selectTransferScan(transferScanInput.trim()); setTransferScanInput(''); }
+        };
+        const handleTransferCameraScan = (code: string) => { setShowTransferScanner(false); selectTransferScan(code); };
 
         return (
           <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -9683,6 +9678,9 @@ const App: React.FC = () => {
       {/* Camera reads use the same add intent as Enter in Requirements; the
           Packup/Crosscheck branches still choose return/verification by tab. */}
       {showScanner && <Scanner key={`camera:${user?.user_id || user?.email}`} onScan={code => handleScan(code, true)} onClose={() => setShowScanner(false)} />}
+      {ledCasePicker && <LedCasePicker source={ledCasePicker.asset} action={ledCasePicker.action} event={conferenceFormData}
+        apiFetch={reportApiFetch} pending={pendingMovementCount > 0} onClose={() => setLedCasePicker(null)}
+        onConfirm={ids => submitAssetCommand(ledCasePicker.action, ids)} />}
 
       {/* ── PRINT CHALLAN CHOICE MODAL ────────────────────────────── */}
       {printSelectConf && (() => {

@@ -138,6 +138,8 @@ def snapshot(asset_ids, company_ids):
 
 def item_blockers(asset):
     reasons = []
+    if asset.stock_kind == 'led_case':
+        reasons.append('historical_container_not_panel_stock')
     state = custody_state(asset)
     if asset.is_temporary:
         reasons.append('temporary_rental_is_not_permanent_stock')
@@ -195,8 +197,8 @@ def plan(target, before, original):
         for asset in Asset.objects.filter(pk__in=before['asset_ids']).order_by('pk'):
             if asset.subrental_company_id != company['id']:
                 block('kit_crosses_company_classifications', asset_id=asset.pk)
-            if asset.is_temporary:
-                continue  # Remains ticket-only; shared mode never makes it warehouse stock.
+            if asset.is_temporary or asset.stock_kind == 'led_case':
+                continue  # Ticket-only rentals and historical containers are not warehouse stock.
             for reason in item_blockers(asset):
                 if reason == 'supplier_obligation_requires_separate_review' and target['inventory_mode'] == 'external_supplier':
                     continue  # Classification identifies a catalogue; it settles no order.
@@ -205,7 +207,7 @@ def plan(target, before, original):
                 warehouse_ids.append(asset.pk)
         changes.append({'company_id': company['id'], 'company_name': company['name'],
                         'before_mode': company['inventory_mode'], 'after_mode': target['inventory_mode'],
-                        'permanent_asset_ids': warehouse_ids if target['inventory_mode'] == 'shared_warehouse' else [row['id'] for row in before['inventory_records'] if not row['is_temporary']],
+                        'permanent_asset_ids': warehouse_ids if target['inventory_mode'] == 'shared_warehouse' else [row['id'] for row in before['inventory_records'] if not row['is_temporary'] and row['stock_kind'] != 'led_case'],
                         'temporary_stock': 'unchanged, excluded from warehouse policy'})
     else:
         source, destination = target['source_owner_id'], target['target_owner_id']
