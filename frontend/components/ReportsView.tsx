@@ -44,7 +44,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({ apiFetch, user, onEdit
         setLoading(true);
         try {
             const [assetsRes, confRes, empRes] = await Promise.all([
-                apiFetch('/api/assets/?all=true'),
+                apiFetch('/api/assets/?all=true&include_containers=true'),
                 apiFetch('/api/conferences/'),
                 apiFetch('/api/employees/')
             ]);

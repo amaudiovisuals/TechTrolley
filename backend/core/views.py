@@ -139,7 +139,7 @@ def asset_list(request):
         ).distinct()
 
         is_all_query = request.GET.get('all') == 'true'
-        if not is_all_query:
+        if not (is_all_query and request.query_params.get('include_containers') == 'true'):
             assets_query = assets_query.exclude(stock_kind='led_case')
         if subrental_company_id:
             if subrental_company_id == 'null':

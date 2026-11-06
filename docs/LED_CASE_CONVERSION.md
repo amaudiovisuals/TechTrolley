@@ -17,7 +17,9 @@ costs. Current depreciation value is allocated across the six positions so its
 sum remains exactly the original box value; generic edits cannot alter this
 count/valuation grouping. New physical QR/serial labels can be added normally.
 
-The old box QR remains in the online scan index. Scanning it opens a review of
+The old box QR remains in the online scan index (explicit
+`all=true&include_containers=true`). Normal main/supplier inventory queries,
+including `all=true`, exclude these container records. Scanning its QR opens a review of
 its six registered panels, their actual owners and action eligibility. The user
 selects the physical panels being moved; one atomic movement records only those
 panel IDs. Partial returns and crosscheck use actual program memberships.

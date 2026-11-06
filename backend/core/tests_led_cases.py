@@ -121,7 +121,8 @@ class LedCaseTests(SnapshotTestCase):
     def test_api_stock_lists_exports_offline_and_generic_writes_cannot_reintroduce_box(self):
         _, panels = self.conversion()
         normal = self.client.get('/api/assets/').data['results']; self.assertNotIn(self.box.pk, [a['id'] for a in normal])
-        index = self.client.get('/api/assets/?all=true').data; self.assertIn(self.box.pk, [a['id'] for a in index])
+        stock = self.client.get('/api/assets/?all=true').data; self.assertNotIn(self.box.pk, [a['id'] for a in stock])
+        index = self.client.get('/api/assets/?all=true&include_containers=true').data; self.assertIn(self.box.pk, [a['id'] for a in index])
         self.assertEqual(self.client.get('/api/asset-stats/').data['total'], 7)
         offline = self.client.get(f'/api/conferences/{self.event.pk}/offline-package/').data
         self.assertNotIn(self.box.pk, [a['id'] for a in offline['assets']])

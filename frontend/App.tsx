@@ -1083,7 +1083,7 @@ const App: React.FC = () => {
     if (!isLoggedIn || !user || hasPendingWork()) return;
     const requestId = ++scanFetchIdRef.current;
     const sessionToken = localStorage.getItem('token');
-    apiFetch(`${API_BASE}/api/assets/?all=true`)
+    apiFetch(`${API_BASE}/api/assets/?all=true&include_containers=true`)
       .then(async res => {
         if (!res.ok) return;
         const data = await res.json();
