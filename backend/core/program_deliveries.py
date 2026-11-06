@@ -42,6 +42,41 @@ def party(obj):
     return {key: getattr(obj, key, '') or '' for key in ('name', 'address', 'gst_number', 'phone', 'email', 'website')}
 
 
+SUPPLIER_FIELDS = {
+    'issuer_name': 200, 'issuer_address': 4000, 'issuer_gst_number': 20,
+    'recipient_name': 200, 'recipient_address': 4000, 'recipient_gst_number': 20,
+    'destination': 4000, 'vehicle_number': 50, 'driver_phone': 50,
+}
+
+
+def supplier_edits(data, selected):
+    """Paper-only corrections cannot change equipment ownership or row identity."""
+    owners = {str(row['owner_id']) for row in selected if row['owner_id']}
+    if not isinstance(data, dict) or set(data) - owners:
+        raise ValidationError('Supplier details must belong to the selected delivery equipment.')
+    result = {}
+    for owner_id, changes in data.items():
+        if not isinstance(changes, dict) or set(changes) - SUPPLIER_FIELDS.keys():
+            raise ValidationError('Invalid supplier paper fields.')
+        result[owner_id] = {field: label(value, SUPPLIER_FIELDS[field], required=field.endswith('_name'))
+                            for field, value in changes.items()}
+    return result
+
+
+def supplier_paper(common, source, rows, number, changes):
+    issuer, recipient = dict(rows[0]['owner']), dict(source['issuer'])
+    for prefix, target in [('issuer', issuer), ('recipient', recipient)]:
+        for field in ('name', 'address', 'gst_number'):
+            key = f'{prefix}_{field}'
+            if key in changes:
+                target[field] = changes[key]
+    from .dispatch_origins import selected_origins
+    return {**common, 'dispatch_origins': selected_origins(source.get('dispatch_origins', []), [row['asset_id'] for row in rows]),
+            'number': number, 'direction': 'supplier', 'issuer': issuer, 'recipient': recipient, 'rows': rows,
+            'destination': changes.get('destination', source['issuer'].get('address', '')),
+            'vehicle_number': changes.get('vehicle_number', ''), 'driver_phone': changes.get('driver_phone', '')}
+
+
 def sources(conference, truck_id=None, lock=False):
     """Use reviewed durable lines and ledger capacity, never today's stock total."""
     from .models import ChallanDocument
@@ -194,6 +229,7 @@ def program_deliveries(request, pk):
                 if quantity > original['quantity']:
                     raise ValidationError('A selected quantity exceeds the program/truck source quantity.')
                 selected.append({**original, 'quantity': quantity, 'name': label(entry.get('name', original['name']), 500, required=True)})
+            edits = supplier_edits(data.get('supplier_details', {}), selected)
             delivery = ProgramDelivery.objects.create(conference=conference, request_key=key,
                 request_hash=request_hash, reference=reference, issued_by=request.user.get_username())
             fy = f'{str(delivery_date.year if delivery_date.month >= 4 else delivery_date.year - 1)[2:]}-{str(delivery_date.year + 1 if delivery_date.month >= 4 else delivery_date.year)[2:]}'
@@ -208,9 +244,7 @@ def program_deliveries(request, pk):
             suppliers = []
             for owner_id in sorted({row['owner_id'] for row in selected if row['owner_id']}):
                 rows = [row for row in selected if row['owner_id'] == owner_id]
-                suppliers.append({**common, 'dispatch_origins': selected_origins(source.get('dispatch_origins', []), [row['asset_id'] for row in rows]),
-                                  'number': f'{fy}/SR{owner_id}-{delivery.pk:06d}', 'direction': 'supplier',
-                                  'issuer': rows[0]['owner'], 'recipient': source['issuer'], 'rows': rows})
+                suppliers.append(supplier_paper(common, source, rows, f'{fy}/SR{owner_id}-{delivery.pk:06d}', edits.get(str(owner_id), {})))
             delivery.snapshot = {'version': 1, 'customer_document': customer, 'supplier_documents': suppliers}
             delivery.save(update_fields=['snapshot'])
             return Response(serialized(delivery), status=201)

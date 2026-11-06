@@ -39,6 +39,9 @@ const root = path.resolve(__dirname, '../..');
     await check('Review protects pending work from app restart', async () => {
       await page.getByRole('button', { name: 'New delivery', exact: true }).click(); await page.getByLabel('Quantity SYNTH-CABLE').waitFor();
       await page.getByLabel('Delivery reference').fill(' Delivery 1 ');
+      const supplier=page.getByRole('region',{name:'Supplier paper 1'});await supplier.getByRole('button',{name:'Edit supplier details',exact:true}).click();
+      assert.equal(await supplier.getByLabel('Supplier vehicle 1',{exact:true}).inputValue(),'');assert.equal(await supplier.getByLabel('Supplier driver phone 1',{exact:true}).inputValue(),'');
+      await supplier.getByLabel('Supplier address 1',{exact:true}).fill('Reviewed supplier road');
       assert.equal(await page.evaluate(() => window.hasPendingDeliveryWork()), true);
     });
     await check('Committed issue with lost reply retains its exact payload before sending', async () => {
@@ -47,6 +50,7 @@ const root = path.resolve(__dirname, '../..');
       assert.equal(calls.length, 1);
       const durable = await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.includes('pending-delivery')).map(([, value]) => JSON.parse(value)));
       assert.equal(durable.length, 1); assert.deepEqual(durable[0].request, calls[0]);
+      assert.equal(calls[0].supplier_details['1'].issuer_address,'Reviewed supplier road');
     });
     await check('Reload recovers the same request without automatic replay or new issuance', async () => {
       await page.reload(); await page.getByRole('button', { name: 'Retry saving same delivery', exact: true }).waitFor();

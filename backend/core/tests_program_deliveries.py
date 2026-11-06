@@ -72,6 +72,37 @@ class ProgramDeliveryTests(TestCase):
         old={'version':1,'customer_document':{'number':'OLD','rows':[]},'supplier_documents':[]}
         ProgramDelivery.objects.create(conference=self.event,request_key=uuid4(),request_hash='old',reference='Preupgrade',snapshot=old,issued_by='Recorded operator')
         self.assertEqual(self.client.get(self.url).data[0]['snapshot'],old)
+    def test_supplier_defaults_use_supplier_and_issuer_parties_but_not_customer_transport(self):
+        self.settings.gst_number='PVT-GST';self.settings.save()
+        self.company.gst_number='SUPPLIER-GST';self.company.save()
+        self.event.transport_address='Customer venue';self.event.vehicle_number='CUSTOMER-TRUCK';self.event.driver_phone='111111';self.event.save()
+        self.document.header=capture_header(self.event);self.document.save()
+        result=self.issue();self.assertEqual(result.status_code,201,result.data)
+        customer=result.data['snapshot']['customer_document'];supplier=result.data['snapshot']['supplier_documents'][0]
+        self.assertEqual((customer['destination'],customer['vehicle_number'],customer['driver_phone']),('Customer venue','CUSTOMER-TRUCK','111111'))
+        self.assertEqual((supplier['issuer']['name'],supplier['issuer']['address'],supplier['issuer']['gst_number']),('AM original','Supplier address','SUPPLIER-GST'))
+        self.assertEqual((supplier['recipient']['name'],supplier['recipient']['address'],supplier['recipient']['gst_number']),('Pvt Ltd original','Original address','PVT-GST'))
+        self.assertEqual((supplier['destination'],supplier['vehicle_number'],supplier['driver_phone']),('Original address','',''))
+        self.assertEqual(supplier['program'],customer['program']);self.assertEqual([row['sku'] for row in supplier['rows']],['AM-QR'])
+    def test_optional_supplier_edits_are_paper_only_and_frozen_for_retry(self):
+        edits={str(self.company.pk):{'issuer_address':'Paper supplier address','recipient_address':'Paper receiving address',
+            'destination':'Alternate delivery point','vehicle_number':'SUPPLIER-TRUCK','driver_phone':'222222'}}
+        body=self.payload(supplier_details=edits);result=self.issue(body);self.assertEqual(result.status_code,201,result.data)
+        paper=result.data['snapshot']['supplier_documents'][0]
+        self.assertEqual((paper['issuer']['address'],paper['recipient']['address'],paper['destination'],paper['vehicle_number'],paper['driver_phone']),
+            ('Paper supplier address','Paper receiving address','Alternate delivery point','SUPPLIER-TRUCK','222222'))
+        self.company.refresh_from_db();self.settings.refresh_from_db()
+        self.assertEqual(self.company.address,'Supplier address');self.assertEqual(self.settings.address,'Original address')
+        self.assertEqual(result.data['snapshot']['customer_document']['recipient']['address'],'Customer address')
+        self.assertEqual(self.issue(body).data['snapshot'],result.data['snapshot'])
+        self.assertEqual(self.issue({**body,'supplier_details':{str(self.company.pk):{'destination':'Changed retry'}}}).status_code,409)
+        self.assertEqual(ProgramDelivery.objects.count(),1)
+    def test_invalid_or_unselected_supplier_edits_reject_the_entire_delivery(self):
+        for edits in [None,[],{str(self.other.pk):{'destination':'Wrong owner'}},
+            {str(self.company.pk):{'owner_id':self.other.pk}}, {str(self.company.pk):{'vehicle_number':False}},
+            {str(self.company.pk):{'issuer_name':' '}},{str(self.company.pk):{'destination':'x'*4001}}]:
+            response=self.issue(self.payload(supplier_details=edits));self.assertEqual(response.status_code,400,response.data)
+        self.assertEqual(ProgramDelivery.objects.count(),0)
     def test_next_delivery_new_numbers_and_reused_request_key_refusal(self):
         body=self.payload();first=self.issue(body)
         self.assertEqual(self.issue({**body,'reference':'Wrong reuse'}).status_code,409)

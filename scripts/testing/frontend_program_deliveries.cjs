@@ -38,4 +38,13 @@ check('Unavailable, quota-limited or silently discarded storage cannot permit a 
 check('Confirmed recovery removes only its matching request', () => {
   clearPendingDelivery(storage, key, request.request_key); assert.equal(readPendingDelivery(storage, key), null);
 });
+check('Supplier draft corrections survive uncertain-save recovery with the exact payload', () => {
+  const edited={...request,supplier_details:{'1':{issuer_name:'AM',issuer_address:'Supplier road',issuer_gst_number:'',
+    recipient_name:'Pvt Ltd',recipient_address:'Pvt road',recipient_gst_number:'',destination:'Pvt road',vehicle_number:'',driver_phone:''}}};
+  savePendingDelivery(storage,'supplier-edits',edited);assert.deepEqual(readPendingDelivery(storage,'supplier-edits'),edited);
+  assert.throws(()=>savePendingDelivery(storage,'supplier-edits',{...edited,supplier_details:{'1':{...edited.supplier_details['1'],vehicle_number:'Changed'}}}));
+});
+check('Invalid supplier override identities and secret/unexpected fields cannot enter a pending issue', () => {
+  for(const supplier_details of [[],null,{'01':{}},{'1':{token:'secret'}},{'1':{issuer_name:''}}])assert.throws(()=>savePendingDelivery(storage,'invalid-supplier',{...request,supplier_details}));
+});
 console.log(JSON.stringify({ passed: checks.length, checks }, null, 2));
