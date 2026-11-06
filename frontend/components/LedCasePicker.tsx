@@ -39,7 +39,8 @@ export function LedCasePicker({ source, action, event, apiFetch, onConfirm, onCl
     <section role="dialog" aria-modal="true" aria-label="Select LED box panels" className="bg-white text-slate-900 rounded-xl p-5 w-full max-w-xl max-h-[90vh] overflow-y-auto space-y-4">
       <h2 className="font-bold text-lg">Select LED box panels</h2>
       <p className="font-bold break-words">{box?.led_case?.box_code || source.sku}</p>
-      <p className="text-sm">The old box QR identifies six registered panels. Confirm which numbered panels are physically present and being {action.replaceAll('_', ' ')}. The box itself is not an extra stock item.</p>
+      <p className="font-bold text-sm">Action: {({stage:'Pack panels',return:'Return panels',verify_return:'Verify returned panels',unstage:'Remove from packing',require:'Request panels',audit_observe:'Observe panels for audit',audit_remove:'Remove audit observation'} as Record<string,string>)[action] || action}</p>
+      <p className="text-sm">Choose the numbered panels actually present for this action. Each selected panel is one stock item; the box is not an extra item.</p>
       <p className="text-sm">Until individual QR labels are attached, keep panels in their registered box and mark positions 1–6. Owners below come from the panel records.</p>
       {!box && !error && <p role="status">Loading registered panels…</p>}
       {box?.led_case?.panels.map(panel => <label key={panel.asset_id} className="flex items-start gap-3 border rounded p-3 text-sm break-words">

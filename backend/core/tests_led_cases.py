@@ -21,10 +21,11 @@ from .inventory_ownership import inventory_summary
 from .led_cases import convert, prepare
 from .models import Asset, ChallanDocument, ChallanLine, CompanySettings, Conference, LedCaseConversion, LedCasePanel, SubrentalCompany
 from .serializers import AssetSerializer, ConferenceSerializer
+from .test_support import SnapshotTestCase
 
 
 @override_settings(LED_CASE_CONVERSION_WRITES_ENABLED=True, LED_CASE_CONVERSION_INSTANCE_ID='isolated-led-case-test')
-class LedCaseTests(TestCase):
+class LedCaseTests(SnapshotTestCase):
     def setUp(self):
         self.user = User.objects.create_user('led-admin', is_staff=False)
         self.user.profile.role = 'admin'; self.user.profile.save()
