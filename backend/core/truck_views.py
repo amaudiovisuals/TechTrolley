@@ -1,3 +1,6 @@
+from .serializers import ConferenceSerializer
+from django.db import transaction
+from .permissions import TruckMembershipPermission, WarehouseWriteAuthenticatedRead
 """
 Views for TruckChallan CRUD and asset transfer between trucks.
 """
@@ -11,6 +14,7 @@ from .models import Conference, TruckChallan, Asset
 def _serialize_truck(t):
     from .serializers import AssetSerializer
     return {
+        'conference_revision': Conference.objects.get(pk=t.conference_id).revision,
         'id': t.pk,
         'conference': t.conference_id,
         'truck_number': t.truck_number,
@@ -27,15 +31,8 @@ def _serialize_truck(t):
 
 
 def _get_next_challan_number():
-    """Auto-generate a challan number from CompanySettings. Returns '' on failure."""
-    try:
-        from .models import CompanySettings, generate_challan_number
-        settings_obj = CompanySettings.objects.first()
-        if settings_obj:
-            return generate_challan_number(settings_obj)
-    except Exception as ex:
-        print("Warning: could not generate truck challan number:", ex)
-    return ''
+    from .challan_documents import allocate_number
+    return allocate_number()
 
 
 def _heal_unassigned_conference_assets(conference):
@@ -66,7 +63,8 @@ def _heal_unassigned_conference_assets(conference):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([WarehouseWriteAuthenticatedRead])
+@transaction.atomic
 def conference_trucks(request, pk):
     """
     GET  /api/conferences/{pk}/trucks/  - list trucks for this conference
@@ -75,19 +73,31 @@ def conference_trucks(request, pk):
     conference = get_object_or_404(Conference, pk=pk)
 
     if request.method == 'GET':
-        _heal_unassigned_conference_assets(conference)
         trucks = TruckChallan.objects.filter(conference=conference).prefetch_related('assets').order_by('truck_number')
-        for t in trucks:
-            if not t.challan_number:
-                if t.truck_number == 1 and conference.challan_number:
-                    t.challan_number = conference.challan_number
-                else:
-                    t.challan_number = _get_next_challan_number()
-                if t.challan_number:
-                    t.save(update_fields=['challan_number'])
         return Response([_serialize_truck(t) for t in trucks])
 
     elif request.method == 'POST':
+        expected = request.data.get('expected_revision')
+        if expected is None: return Response({'error': 'expected_revision_required'}, status=428)
+        if isinstance(expected, bool) or not str(expected).isdigit(): return Response({'error': 'invalid_expected_revision'}, status=400)
+        from .revisions import lock_conference_for_write
+        conference = lock_conference_for_write(pk, {'challan_assets': request.data.get('asset_ids', [])})
+        if conference.lifecycle_state != 'open':
+            return Response({'error': 'event_is_sealed'}, status=409)
+        from .models import TruckManifest
+        if TruckManifest.objects.filter(conference=conference).exists():
+            return Response({'error': 'use_manifest_commands'}, status=409)
+        if conference.revision != int(expected): return Response({'error': 'document_changed', 'revision': conference.revision}, status=409)
+        if conference.quantity_allocations.exists():
+            return Response({'error': 'quantity_trucks_require_coordinated_workflow'}, status=409)
+        if Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('asset_ids', []) if str(aid).isdigit()], stock_kind='led_case').exists():
+            return Response({'error':'select_led_case_panels_not_historical_box'}, status=409)
+        if (conference.consumable_allocations.exists() or conference.consumable_data
+                or conference.challan_assets.filter(type='Consumables').exists()
+                or conference.assets.filter(type='Consumables').exists()
+                or conference.staged_assets.filter(type='Consumables').exists()
+                or Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('asset_ids', []) if str(aid).isdigit()], type='Consumables').exists()):
+            return Response({'error': 'consumable_trucks_require_coordinated_workflow'}, status=409)
         existing = list(TruckChallan.objects.filter(conference=conference).order_by('truck_number'))
 
         if not existing:
@@ -118,7 +128,7 @@ def conference_trucks(request, pk):
             initial_ids.discard(None)
             if initial_ids:
                 truck1.assets.set(initial_ids)
-                conference.challan_assets.set(initial_ids)
+                conference.challan_assets.add(*initial_ids)
 
             # Create Truck 2 (empty) with its own next challan number
             TruckChallan.objects.create(
@@ -142,13 +152,13 @@ def conference_trucks(request, pk):
                 asset_quantities={},
             )
 
-        _heal_unassigned_conference_assets(conference)
         trucks = TruckChallan.objects.filter(conference=conference).prefetch_related('assets').order_by('truck_number')
         return Response([_serialize_truck(t) for t in trucks], status=201)
 
 
 @api_view(['PATCH', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([TruckMembershipPermission])
+@transaction.atomic
 def truck_challan_detail(request, truck_pk):
     """
     PATCH  /api/truck-challans/{truck_pk}/  - update vehicle/driver/label/assets/challan_number/asset_quantities
@@ -156,6 +166,31 @@ def truck_challan_detail(request, truck_pk):
     """
     truck = get_object_or_404(TruckChallan, pk=truck_pk)
 
+    from .revisions import lock_conference_for_write
+    expected = request.data.get('expected_revision')
+    if expected is None:
+        return Response({'error': 'expected_revision_required'}, status=428)
+    conference = lock_conference_for_write(truck.conference_id, request.data)
+    if conference.lifecycle_state != 'open':
+        return Response({'error': 'event_is_sealed'}, status=409)
+    if isinstance(expected, bool) or not str(expected).isdigit() or int(expected) != conference.revision:
+        return Response({'error': 'document_changed', 'revision': conference.revision}, status=409)
+    truck = TruckChallan.objects.select_for_update().get(pk=truck_pk)
+    from .models import TruckManifest
+    if TruckManifest.objects.filter(conference=conference).exists() and (request.method == 'DELETE' or {'assets', 'asset_quantities', 'challan_number'} & set(request.data)):
+        return Response({'error': 'use_manifest_commands'}, status=409)
+    if Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('assets', []) if str(aid).isdigit()], stock_kind='led_case').exists():
+        return Response({'error':'select_led_case_panels_not_historical_box'}, status=409)
+    has_consumables = (conference.consumable_allocations.exists() or conference.consumable_data
+                       or truck.assets.filter(type='Consumables').exists()
+                       or Asset.objects.filter(pk__in=[int(aid) for aid in request.data.get('assets', []) if str(aid).isdigit()], type='Consumables').exists())
+    if has_consumables and (request.method == 'DELETE' or {'assets', 'asset_quantities', 'challan_number'} & set(request.data)):
+        return Response({'error': 'consumable_trucks_require_coordinated_workflow'}, status=409)
+    if conference.challan_documents.filter(truck__isnull=False).exists():
+        if request.method == 'DELETE':
+            return Response({'error': 'trucks_have_document_history'}, status=409)
+        if {'assets', 'asset_quantities', 'challan_number'} & set(request.data):
+            return Response({'error': 'use_challan_document'}, status=409)
     if request.method == 'PATCH':
         data = request.data
         if 'vehicle_number' in data:
@@ -166,119 +201,46 @@ def truck_challan_detail(request, truck_pk):
             truck.label = str(data['label']).strip()
         # J-113: Allow patching the truck's own challan number independently
         if 'challan_number' in data:
-            truck.challan_number = str(data['challan_number']).strip()
+            from .challan_documents import reserve_number
+            from .asset_commands import CommandError
+            try:
+                truck.challan_number = reserve_number(str(data['challan_number']).strip(), conference, truck)
+            except CommandError as error:
+                return Response({'error': error.code}, status=error.status)
         if 'asset_quantities' in data and isinstance(data['asset_quantities'], dict):
             truck.asset_quantities = data['asset_quantities']
         truck.save()
 
         if 'assets' in data:
+            conference.challan_assets.add(*list(truck.assets.values_list('pk', flat=True)))
             clean_ids = [int(aid) for aid in data['assets'] if str(aid).isdigit()]
             truck.assets.set(clean_ids)
 
-        return Response(_serialize_truck(truck))
+        return Response({**_serialize_truck(truck), 'conference': ConferenceSerializer(Conference.objects.get(pk=conference.pk)).data})
 
     elif request.method == 'DELETE':
         # Per specification: deleting any truck resets all trucks for that conference back to main challan only
         conference = truck.conference
+        prior_ids = set(TruckChallan.objects.filter(conference=conference).values_list('assets__pk', flat=True)) - {None}
+        conference.challan_assets.add(*prior_ids)
         TruckChallan.objects.filter(conference=conference).delete()
         return Response({'status': 'all_trucks_deleted', 'conference_id': conference.pk})
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([WarehouseWriteAuthenticatedRead])
 def truck_transfer_assets(request, truck_pk):
-    """
-    POST /api/truck-challans/{truck_pk}/transfer/
-    Body:
-      { "to_truck_id": 5, "asset_ids": [1, 2, 3] }
-      OR
-      { "to_truck_id": 5, "transfers": [{ "asset_id": 1, "quantity": 1 }] }
-    """
-    source_truck = get_object_or_404(TruckChallan, pk=truck_pk)
-    to_truck_id = request.data.get('to_truck_id')
-    raw_transfers = request.data.get('transfers')
-    raw_asset_ids = request.data.get('asset_ids', [])
-
-    if not to_truck_id or (not raw_transfers and not raw_asset_ids):
-        return Response({'error': 'to_truck_id and either transfers or asset_ids required'}, status=400)
-
+    from .truck_transfer import transfer_truck_allocation
+    from .asset_commands import CommandError
     try:
-        to_truck_id = int(to_truck_id)
-    except (ValueError, TypeError):
-        return Response({'error': 'Invalid to_truck_id'}, status=400)
-
-    dest_truck = get_object_or_404(TruckChallan, pk=to_truck_id, conference=source_truck.conference)
-
-    items_to_transfer = []
-    if raw_transfers and isinstance(raw_transfers, list):
-        for item in raw_transfers:
-            try:
-                aid = int(item.get('asset_id'))
-                qty = int(item.get('quantity', 1))
-                if qty > 0:
-                    items_to_transfer.append((aid, qty))
-            except (ValueError, TypeError):
-                continue
-    elif raw_asset_ids:
-        for aid_raw in raw_asset_ids:
-            if str(aid_raw).isdigit():
-                items_to_transfer.append((int(aid_raw), None))
-
-    if not items_to_transfer:
-        return Response({'error': 'No valid assets to transfer'}, status=400)
-
-    source_quantities = dict(source_truck.asset_quantities or {})
-    dest_quantities = dict(dest_truck.asset_quantities or {})
-
-    assets_to_fetch = [aid for aid, _ in items_to_transfer]
-    asset_map = {a.pk: a for a in Asset.objects.filter(pk__in=assets_to_fetch)}
-
-    for aid, requested_qty in items_to_transfer:
-        asset = asset_map.get(aid)
-        if not asset:
-            continue
-
-        aid_str = str(aid)
-        base_qty = int(asset.quantity or 1)
-
-        # Current quantity in source truck
-        if aid_str in source_quantities:
-            current_src_qty = int(source_quantities[aid_str])
-        else:
-            current_src_qty = base_qty
-
-        if current_src_qty <= 0:
-            continue
-
-        qty_to_move = current_src_qty if requested_qty is None else min(int(requested_qty), current_src_qty)
-        if qty_to_move <= 0:
-            continue
-
-        new_src_qty = current_src_qty - qty_to_move
-        if new_src_qty <= 0:
-            source_truck.assets.remove(asset)
-            source_quantities.pop(aid_str, None)
-        else:
-            source_quantities[aid_str] = new_src_qty
-
-        dest_truck.assets.add(asset)
-        current_dest_qty = int(dest_quantities.get(aid_str, 0))
-        dest_quantities[aid_str] = current_dest_qty + qty_to_move
-
-    source_truck.asset_quantities = source_quantities
-    source_truck.save(update_fields=['asset_quantities'])
-
-    dest_truck.asset_quantities = dest_quantities
-    dest_truck.save(update_fields=['asset_quantities'])
-
-    return Response({
-        'source': _serialize_truck(source_truck),
-        'dest': _serialize_truck(dest_truck),
-    })
+        return Response(transfer_truck_allocation(request.user, truck_pk, request.data))
+    except CommandError as error:
+        return Response({'error': error.code, 'conflicts': error.details}, status=error.status)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([TruckMembershipPermission])
+@transaction.atomic
 def add_asset_to_truck(request, pk):
     """
     POST /api/conferences/{pk}/trucks/add-to-truck/
@@ -286,9 +248,24 @@ def add_asset_to_truck(request, pk):
     Body: { "asset_ids": [1, 2, 3], "truck_id": 5 (optional), "truck_number": 2 (optional) }
     Adds new assets to the designated truck (or latest truck if unspecified) of this conference.
     """
-    conference = get_object_or_404(Conference, pk=pk)
+    expected = request.data.get('expected_revision')
+    if expected is None: return Response({'error': 'expected_revision_required'}, status=428)
+    if isinstance(expected, bool) or not str(expected).isdigit(): return Response({'error': 'invalid_expected_revision'}, status=400)
+    from .revisions import lock_conference_for_write
+    conference = lock_conference_for_write(pk, {'challan_assets': request.data.get('asset_ids', [])})
+    if conference.lifecycle_state != 'open':
+        return Response({'error': 'event_is_sealed'}, status=409)
+    from .models import TruckManifest
+    if TruckManifest.objects.filter(conference=conference).exists():
+        return Response({'error': 'use_manifest_commands'}, status=409)
+    if conference.revision != int(expected): return Response({'error': 'document_changed', 'revision': conference.revision}, status=409)
     raw_asset_ids = request.data.get('asset_ids', [])
     clean_asset_ids = [int(aid) for aid in raw_asset_ids if str(aid).isdigit()]
+    if Asset.objects.filter(pk__in=clean_asset_ids, stock_kind='led_case').exists():
+        return Response({'error':'select_led_case_panels_not_historical_box'}, status=409)
+    if (conference.consumable_allocations.exists() or conference.consumable_data
+            or Asset.objects.filter(pk__in=clean_asset_ids, type='Consumables').exists()):
+        return Response({'error': 'consumable_trucks_require_coordinated_workflow'}, status=409)
     truck_id = request.data.get('truck_id')
     truck_number = request.data.get('truck_number')
 
@@ -301,10 +278,15 @@ def add_asset_to_truck(request, pk):
     if not target_truck:
         target_truck = TruckChallan.objects.filter(conference=conference).order_by('-truck_number').first()
 
+    if (truck_id or truck_number) and target_truck and ((truck_id and str(target_truck.pk) != str(truck_id)) or (truck_number and str(target_truck.truck_number) != str(truck_number))):
+        return Response({'error': 'requested_truck_not_found'}, status=404)
     if target_truck and clean_asset_ids:
+        target_truck = TruckChallan.objects.select_for_update().get(pk=target_truck.pk)
         target_truck.assets.add(*clean_asset_ids)
         return Response({
             'status': 'added',
+            'conference': ConferenceSerializer(Conference.objects.get(pk=pk)).data,
+            'conference_revision': Conference.objects.get(pk=pk).revision,
             'truck_id': target_truck.pk,
             'truck_number': target_truck.truck_number,
             'label': target_truck.label or f"Truck {target_truck.truck_number}"
@@ -316,67 +298,10 @@ add_asset_to_truck1 = add_asset_to_truck
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([WarehouseWriteAuthenticatedRead])
 def release_audit_conference_locks(request, pk):
-    """
-    POST /api/conferences/{pk}/release-audit-locks/
-
-    For an audit conference (is_audit=True), releases all assets that are
-    still marked as 'In Use' in the DB but are not held by any other
-    non-audit conference.
-
-    This is safe to call multiple times — it is idempotent.
-    Returns a count of assets released.
-    """
-    conference = get_object_or_404(Conference, pk=pk)
-
-    if not conference.is_audit:
-        return Response(
-            {'error': 'This conference is not marked as an audit conference.'},
-            status=400
-        )
-
-    # All assets in this audit conference (assets M2M)
-    audit_asset_ids = set(conference.assets.values_list('pk', flat=True))
-    # Also include challan_assets — they may have been stamped In Use before is_audit was set
-    challan_asset_ids = set(conference.challan_assets.values_list('pk', flat=True))
-    all_candidate_ids = audit_asset_ids | challan_asset_ids
-
-    if not all_candidate_ids:
-        return Response({'released': 0, 'message': 'No assets found in this audit conference.'})
-
-    # Find assets held by other NON-audit conferences via assets or crosscheck_assets
-    locked_by_others = set(
-        Conference.objects
-        .exclude(pk=conference.pk)
-        .exclude(is_audit=True)
-        .filter(assets__in=all_candidate_ids)
-        .values_list('assets__id', flat=True)
-    )
-    crosscheck_locked = set(
-        Conference.objects
-        .exclude(pk=conference.pk)
-        .filter(crosscheck_assets__in=all_candidate_ids)
-        .values_list('crosscheck_assets__id', flat=True)
-    )
-    genuinely_locked = locked_by_others | crosscheck_locked
-
-    # Safe to release: in audit conf but NOT locked by anyone else, and currently In Use
-    safe_to_release = [
-        aid for aid in all_candidate_ids
-        if aid not in genuinely_locked
-    ]
-
-    released_count = 0
-    if safe_to_release:
-        released_count = Asset.objects.filter(
-            pk__in=safe_to_release,
-            status='In Use'
-        ).update(status='Available')
-
-    return Response({
-        'released': released_count,
-        'total_candidates': len(all_candidate_ids),
-        'skipped_still_locked_elsewhere': len(genuinely_locked & all_candidate_ids),
-        'message': f'Successfully released {released_count} asset(s) from audit conference lock.'
-    })
+    # Keep old clients from invoking an unreviewed status backfill.
+    get_object_or_404(Conference, pk=pk)
+    return Response({'error': 'reviewed_custody_repair_required',
+                     'review_url': f'/api/conferences/{pk}/custody-review/',
+                     'message': 'Review current custody and verify selected records before any status repair.'}, status=409)

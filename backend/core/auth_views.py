@@ -1,55 +1,62 @@
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes, throttle_classes
+from collections.abc import Mapping
+from .auth_throttling import LoginAttemptThrottle
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from rest_framework.permissions import AllowAny
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.contrib.auth import logout
+from rest_framework.permissions import IsAuthenticated
+from .authentication import token_is_current
 
 User = get_user_model()
+from .permissions import get_business_role, is_business_administrator
 
 @csrf_exempt
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([LoginAttemptThrottle])
 def custom_login(request):
+    if not isinstance(request.data, Mapping):
+        return Response({'error':'Provide an email and password object.'},status=400)
     email = request.data.get('email')
     password = request.data.get('password')
 
-    if not email or not password:
+    if not isinstance(email, str) or not isinstance(password, str) or not email.strip() or not password or len(email)>254 or len(password)>1024:
         return Response({'error': 'Please provide both email and password'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Find user by email case-insensitively
-    user = User.objects.filter(email__iexact=email).first()
-    if not user:
+    email = email.strip()
+    matches = list(User.objects.filter(email__iexact=email)[:2])
+    if len(matches) != 1:
+        from django.contrib.auth.hashers import make_password
+        make_password(password)
         return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
+    # Password verification and token issuance share the same user lock as resets.
+    with transaction.atomic():
+        locked = User.objects.select_for_update().get(pk=matches[0].pk)
+        user = authenticate(username=locked.username, password=password)
+        if not user:
+            return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
+        token = Token.objects.filter(user=user).first()
+        if token and not token_is_current(token):
+            token.delete()
+            token = None
+        if token is None:
+            token = Token.objects.create(user=user)
 
-    # Check password using the found user instance
-    user = authenticate(username=user.username, password=password)
+    role = get_business_role(user)
+    is_staff = is_business_administrator(user)
 
-    if not user:
-        return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
+    from .permissions import assigned_employee_id
+    employee_id = assigned_employee_id(user)
 
-    token, _ = Token.objects.get_or_create(user=user)
-    
-    # Try to find associated employee id if not staff
-    employee_id = None
-    if not user.is_staff:
-        from .models import Employee
-        emp = Employee.objects.filter(email=user.email).first()
-        if emp:
-            employee_id = emp.id
-
-    role = user.profile.role if hasattr(user, 'profile') else ('admin' if user.is_staff else 'technician')
-    if role in ('admin', 'boss') and not user.is_staff:
-        user.is_staff = True
-        user.is_superuser = True
-        user.save(update_fields=['is_staff', 'is_superuser'])
-
-    is_staff = user.is_staff or role in ('admin', 'boss')
-
-    return Response({
+    response = Response({
         'token': token.key,
         'user_id': user.pk,
         'username': user.username,
@@ -59,3 +66,22 @@ def custom_login(request):
         'employee_id': employee_id,
         'role': role
     })
+    response['Cache-Control'] = 'no-store'
+    return response
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def server_logout(request):
+    with transaction.atomic():
+        User.objects.select_for_update().get(pk=request.user.pk)
+        # A delayed logout cannot delete a replacement token issued after a reset.
+        tokens = Token.objects.filter(user=request.user)
+        if request.auth is not None:
+            tokens = tokens.filter(key=request.auth.key)
+        tokens.delete()
+        if hasattr(request, 'session'):
+            logout(request)
+    response = Response({'message': 'Signed out. API login on all devices using this token has ended.'})
+    response['Cache-Control'] = 'no-store'
+    return response

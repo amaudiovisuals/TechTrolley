@@ -1,3 +1,7 @@
+> Earlier production release notes. The shared-warehouse integration branch
+> supersedes the pending quantity boundary and uses the audited durable customer
+> document as the source for new deliveries. See WAREHOUSE_INTEGRATION_CANDIDATE.md.
+
 # First production patch: supplier inventory and single-unit QR scans
 
 This branch starts from production/GitHub revision 783d02b6 and is independent of
