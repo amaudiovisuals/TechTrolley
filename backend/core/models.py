@@ -255,6 +255,26 @@ class SupplierChange(models.Model):
     after = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
 
+class SavedCustomer(models.Model):
+    name = models.CharField(max_length=200)
+    billing_address = models.TextField()
+    gst_number = models.CharField(max_length=20, blank=True, default='')
+    contact_person = models.CharField(max_length=100, blank=True, default='')
+    contact_phone = models.CharField(max_length=20, blank=True, default='')
+    contact_email = models.EmailField(blank=True, default='')
+    identity_hash = models.CharField(max_length=64, unique=True, editable=False)
+    revision = models.PositiveBigIntegerField(default=1, editable=False)
+    is_active = models.BooleanField(default=True)
+
+
+class SavedVenue(models.Model):
+    name = models.CharField(max_length=200)
+    address = models.TextField()
+    identity_hash = models.CharField(max_length=64, unique=True, editable=False)
+    revision = models.PositiveBigIntegerField(default=1, editable=False)
+    is_active = models.BooleanField(default=True)
+
+
 class Conference(models.Model):
     revision = models.PositiveBigIntegerField(default=0, editable=False)
     lifecycle_state = models.CharField(max_length=12, default='open', choices=[('open', 'Open'), ('completed', 'Verified complete'), ('archived', 'Archived')], editable=False, db_index=True)

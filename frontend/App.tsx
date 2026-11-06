@@ -1,8 +1,10 @@
+import { SavedContacts } from './components/SavedContacts';
 import { SavedWorkRecovery } from './components/SavedWorkRecovery';
 import OfflineScanning from './components/OfflineScanning';
 import { downloadEventPdf } from './state/privateDownloads';
 import { eventEditorData, eventMetadata, eventDraftKey, readEventDraft } from './state/eventDrafts';
 import { resolveScan } from './state/scanIdentity';
+import { challanAssetIds } from './state/challanSelection';
 import { MovementOutbox, RejectedMovement } from './state/movementOutbox';
 import { isBulkStock, quantityLimit, dispatchQuantities, quantityLabel, eventQuantityTotal, canVerifyReturns } from './state/quantityWorkflow';
 import { consumableDraftHash, consumablePayload, consumableLimit, editConsumableRequest, editConsumableReturn } from './state/consumableWorkflow';
@@ -667,7 +669,6 @@ const App: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferSelectedIds, setTransferSelectedIds] = useState<Set<string>>(new Set());
   const [transferTargetConfId, setTransferTargetConfId] = useState<string>('');
-  const [transferFromAddress, setTransferFromAddress] = useState<string>('');
   const [transferScanInput, setTransferScanInput] = useState<string>('');
   const [transferring, setTransferring] = useState(false);
   const [showTransferScanner, setShowTransferScanner] = useState(false);
@@ -2162,6 +2163,11 @@ const App: React.FC = () => {
   const handleAssetTransfer = async () => {
     const sourceId = conferenceFormData.id;
     if (!sourceId) return;
+    const fromAddress = backendConferences.find(c => c.id === String(sourceId))?.transportAddress || '';
+    if (!fromAddress.trim() || fromAddress !== conferenceFormData.transport_address) {
+      alert('Save this program’s delivery address before transferring equipment. It will be recorded as the dispatch venue.');
+      return;
+    }
     if (transferSelectedIds.size === 0) {
       alert('Please select at least one asset to transfer.');
       return;
@@ -2182,7 +2188,7 @@ const App: React.FC = () => {
       `⚠️ ASSET TRANSFER CONFIRMATION\n\n` +
       `You are about to transfer ${transferSelectedIds.size} item(s):\n` +
       assetNames.join(', ') + `\n\n` +
-      `FROM: ${transferFromAddress || conferenceFormData.transport_address || conferenceFormData.name}\n` +
+      `FROM: ${fromAddress}\n` +
       `TO:   ${targetConf?.conferenceName || targetConf?.name || 'Selected Conference'}\n\n` +
       `This will:\n` +
       `• Freeze the current dispatch challan (if not already frozen)\n` +
@@ -2195,7 +2201,7 @@ const App: React.FC = () => {
     setTransferring(true);
     try {
       const receipt = await getMovementOutbox().enqueue(String(sourceId), 'transfer', Array.from(transferSelectedIds).map(Number),
-        transferFromAddress || conferenceFormData.transport_address || 'transfer', Number(transferTargetConfId));
+        fromAddress, Number(transferTargetConfId));
       const data = { success: true, source_conference: receipt.conference, target_conference: receipt.target_conference, transferred_count: receipt.asset_ids.length };
       {
         const src = data.source_conference;
@@ -2229,7 +2235,6 @@ const App: React.FC = () => {
         setShowTransferModal(false);
         setTransferSelectedIds(new Set());
         setTransferTargetConfId('');
-        setTransferFromAddress('');
         setTransferScanInput('');
 
         setScanToast({ message: `✅ Transferred ${data.transferred_count} item(s) to ${targetConf?.conferenceName || targetConf?.name}`, type: 'success' });
@@ -5998,17 +6003,7 @@ const App: React.FC = () => {
     localStorage.setItem('print_truck_suffix', truckChallan ? `__truckId${truckChallan.id}` : '');
 
     const challanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-    let targetAssetIds: string[] = [];
-
-    if (truckChallan) {
-      targetAssetIds = (truckChallan.assets || []).map(String);
-    } else if (mode === 'return') {
-      targetAssetIds = (conf.assets || []).map(String);
-    } else {
-      targetAssetIds = (conf.challanAssets && conf.challanAssets.length > 0)
-                       ? conf.challanAssets.map(String)
-                       : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
-    }
+    const targetAssetIds = challanAssetIds(conf, mode, truckChallan);
 
     const relevantAssets = challanPool
       .filter(a => targetAssetIds.includes(String(a.id)))
@@ -7219,14 +7214,18 @@ const App: React.FC = () => {
                         </div>
                         <h3 className="font-black text-slate-800 uppercase tracking-[0.2em] text-[10px]">Conference Identity & Schedule</h3>
                       </div>
+                      {['admin', 'boss', 'accounts', 'godown_incharge'].includes(user?.role || '') && <SavedContacts
+                        key={`contacts:${user?.user_id || user?.email}:${conferenceFormData.id || 'new'}`} form={conferenceFormData}
+                        onChange={patch => setConferenceFormData((previous: any) => ({ ...previous, ...patch }))}
+                        apiFetch={reportApiFetch} canSave={['admin', 'boss', 'accounts'].includes(user?.role || '')} />}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                           <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Conference Name <span className="text-red-500">*</span></label>
                           <input value={conferenceFormData.name} onChange={e => setConferenceFormData({ ...conferenceFormData, name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Conference Name" required />
                         </div>
                         <div>
-                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Association Name <span className="text-red-500">*</span></label>
-                          <input value={conferenceFormData.association_name} onChange={e => setConferenceFormData({ ...conferenceFormData, association_name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Association Name" required />
+                          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Customer / Association Name <span className="text-red-500">*</span></label>
+                          <input value={conferenceFormData.association_name} onChange={e => setConferenceFormData({ ...conferenceFormData, association_name: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Customer / Association Name" required />
                         </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -7286,7 +7285,7 @@ const App: React.FC = () => {
                           </div>
                           <div>
                             <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2 block ml-1">Transport Address</label>
-                            <input value={conferenceFormData.transport_address} onChange={e => setConferenceFormData({ ...conferenceFormData, transport_address: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Transport / Delivery Address" />
+                            <textarea value={conferenceFormData.transport_address} onChange={e => setConferenceFormData({ ...conferenceFormData, transport_address: e.target.value })} className="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 focus:ring-sky-500/20" placeholder="Transport / Delivery Address" />
                           </div>
                         </div>
                       </div>
@@ -8351,7 +8350,6 @@ const App: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setTransferFromAddress(conferenceFormData.transport_address || '');
                                     setTransferSelectedIds(new Set());
                                     setTransferTargetConfId('');
                                     setTransferScanInput('');
@@ -8638,7 +8636,6 @@ const App: React.FC = () => {
               const hasTransfers = hasRecordedQuantities(conf) || (conf.transfer_log && conf.transfer_log.length > 0) ||
                 (dispatchIds.length !== returnIds.length || JSON.stringify([...dispatchIds].sort()) !== JSON.stringify([...returnIds].sort()));
 
-              const activeAssetIds = (hasTransfers && challanDetailTab === 'return') ? returnIds : dispatchIds;
               // The printed challan PDF always says "DELIVERY CHALLAN" — "Return" is just our internal tab label.
               const detailTitle = 'DELIVERY CHALLAN';
 
@@ -8646,17 +8643,7 @@ const App: React.FC = () => {
               const hasTrucks = trucks.length > 0;
               const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
 
-              const allTruckAssetIds = new Set(trucks.flatMap(t => t.assets || []).map(String));
-              const unassignedIds = activeAssetIds.filter(id => !allTruckAssetIds.has(String(id)));
-
-              // If viewing Truck 1 and some master assets are not in ANY truck yet, include them in Truck 1!
-              const targetAssetIds = activeTruck
-                ? (
-                    activeTruck.truck_number === 1 && unassignedIds.length > 0
-                      ? Array.from(new Set([...(activeTruck.assets || []).map(String), ...unassignedIds]))
-                      : (activeTruck.assets || []).map(String)
-                  )
-                : activeAssetIds;
+              const targetAssetIds = challanAssetIds(conf, hasTransfers ? challanDetailTab : 'dispatch', activeTruck);
 
               // Guaranteed mapping: Every ID in targetAssetIds gets an asset object.
               // Multi-tier fallback ensures no item can EVER disappear due to pool lookup miss.
@@ -9408,9 +9395,11 @@ const App: React.FC = () => {
       ══════════════════════════════════════════════════════════════════ */}
       {showTransferModal && (() => {
         const packPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-        const modalPackupList = packPool.filter(a =>
+        const onSiteAssets = packPool.filter(a =>
           new Set((conferenceFormData.assets || []).map(String)).has(String(a.id))
         );
+        const modalPackupList = onSiteAssets.filter(a => !isBulkStock(a) && a.type !== 'Consumables');
+        const excludedQuantities = onSiteAssets.length - modalPackupList.length;
         const otherConferences = backendConferences.filter(c =>
           c.id !== conferenceFormData.id && !c.isAudit
         );
@@ -9484,6 +9473,7 @@ const App: React.FC = () => {
 
               {/* Scrollable body */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+                {excludedQuantities > 0 && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Bulk stock and consumables cannot be moved through this transfer screen yet. This list contains individually tracked equipment only.</p>}
 
                 {/* ── Step 1: Select Assets ─────────────────────────── */}
                 <div>
@@ -9587,15 +9577,15 @@ const App: React.FC = () => {
                 {/* ── Step 2: From Address ──────────────────────────── */}
                 <div>
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
-                    Step 2 — From Address (optional)
+                    Step 2 — Dispatched from
                   </p>
-                  <input
-                    type="text"
-                    placeholder={`Current venue (e.g. ${conferenceFormData.transport_address || 'HICC Hyderabad'})`}
-                    value={transferFromAddress}
-                    onChange={e => setTransferFromAddress(e.target.value)}
+                  <textarea
+                    aria-label="Transfer dispatch venue"
+                    readOnly
+                    value={backendConferences.find(c => c.id === String(conferenceFormData.id))?.transportAddress || ''}
                     className="w-full bg-slate-50 rounded-2xl px-4 py-3.5 text-sm font-bold text-slate-800 border border-slate-200 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
                   />
+                  <p className="text-xs text-slate-700 mt-2">Uses this program’s saved delivery address. Save any address correction before transferring equipment.</p>
                 </div>
 
                 {/* ── Step 3: Choose Destination Conference ─────────── */}

@@ -97,6 +97,8 @@ def execute_command(user, conference_id, payload):
         if any(a.is_temporary for a in assets):
             raise CommandError('external_rental_uses_supplier_balance')
     target = events.get(command.get('target_conference_id'))
+    from .dispatch_origins import venue_origin, warehouse_origin
+    dispatch_origin = venue_origin(event) if target else warehouse_origin() if action == 'dispatch' else None
     from .event_lifecycle import require_open_event
     require_open_event(event)
     if target:
@@ -175,7 +177,8 @@ def execute_command(user, conference_id, payload):
         from django.utils import timezone
         common = {'timestamp': timezone.now().isoformat(), 'request_id': command['request_id'],
                   'transferred_asset_ids': ids, 'asset_names': [a.alias_name or a.sku for a in assets],
-                  'transferred_by': user.pk, 'from_address': command['source']}
+                  'transferred_by': user.pk, 'from_address': dispatch_origin['address'],
+                  'dispatch_origin': dispatch_origin, 'to_address': target.transport_address or ''}
         event.transfer_log = [*(event.transfer_log or []), {**common, 'direction': 'outgoing', 'to_conference_id': target.pk, 'to_conference_name': target.name}]
         target.transfer_log = [*(target.transfer_log or []), {**common, 'direction': 'incoming', 'from_conference_id': event.pk, 'from_conference_name': event.name}]
         event.save(update_fields=['transfer_log']); target.save(update_fields=['transfer_log'])
@@ -190,11 +193,13 @@ def execute_command(user, conference_id, payload):
                         'source': command['source'],
                         'before': {'active': asset.pk in active, 'unchecked': asset.pk in crosscheck, 'staged': asset.pk in staged},
                         'after': {'active': event.assets.filter(pk=asset.pk).exists(), 'unchecked': event.crosscheck_assets.filter(pk=asset.pk).exists(), 'staged': event.staged_assets.filter(pk=asset.pk).exists()}}
+            if dispatch_origin is not None:
+                snapshot['dispatch_origin'] = dispatch_origin
             PhysicalMovement.objects.create(asset=asset, conference=event, target_conference=target, receipt=receipt,
                                             action='transfer_out' if target else action, snapshot=snapshot)
             if target:
                 PhysicalMovement.objects.create(asset=asset, conference=target, target_conference=event, receipt=receipt,
-                                                action='transfer_in', snapshot={'asset': snapshot['asset'], 'accepted_from_event_id': event.pk, 'source': command['source']})
+                                                action='transfer_in', snapshot={'asset': snapshot['asset'], 'accepted_from_event_id': event.pk, 'source': command['source'], 'dispatch_origin': dispatch_origin})
     result = {'request_id': command['request_id'], 'action': action, 'asset_ids': ids,
               'conference': canonical_conference(event),
               'asset_states': AssetSerializer(Asset.objects.filter(pk__in=ids).order_by('pk'), many=True).data, 'replayed': False}

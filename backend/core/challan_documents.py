@@ -198,6 +198,8 @@ def capture_header(event, truck=None, owner_sections_version=1):
     keys = ['name', 'association_name', 'billing_address', 'transport_address', 'gst_number',
             'contact_person', 'contact_phone', 'contact_email', 'conference_type', 'start_date', 'end_date']
     header = {key: str(getattr(event, key) or '') for key in keys}
+    from .dispatch_origins import event_origins
+    header['dispatch_origins'] = event_origins(event)
     multi_truck = not truck and event.truck_challans.exists()
     header.update(vehicle_number=truck.vehicle_number if truck else '' if multi_truck else event.vehicle_number,
                   driver_phone=truck.driver_phone if truck else '' if multi_truck else event.driver_phone)

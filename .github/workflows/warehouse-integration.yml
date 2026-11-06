@@ -46,6 +46,7 @@ jobs:
           node scripts/testing/frontend_step4b2.cjs
           node scripts/testing/frontend_step6b.cjs
           node scripts/testing/frontend_program_deliveries.cjs
+          node scripts/testing/frontend_challan_selection.cjs
       - name: Typecheck and build exact reviewed frontend
         working-directory: frontend
         run: |
@@ -59,6 +60,7 @@ jobs:
           TT_TEST_PYTHON: python
         run: |
           node scripts/testing/browser_warehouse_quantities.cjs
+          node scripts/testing/browser_contacts_transfers.cjs
           node scripts/testing/browser_program_deliveries.cjs
           node scripts/testing/browser_conference_camera.cjs
           node scripts/testing/browser_step6b.cjs

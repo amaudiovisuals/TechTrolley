@@ -6,6 +6,7 @@ import { assetLine, documentScope, legacyDocumentAssets, lineAsset, snapshotBook
 import { ownerSections, overlappingSourceIds, importChallanSources } from '../state/ownerSections';
 import { Logo } from './Logo';
 import { manifestCommand } from '../state/truckManifests';
+import { paperOrigins } from '../state/dispatchOrigins';
 
 const EXCLUDED_LAPTOP_KEYWORDS = [
   'connector', 'modem', 'monitor', 'mouse', 'server', 'printer', 'ups', 
@@ -954,10 +955,19 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </div>
       </div>
 
+      {paperOrigins(booking, assets).length > 0 && <section aria-label="Dispatched from" className="mb-3 rounded border border-gray-300 p-2 text-gray-900">
+        <h4 className="font-bold uppercase">Dispatched from</h4>
+        {paperOrigins(booking, assets).map((origin, index) => <div key={index} className="mt-1">
+          <p className="font-bold">{origin.kind === 'venue' ? origin.name : `Godown — ${origin.name}`}</p>
+          <p className="whitespace-pre-wrap">{origin.address || 'Address not recorded'}</p>
+          {paperOrigins(booking, assets).length > 1 && <p>Equipment: {assets.filter(asset => origin.asset_ids.includes(Number(asset.challanLine?.asset_id ?? asset.id))).map(asset => asset.sku || asset.aliasName).join(', ')}</p>}
+        </div>)}
+      </section>}
       <div className="challan-parties grid grid-cols-2 gap-2 mb-2">
         <div>
           <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Service Receiver</h4>
           <div className="mt-1 space-y-1">
+            {booking.associationName && !booking.billingAddress?.trim().toLowerCase().startsWith(booking.associationName.trim().toLowerCase()) && <p className="text-[10px] text-gray-900 font-black uppercase">{booking.associationName}</p>}
             <p className="text-[10px] text-gray-900 font-black uppercase leading-tight">{booking.billingAddress}</p>
             {booking.gstNumber && <p className="text-[8px] font-bold text-gray-900 uppercase">GST: {booking.gstNumber}</p>}
             <div className="pt-0.5 border-t border-gray-100 space-y-0.5">

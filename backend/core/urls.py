@@ -1,4 +1,4 @@
-from . import program_deliveries
+from . import program_deliveries, address_book
 from .asset_commands import asset_commands
 from .offline_packages import offline_package
 from .quantity_commands import quantity_commands
@@ -25,6 +25,10 @@ from .challan_documents import challan_document, challan_history
 from . import staff_commands, event_lifecycle, reconciliation_commands
 
 urlpatterns = [
+    path('saved-customers/', address_book.customers, name='saved_customers'),
+    path('saved-customers/<int:pk>/', address_book.customer_detail, name='saved_customer'),
+    path('saved-venues/', address_book.venues, name='saved_venues'),
+    path('saved-venues/<int:pk>/', address_book.venue_detail, name='saved_venue'),
     path('conferences/<int:pk>/deliveries/', program_deliveries.program_deliveries, name='program_deliveries'),
     path('conferences/<int:pk>/deliveries/preview/', program_deliveries.delivery_preview, name='delivery_preview'),
     path('conferences/<int:pk>/deliveries/<int:delivery_pk>/void/', program_deliveries.void_delivery, name='void_delivery'),

@@ -100,6 +100,7 @@ def sources(conference, truck_id=None, lock=False):
             'sku': snapshot.get('sku') or '', 'serial': snapshot.get('serial_number') or '',
             'owner_id': line.supplier_id, 'owner': owner_snapshot})
     return {'version': 2, 'conference_id': conference.pk, 'truck_id': truck_id,
+        'dispatch_origins': header.get('dispatch_origins', []),
         'document_id': str(document.pk), 'document_revision': document.revision,
         'event_revision': conference.revision,
         'program': {'name': header.get('name', ''), 'start_date': header.get('start_date', ''), 'end_date': header.get('end_date', '')},
@@ -200,12 +201,15 @@ def program_deliveries(request, pk):
             common.update(delivery_date=delivery_date.isoformat(), reference=reference,
                           vehicle_number=label(data.get('vehicle_number', source['vehicle_number']), 50),
                           driver_phone=label(data.get('driver_phone', source['driver_phone']), 50))
-            customer = {**common, 'number': f'{fy}/OUT-{delivery.pk:06d}', 'direction': 'customer',
+            from .dispatch_origins import selected_origins
+            customer = {**common, 'dispatch_origins': selected_origins(source.get('dispatch_origins', []), [row['asset_id'] for row in selected]),
+                        'number': f'{fy}/OUT-{delivery.pk:06d}', 'direction': 'customer',
                         'issuer': source['issuer'], 'recipient': source['customer'], 'rows': selected}
             suppliers = []
             for owner_id in sorted({row['owner_id'] for row in selected if row['owner_id']}):
                 rows = [row for row in selected if row['owner_id'] == owner_id]
-                suppliers.append({**common, 'number': f'{fy}/SR{owner_id}-{delivery.pk:06d}', 'direction': 'supplier',
+                suppliers.append({**common, 'dispatch_origins': selected_origins(source.get('dispatch_origins', []), [row['asset_id'] for row in rows]),
+                                  'number': f'{fy}/SR{owner_id}-{delivery.pk:06d}', 'direction': 'supplier',
                                   'issuer': rows[0]['owner'], 'recipient': source['issuer'], 'rows': rows})
             delivery.snapshot = {'version': 1, 'customer_document': customer, 'supplier_documents': suppliers}
             delivery.save(update_fields=['snapshot'])

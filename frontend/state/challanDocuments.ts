@@ -157,6 +157,7 @@ export function snapshotBooking(booking: Booking, document?: ChallanDocument | n
   const h = document.header;
   return { ...booking, conferenceName: h.name ?? booking.conferenceName,
     associationName: h.association_name ?? booking.associationName,
+    dispatchOrigins: h.dispatch_origins || [],
     billingAddress: h.billing_address ?? booking.billingAddress,
     transportAddress: h.transport_address ?? booking.transportAddress, venue: h.transport_address ?? booking.venue,
     gstNumber: h.gst_number ?? booking.gstNumber, vehicleNumber: h.vehicle_number ?? booking.vehicleNumber,

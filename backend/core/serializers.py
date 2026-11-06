@@ -285,6 +285,8 @@ class ConferenceSerializer(serializers.ModelSerializer):
         data['consumable_assets_details'] = SimpleAssetSerializer(Asset.objects.filter(
             pk__in=[int(key) for key in consumable_ids if str(key).isdigit()]).select_related('subrental_company').order_by('pk'), many=True).data
         data['challan_documents'] = [document_data(document) for document in instance.challan_documents.all()]
+        from .dispatch_origins import event_origins
+        data['dispatch_origins'] = event_origins(instance)
         from .models import TruckManifest
         from .truck_manifests import manifest_data
         manifest = TruckManifest.objects.filter(conference=instance).first()

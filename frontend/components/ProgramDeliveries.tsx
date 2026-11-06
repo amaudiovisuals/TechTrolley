@@ -5,6 +5,7 @@ import { setWorkBlocker } from '../state/workSafety';
 type Party = { name: string; address?: string; gst_number?: string; phone?: string; email?: string; website?: string };
 type Row = { key: string; name: string; sku: string; serial: string; quantity: number; owner_id: number | null; owner: Party | null };
 type Paper = { number: string; reference: string; direction: 'customer' | 'supplier'; issuer: Party; recipient: Party; rows: Row[];
+  dispatch_origins?: { kind: string; name: string; address: string; asset_ids: number[] }[];
   delivery_date: string; vehicle_number: string; driver_phone: string; destination: string; program: { name: string; start_date: string; end_date: string } };
 type Delivery = { id: number; reference: string; issued_at: string; issued_by: string; voided_at: string | null; void_reason: string;
   snapshot: { customer_document: Paper; supplier_documents: Paper[] } };
@@ -39,6 +40,7 @@ export function deliveryPaperHtml(paper: Paper, delivery: Delivery): string {
     <h1>DELIVERY CHALLAN</h1><div class="meta"><strong>${escape(paper.number)}</strong><span>Date: ${escape(paper.delivery_date)}</span></div>
     <div>Delivery: ${escape(paper.reference)}</div><div>Program: ${escape(paper.program.name)}${paper.program.start_date || paper.program.end_date ? ` (${escape(paper.program.start_date)} to ${escape(paper.program.end_date)})` : ''}</div>
     <div class="parties"><div><h2>From</h2>${party(paper.issuer)}</div><div><h2>To</h2>${party(paper.recipient)}</div></div>
+    ${paper.dispatch_origins?.length ? `<div><h2>Dispatched from</h2>${paper.dispatch_origins.map(origin => `<div><strong>${escape(origin.name)}</strong><div>${escape(origin.address || 'Address not recorded')}</div></div>`).join('')}</div>` : ''}
     <div>Destination / place of use: ${escape(paper.destination)}</div><div class="meta"><span>Vehicle: ${escape(paper.vehicle_number)}</span><span>Driver phone: ${escape(paper.driver_phone)}</span></div>
     <table><thead><tr><th>No.</th><th>Equipment</th><th>SKU</th><th>Serial number</th><th>Qty</th></tr></thead><tbody>${rows}</tbody></table>
     <p>Total quantity: ${paper.rows.reduce((sum, row) => sum + row.quantity, 0)}</p><p>Equipment supplied on rental / returnable basis. This document is not a tax invoice.</p>

@@ -39,6 +39,7 @@ export function mapConference(c: any): Booking {
             isAudit: c.is_audit || false,  // J-109: propagate audit flag into backendConferences
             is_invoiced: Boolean(c.is_invoiced),
             isInvoiced: Boolean(c.is_invoiced),
+            dispatchOrigins: c.dispatch_origins || [],
             transfer_log: c.transfer_log || [],  // Asset transfer audit trail
             truckChallans: (c.truck_challans_data || []).map((t: any) => ({
               id: String(t.id),

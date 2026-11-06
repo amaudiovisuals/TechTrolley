@@ -210,6 +210,8 @@ export interface Booking {
   operatorId?: string;
   challanNumber: string;
   clientId?: string;
+  dispatch_origins?: DispatchOrigin[];
+  dispatchOrigins?: DispatchOrigin[];
   transportAddress?: string;
   gstNumber?: string;
   vehicleNumber?: string;
@@ -343,3 +345,5 @@ export interface SubrentalTicket {
   available_till: string;
   items: SubrentalTicketItem[];
 }
+
+export interface DispatchOrigin { kind: 'venue' | 'warehouse'; name: string; address: string; conference_id: number | null; asset_ids: number[] }
