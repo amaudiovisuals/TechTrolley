@@ -37,6 +37,9 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    await overlay.getByPlaceholder('Scan or type QR / Barcode...').fill('TRANSFER-CABLE');await overlay.getByPlaceholder('Scan or type QR / Barcode...').press('Enter');
    const quantity=page.getByLabel('Transfer quantity TRANSFER-CABLE',{exact:true});assert.equal(await quantity.inputValue(),'20');await quantity.fill('8');
    await overlay.locator('select').selectOption(String((await inspect()).target_id));await page.setViewportSize({width:390,height:844});
+   const confirm=page.getByRole('button',{name:'Transfer (8)',exact:true});assert.equal(await confirm.isEnabled(),true);
+   await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(el=>el.textContent.trim()==='Transfer (8)'&&getComputedStyle(el).opacity==='1'));
+   const contrast=await confirm.evaluate(el=>{const luminance=color=>color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);const css=getComputedStyle(el),a=luminance(css.color),b=luminance(css.backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);});assert(contrast>=4.5,'Transfer confirmation must remain readable');
    assert.equal(await quantity.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}),true);
    if(process.env.TT_TEST_SCREENSHOT)await page.screenshot({path:process.env.TT_TEST_SCREENSHOT});
    await page.getByRole('button',{name:'Transfer (8)',exact:true}).click();await page.getByRole('button',{name:'1 movement(s) pending — retry',exact:true}).waitFor();

@@ -9629,7 +9629,7 @@ const App: React.FC = () => {
                     type="button"
                     disabled={transferUnitCount === 0 || !transferTargetConfId || transferring}
                     onClick={handleAssetTransfer}
-                    className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
+                    className="flex-1 py-3.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
                   >
                     {transferring ? (
                       <><i aria-hidden="true" className="fa-solid fa-spinner fa-spin"></i> Transferring...</>
