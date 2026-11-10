@@ -8,6 +8,15 @@ from .models import Asset, SubrentalCompany, CompanySettings
 from .asset_commands import CommandError
 
 
+def stock_identity_tokens(asset):
+    """Keep usable labels and ignore the legacy missing-serial marker."""
+    tokens = {str(getattr(asset, field) or '').strip() for field in ('sku', 'qr_code', 'barcode')}
+    serial = str(asset.serial_number or '').strip()
+    if serial.casefold() != 'nil':
+        tokens.add(serial)
+    return tokens - {''}
+
+
 def warehouse_managed(asset):
     return asset.stock_kind != 'led_case' and not asset.is_temporary and (asset.subrental_company_id is None or asset.subrental_company.inventory_mode == 'shared_warehouse')
 

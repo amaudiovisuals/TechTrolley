@@ -20,6 +20,7 @@ from .challan_documents import capture_header
 from .inventory_ownership import inventory_summary
 from .led_cases import convert, prepare
 from .models import Asset, ChallanDocument, ChallanLine, CompanySettings, Conference, LedCaseConversion, LedCasePanel, SubrentalCompany
+from .ownership_commands import item_blockers
 from .serializers import AssetSerializer, ConferenceSerializer
 from .test_support import SnapshotTestCase
 
@@ -138,6 +139,23 @@ class LedCaseTests(SnapshotTestCase):
         Asset.objects.create(sku=f'LED-P2-{self.box.pk}-P1')
         self.assertIn('duplicate_box_or_generated_panel_identifier', prepare(self.box)[0]['blockers'])
         self.assertEqual(LedCasePanel.objects.count(), 0)
+
+    def test_missing_serial_marker_is_not_an_identifier(self):
+        self.box.serial_number = ' nil '
+        self.box.save(update_fields=['serial_number'])
+        self.flexible.serial_number = 'NIL'
+        self.flexible.qr_code = self.box.qr_code
+        self.flexible.save(update_fields=['serial_number', 'qr_code'])
+        self.assertIn('duplicate_box_or_generated_panel_identifier', prepare(self.box)[0]['blockers'])
+        self.assertIn('ambiguous_inventory_identifier', item_blockers(self.box))
+
+        self.flexible.qr_code = 'OTHER-BOX-QR'
+        self.flexible.save(update_fields=['qr_code'])
+        self.assertNotIn('ambiguous_inventory_identifier', item_blockers(self.box))
+        _, panels = self.conversion()
+        self.assertEqual(len(panels), 6)
+        self.box.refresh_from_db()
+        self.assertEqual(self.box.serial_number, ' nil ')
 
     @override_settings(LED_CASE_CONVERSION_WRITES_ENABLED=False)
     def test_disabled_gate_never_changes_stock(self):

@@ -18,6 +18,7 @@ from rest_framework.response import Response
 
 from .asset_commands import CommandError
 from .custody import custody_state
+from .inventory_ownership import stock_identity_tokens
 from .models import (Asset, CompanySettings, Conference, MovementReceipt,
                      OwnershipHistory, OwnershipTarget, SubrentalCompany)
 from .permissions import ADMIN_ROLES, WAREHOUSE_ROLES, get_business_role
@@ -163,8 +164,7 @@ def item_blockers(asset):
         latest[row.conference_id] = row.action
     if any(action not in {'verify_return', 'transfer_out', 'legacy_return_review'} for action in latest.values()):
         reasons.append('unresolved_movement_history')
-    tokens = {str(getattr(asset, key) or '').strip() for key in ('sku', 'serial_number', 'barcode', 'qr_code')} - {''}
-    for token in tokens:
+    for token in stock_identity_tokens(asset):
         query = Q(sku__iexact=token) | Q(serial_number__iexact=token) | Q(barcode__iexact=token) | Q(qr_code__iexact=token)
         if Asset.objects.filter(query).exclude(pk=asset.pk).exists():
             reasons.append('ambiguous_inventory_identifier')

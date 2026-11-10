@@ -13,6 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .asset_commands import CommandError
+from .inventory_ownership import stock_identity_tokens
 from .models import Asset, LedCaseConversion, LedCasePanel
 from .permissions import ADMIN_ROLES, WAREHOUSE_ROLES, get_business_role
 from .reconciliation_commands import canonical, database_identity, digest
@@ -76,7 +77,7 @@ def prepare(asset):
         blocked.append('unresolved_physical_movement_history')
     if asset.subrental_company_id and asset.subrental_company.inventory_mode != 'shared_warehouse':
         blocked.append('supplier_must_be_shared_warehouse')
-    tokens = {str(getattr(asset, field) or '').strip() for field in ('sku', 'qr_code', 'barcode', 'serial_number')} - {''}
+    tokens = stock_identity_tokens(asset)
     for token in tokens | {panel_sku(asset.pk, slot) for slot in range(1, 7)}:
         if Asset.objects.exclude(pk=asset.pk).filter(Q(sku__iexact=token) | Q(qr_code__iexact=token) | Q(barcode__iexact=token) | Q(serial_number__iexact=token)).exists():
             blocked.append('duplicate_box_or_generated_panel_identifier'); break
