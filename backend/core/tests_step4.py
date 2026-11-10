@@ -165,6 +165,17 @@ class ChallanDocumentTests(SnapshotTestCase):
             self.assertEqual(self.event.revision, command['expected_event_revision'])
             self.assertEqual(self.event.lifecycle_state, 'completed')
 
+    def test_reviewed_archive_is_admin_only_even_without_end_date(self):
+        original = self.save(self.payload(state='issued'))['document']
+        ChallanDocument.objects.filter(pk=original['id']).update(provenance='reviewed_legacy_archive')
+        warehouse = User.objects.create_user('archive-warehouse')
+        warehouse.profile.role = 'godown_incharge'
+        warehouse.profile.save()
+        command = self.payload(original['lines'], original, state='issued', correction_reason='Reviewed wording')
+        with self.assertRaisesMessage(CommandError, 'challan_edit_window_closed'):
+            save_document(warehouse, self.event.pk, 'master', command)
+        self.assertEqual(self.save(command)['document']['revision'], 2)
+
     def test_ticket_source_validation_and_duplicate_source_rejection(self):
         supplier = SubrentalCompany.objects.create(name='Supplier')
         ticket = SubrentalTicket.objects.create(company=supplier, conference=self.event)

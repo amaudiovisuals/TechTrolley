@@ -275,6 +275,7 @@ def save_document(user, event_id, scope, payload, coordinated=False):
     late_correction = require_challan_edit(
         event, user, correction=bool(document and command['state'] == 'issued'),
         reason=command['correction_reason'], require_open=True,
+        archived=bool(document and document.provenance == 'reviewed_legacy_archive'),
     )
     if command['expected_revision'] != (document.revision if document else 0):
         raise CommandError('document_changed')

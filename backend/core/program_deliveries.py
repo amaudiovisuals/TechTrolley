@@ -111,6 +111,8 @@ def sources(conference, truck_id=None, lock=False):
     if truck_id is not None:
         get_object_or_404(TruckChallan, pk=truck_id, conference=conference)
     document = ChallanDocument.objects.filter(conference=conference, scope=scope).first()
+    if document and document.provenance == 'reviewed_legacy_archive':
+        raise ValidationError('This archived challan is available for reprint. Use a new program for a new delivery.')
     if document is None:
         raise ValidationError('Save a reviewed customer challan before creating this delivery. Existing saved delivery copies remain available.')
     header = document.header

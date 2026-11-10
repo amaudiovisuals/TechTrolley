@@ -192,7 +192,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 }) => {
   const scope = documentScope(localStorageSuffix);
   const document = useSavedDocument ? providedDocument || liveBooking.challan_documents?.find(document => document.scope === scope) : undefined;
-  const locked = Boolean(useSavedDocument && liveBooking.challans_locked);
+  const locked = Boolean(useSavedDocument && (liveBooking.challans_locked || document?.provenance === 'reviewed_legacy_archive'));
   const readOnly = baseReadOnly || (locked && (!canCorrectLocked || !document));
   const frozenCopy = Boolean(document && (document.state === 'issued' || locked));
   const booking = snapshotBooking(useSavedDocument ? liveBooking : { ...liveBooking, approximate_value: null }, document, locked);

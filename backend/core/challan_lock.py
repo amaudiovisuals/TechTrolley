@@ -22,8 +22,8 @@ def challans_locked(event):
     return deadline is not None and timezone.localdate(timezone=INDIA) >= deadline
 
 
-def require_challan_edit(event, user=None, *, correction=False, reason='', require_open=False):
-    locked = challans_locked(event)
+def require_challan_edit(event, user=None, *, correction=False, reason='', require_open=False, archived=False):
+    locked = archived or challans_locked(event)
     can_correct = correction and is_business_administrator(user)
     if require_open and not (locked and can_correct):
         from .event_lifecycle import require_open_event

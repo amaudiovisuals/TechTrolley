@@ -8621,6 +8621,8 @@ const App: React.FC = () => {
               const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
               const canCorrectChallan = ['admin', 'boss'].includes(user?.role || '');
               const canReadHistory = canCorrectChallan || ['godown_incharge', 'accounts'].includes(user?.role || '');
+              const archivedChallan = conf.challan_documents?.some(row =>
+                row.scope === (activeTruck ? `truck-${activeTruck.id}` : 'master') && row.provenance === 'reviewed_legacy_archive');
 
               const targetAssetIds = challanAssetIds(conf, hasTransfers ? challanDetailTab : 'dispatch', activeTruck);
 
@@ -9315,7 +9317,7 @@ const App: React.FC = () => {
                       accountId={String(user?.user_id || user?.email || '')}
                       conferenceId={String(conf.id)} truckId={activeTruck?.id}
                       canIssue={['admin', 'boss', 'godown_incharge'].includes(user?.role || '')}
-                      locked={conf.challans_locked} canCorrect={canCorrectChallan}
+                      locked={conf.challans_locked || archivedChallan} canCorrect={canCorrectChallan}
                       apiFetch={apiFetch} apiBase={API_BASE}
                     />}
 
