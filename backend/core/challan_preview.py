@@ -4,10 +4,12 @@ from .challan_documents import capture_header
 from .models import Conference
 
 
-def preview_legacy_documents(conference_id=None):
+def preview_legacy_documents(conference_id=None, *, numbered_only=False):
     events = Conference.objects.order_by('pk')
     if conference_id is not None:
         events = events.filter(pk=conference_id)
+    if numbered_only:
+        events = events.filter(is_audit=False)
     documents, warnings = [], []
     numbers = {}
     for event in events:
@@ -16,8 +18,15 @@ def preview_legacy_documents(conference_id=None):
         ticket_asset_ids = {item.asset_id for ticket in tickets for item in ticket.items.all()}
         scopes = [('master', None)] + [(f'truck-{truck.pk}', truck) for truck in event.truck_challans.order_by('pk')]
         for scope, truck in scopes:
+            number = (truck.challan_number if truck else event.challan_number) or ''
+            if numbered_only and not number.strip():
+                continue
             if event.challan_documents.filter(scope=scope).exists():
                 continue
+            if numbered_only:
+                for field in ('end_date', 'challan_date'):
+                    if getattr(event, field) is None:
+                        warnings.append({'conference_id': event.pk, 'scope': scope, 'code': f'legacy_{field}_not_recorded'})
             assets = truck.assets.all() if truck else event.challan_assets.all()
             if not truck and not assets.exists():
                 ids = set(event.assets.values_list('pk', flat=True)) | set(event.staged_assets.values_list('pk', flat=True)) | set(event.crosscheck_assets.values_list('pk', flat=True))
@@ -62,9 +71,10 @@ def preview_legacy_documents(conference_id=None):
                 rows.append({'id': str(uuid.uuid5(uuid.NAMESPACE_URL, f'techtrolley:legacy:{event.pk}:{scope}:asset:{asset.pk}')),
                     'asset_id': asset.pk, 'ticket_item_id': None, 'supplier_id': asset.subrental_company_id,
                     'source_kind': 'supplier' if asset.subrental_company_id else 'owned',
-                    'quantity': quantity, 'unit_value': str(asset.item_price or 0),
+                    'quantity': quantity, 'unit_value': str(asset.current_value if numbered_only else asset.item_price or 0),
                     'snapshot': {'sku': asset.sku or '', 'alias_name': asset.alias_name or asset.description or asset.sku or f'Item {asset.pk}',
                                  'serial_number': asset.serial_number or '', 'type': asset.type, 'description': asset.description or '',
+                                 'mac_address': asset.mac_address or '', 'imei_number_1': asset.imei_number_1 or '', 'imei_number_2': asset.imei_number_2 or '',
                                  'supplier_name': asset.subrental_company.name if asset.subrental_company else ''}})
             if not truck:
                 for ticket in tickets:
@@ -81,14 +91,15 @@ def preview_legacy_documents(conference_id=None):
                 for key, data in legacy_consumables.items():
                     if isinstance(data, dict) and data.get('requested', 0) and str(key) not in {str(aid) for aid in consumables}:
                         warnings.append({'conference_id': event.pk, 'scope': scope, 'asset_id': key, 'code': 'consumable_legacy_ledger_requires_settlement_review'})
-            number = (truck.challan_number if truck else event.challan_number) or ''
             owners = numbers.setdefault(number, []) if number else []
             owners.append({'conference_id': event.pk, 'scope': scope, 'truck_number': truck.truck_number if truck else None})
             for position, row in enumerate(rows):
                 row['position'] = position
             documents.append({'conference_id': event.pk, 'scope': scope, 'truck_id': truck.pk if truck else None,
                 'number': number, 'expected_event_revision': event.revision, 'provenance': 'legacy_snapshot_at_preview',
-                'header': capture_header(event, truck), 'lines': rows})
+                'header': capture_header(event, truck, None if numbered_only else 1), 'lines': rows,
+                'document_date': event.challan_date.isoformat() if event.challan_date else None,
+                'total_override': str(event.approximate_value) if not truck and event.approximate_value is not None else None})
     for number, owners in numbers.items():
         if len({owner['conference_id'] for owner in owners}) > 1 or any(owner['truck_number'] not in (None, 1) for owner in owners) and len(owners) > 1:
             warnings.append({'number': number, 'code': 'legacy_number_collision', 'owners': owners})

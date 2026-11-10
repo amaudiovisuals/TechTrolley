@@ -2,6 +2,7 @@
 import os
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from wsgiref.simple_server import make_server
 
@@ -34,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='tt-consumable-browser-') as media:
     Token.objects.create(user=user, key='synthetic-consumable-token')
     CompanySettings.objects.create(name='Synthetic company')
     stock = Asset.objects.create(sku='CONSUME-10', alias_name='Synthetic tape stock', type='Consumables', quantity=10)
-    event = Conference.objects.create(name='Synthetic consumable event', challan_number='SYNTHETIC-CONSUME', start_date='2026-10-09', end_date='2026-10-10')
+    event = Conference.objects.create(name='Synthetic consumable event', challan_number='SYNTHETIC-CONSUME', start_date=date.today(), end_date=date.today())
     for role in ('admin', 'boss', 'technician'):
         actor = User.objects.create(username=f'synthetic-{role}', email=f'{role}@example.test')
         actor.profile.role = role; actor.profile.save()

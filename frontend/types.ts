@@ -179,6 +179,8 @@ export interface Client {
 export type ConferenceType = 'Medical Conference' | 'Personal Rental';
 
 export interface Booking {
+  challans_locked?: boolean;
+  challan_lock_on?: string | null;
   lifecycle_state?: 'open' | 'completed' | 'archived';
   completed_at?: string | null;
   completed_by?: number | null;

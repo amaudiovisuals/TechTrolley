@@ -2,6 +2,7 @@
 import os
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from wsgiref.simple_server import make_server
 
@@ -36,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='tt-quantity-browser-') as media:
     CompanySettings.objects.create(name='Synthetic company')
     bulk = Asset.objects.create(sku='BULK-10', alias_name='Synthetic cable stock', type='Cable', quantity=10)
     physical = Asset.objects.create(sku='PHYSICAL-1', alias_name='Synthetic speaker', quantity=1)
-    event = Conference.objects.create(name='Synthetic bulk event', challan_number='SYNTHETIC-BULK', start_date='2026-10-09', end_date='2026-10-10')
+    event = Conference.objects.create(name='Synthetic bulk event', challan_number='SYNTHETIC-BULK', start_date=date.today(), end_date=date.today())
 
     def inspect(request):
         return JsonResponse({'asset_count': Asset.objects.count(), 'stock': Asset.objects.get(pk=bulk.pk).quantity,

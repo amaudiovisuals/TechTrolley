@@ -150,9 +150,9 @@ export function masterQuantityPreview(booking: Booking, assets: Asset[], mode: '
   return legacyDocumentAssets(documentSourceAssets(assets, booking).filter(asset => selected.has(String(asset.id))), [], booking, 'master', `${booking.id}:master`, mode);
 }
 
-export function snapshotBooking(booking: Booking, document?: ChallanDocument | null): Booking {
+export function snapshotBooking(booking: Booking, document?: ChallanDocument | null, freezeDraft = false): Booking {
   if (!document) return booking;
-  if (document.state === 'draft') return { ...booking, challanNumber: document.number,
+  if (document.state === 'draft' && !freezeDraft) return { ...booking, challanNumber: document.number,
     challanDate: document.document_date || '', approximate_value: document.total_override === null ? null : Number(document.total_override) } as Booking;
   const h = document.header;
   return { ...booking, conferenceName: h.name ?? booking.conferenceName,

@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import uuid
+from datetime import date
 from pathlib import Path
 from wsgiref.simple_server import make_server
 
@@ -47,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='tt-document-sources-') as media:
     supplier = SubrentalCompany.objects.create(name='External rental company', inventory_mode='external_supplier')
     rental = Asset.objects.create(sku='RENT-20', alias_name='Rental speaker', quantity=20, subrental_company=supplier)
     event = Conference.objects.create(name='Synthetic source event', challan_number='SYNTHETIC-SOURCES',
-        start_date='2026-10-09', end_date='2026-10-10', challan_date='2026-10-08', approximate_value=None)
+        start_date=date.today(), end_date=date.today(), challan_date='2026-10-08', approximate_value=None)
     for action, quantity in [('stage', 6), ('dispatch', 6), ('return', 2)]:
         event.refresh_from_db()
         execute_quantity_command(user, event.pk, {'request_id': str(uuid.uuid4()), 'action': action,

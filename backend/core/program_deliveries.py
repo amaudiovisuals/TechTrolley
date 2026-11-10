@@ -13,6 +13,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Asset, CompanySettings, Conference, ProgramDelivery, SubrentalTicketItem, TruckChallan
+from .permissions import is_business_administrator
+from .challan_lock import challans_locked
 
 
 def access(user, write=False):
@@ -64,7 +66,9 @@ def supplier_edits(data, selected):
 
 
 def supplier_paper(common, source, rows, number, changes):
-    issuer, recipient = dict(rows[0]['owner']), dict(source['issuer'])
+    original = source.get('supplier_defaults', {}).get(str(rows[0]['owner_id']), {})
+    issuer = dict(original.get('issuer', rows[0]['owner']))
+    recipient = dict(original.get('recipient', source['issuer']))
     for prefix, target in [('issuer', issuer), ('recipient', recipient)]:
         for field in ('name', 'address', 'gst_number'):
             key = f'{prefix}_{field}'
@@ -73,8 +77,31 @@ def supplier_paper(common, source, rows, number, changes):
     from .dispatch_origins import selected_origins
     return {**common, 'dispatch_origins': selected_origins(source.get('dispatch_origins', []), [row['asset_id'] for row in rows]),
             'number': number, 'direction': 'supplier', 'issuer': issuer, 'recipient': recipient, 'rows': rows,
-            'destination': changes.get('destination', source['issuer'].get('address', '')),
-            'vehicle_number': changes.get('vehicle_number', ''), 'driver_phone': changes.get('driver_phone', '')}
+            'destination': changes.get('destination', original.get('destination', source['issuer'].get('address', ''))),
+            'vehicle_number': changes.get('vehicle_number', original.get('vehicle_number', '')),
+            'driver_phone': changes.get('driver_phone', original.get('driver_phone', ''))}
+
+
+def replacement_source(user, conference, delivery_id, truck_id):
+    if not is_business_administrator(user):
+        raise PermissionDenied('An administrator must issue a replacement.')
+    original = get_object_or_404(ProgramDelivery, conference=conference, pk=integer(delivery_id))
+    customer = original.snapshot['customer_document']
+    required = {'program', 'issuer', 'recipient', 'destination', 'vehicle_number', 'driver_phone', 'rows'}
+    if not required <= customer.keys():
+        raise ValidationError('The archived delivery is missing details needed for a replacement.')
+    if not original.voided_at or customer.get('truck_id') != truck_id:
+        raise ValidationError('Choose a voided delivery from this program and truck.')
+    if conference.issued_deliveries.filter(snapshot__replaces_delivery_id=original.pk).exists():
+        raise ValidationError('A replacement already exists for this delivery.')
+    return {
+        'replaces_delivery_id': original.pk, 'event_revision': conference.revision,
+        **{key: customer[key] for key in ('program', 'issuer', 'destination', 'vehicle_number', 'driver_phone', 'rows')},
+        'customer': customer['recipient'], 'truck_id': truck_id,
+        'dispatch_origins': customer.get('dispatch_origins', []),
+        'supplier_defaults': {str(paper['rows'][0]['owner_id']): paper
+                              for paper in original.snapshot['supplier_documents'] if paper['rows']},
+    }
 
 
 def sources(conference, truck_id=None, lock=False):
@@ -160,18 +187,20 @@ def serialized(delivery):
 def delivery_preview(request, pk):
     access(request.user, write=True)
     conference = get_object_or_404(Conference, pk=pk)
-    if conference.is_audit or conference.lifecycle_state != 'open':
-        raise ValidationError('Audit programs cannot issue delivery papers.')
     raw = request.query_params.get('truck_id')
     try:
         truck_id = int(raw) if raw else None
+        replaces = int(request.query_params['replaces_delivery_id']) if 'replaces_delivery_id' in request.query_params else None
     except ValueError:
-        raise ValidationError('Invalid truck.')
-    preview = sources(conference, truck_id)
+        raise ValidationError('Invalid truck or delivery.')
+    if conference.is_audit or (replaces is None and (conference.lifecycle_state != 'open' or challans_locked(conference))):
+        raise ValidationError('This program is closed for new delivery challans.')
+    preview = replacement_source(request.user, conference, replaces, truck_id) if replaces is not None else sources(conference, truck_id)
     delivered = {}
-    for saved in conference.issued_deliveries.filter(voided_at__isnull=True):
-        for row in saved.snapshot['customer_document']['rows']:
-            delivered[row['key']] = delivered.get(row['key'], 0) + row['quantity']
+    if replaces is None:
+        for saved in conference.issued_deliveries.filter(voided_at__isnull=True):
+            for row in saved.snapshot['customer_document']['rows']:
+                delivered[row['key']] = delivered.get(row['key'], 0) + row['quantity']
     return Response({'source': preview, 'source_hash': digest(preview), 'previously_delivered': delivered,
                      'suggested_reference': f'Delivery {conference.issued_deliveries.count() + 1}'})
 
@@ -200,12 +229,14 @@ def program_deliveries(request, pk):
                 if existing.conference_id != pk or existing.request_hash != request_hash:
                     return Response({'detail': 'This request key was already used for another delivery.'}, status=409)
                 return Response(serialized(existing))
-            if conference.is_audit or conference.lifecycle_state != 'open':
-                raise ValidationError('Audit programs cannot issue delivery papers.')
+            replaces = data.get('replaces_delivery_id')
+            if conference.is_audit or (replaces is None and (conference.lifecycle_state != 'open' or challans_locked(conference))):
+                raise ValidationError('This program is closed for new delivery challans.')
             truck_id = data.get('truck_id')
             if truck_id is not None:
                 integer(truck_id)
-            source = sources(conference, truck_id, lock=True)
+            source = replacement_source(request.user, conference, replaces, truck_id) if replaces is not None else sources(conference, truck_id, lock=True)
+            correction_reason = label(data.get('correction_reason'), 500, required=True) if replaces is not None else None
             if data.get('source_hash') != digest(source):
                 return Response({'detail': 'The program, equipment or company details changed. Reload the delivery preview.'}, status=409)
             reference = label(data.get('reference'), 100, required=True)
@@ -242,10 +273,11 @@ def program_deliveries(request, pk):
                           driver_phone=label(data.get('driver_phone', source['driver_phone']), 50))
             from .dispatch_origins import selected_origins
             previous={}
-            for saved in conference.issued_deliveries.exclude(pk=delivery.pk).filter(voided_at__isnull=True):
-                for row in saved.snapshot['customer_document']['rows']:
-                    if row.get('asset_id') is not None:
-                        key=str(row['asset_id']);previous[key]=previous.get(key,0)+row['quantity']
+            if replaces is None:
+                for saved in conference.issued_deliveries.exclude(pk=delivery.pk).filter(voided_at__isnull=True):
+                    for row in saved.snapshot['customer_document']['rows']:
+                        if row.get('asset_id') is not None:
+                            key=str(row['asset_id']);previous[key]=previous.get(key,0)+row['quantity']
             delivery_origins=selected_origins(source.get('dispatch_origins',[]),[row['asset_id'] for row in selected],
                 quantities={str(row['asset_id']):row['quantity'] for row in selected if row['asset_id'] is not None},previously_delivered=previous)
             customer = {**common, 'dispatch_origins': delivery_origins,
@@ -256,6 +288,8 @@ def program_deliveries(request, pk):
                 rows = [row for row in selected if row['owner_id'] == owner_id]
                 suppliers.append(supplier_paper(common, {**source,'dispatch_origins':delivery_origins}, rows, f'{fy}/SR{owner_id}-{delivery.pk:06d}', edits.get(str(owner_id), {})))
             delivery.snapshot = {'version': 1, 'customer_document': customer, 'supplier_documents': suppliers}
+            if replaces is not None:
+                delivery.snapshot.update(replaces_delivery_id=replaces, correction_reason=correction_reason)
             delivery.save(update_fields=['snapshot'])
             return Response(serialized(delivery), status=201)
     except IntegrityError:
@@ -268,8 +302,11 @@ def void_delivery(request, pk, delivery_pk):
     access(request.user, write=True)
     reason = label(request.data.get('reason'), 500, required=True)
     with transaction.atomic():
+        conference = get_object_or_404(Conference.objects.select_for_update(), pk=pk)
         delivery = get_object_or_404(ProgramDelivery.objects.select_for_update(), pk=delivery_pk, conference_id=pk)
         if not delivery.voided_at:
+            if challans_locked(conference) and not is_business_administrator(request.user):
+                raise PermissionDenied('An administrator must correct a locked delivery.')
             delivery.voided_at, delivery.voided_by, delivery.void_reason = timezone.now(), request.user.get_username(), reason
             delivery.save(update_fields=['voided_at', 'voided_by', 'void_reason'])
         return Response(serialized(delivery))

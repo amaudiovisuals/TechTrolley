@@ -3,9 +3,15 @@ export async function downloadEventPdf(
   id: string | number, apiFetch: (url: string) => Promise<Response>,
 ) {
   if (!/^\d+$/.test(String(id))) throw Error('Save the event before downloading its document.');
+  return downloadPrivatePdf(`/api/conferences/${id}/download-pdf/`, `Conference_${id}.pdf`, apiFetch);
+}
+
+export async function downloadPrivatePdf(
+  path: string, filename: string, apiFetch: (url: string) => Promise<Response>,
+) {
   const token = localStorage.getItem('token');
   if (!token) throw Error('Sign in to download this document.');
-  const response = await apiFetch(`/api/conferences/${id}/download-pdf/`);
+  const response = await apiFetch(path);
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw Error(error.detail || 'Document download failed. Check your login and event assignment.');
@@ -16,7 +22,7 @@ export async function downloadEventPdf(
   const url = URL.createObjectURL(blob);
   try {
     const link = document.createElement('a');
-    link.href = url; link.download = `Conference_${id}.pdf`;
+    link.href = url; link.download = filename;
     document.body.appendChild(link);
     try { link.click(); } finally { link.remove(); }
   } finally {

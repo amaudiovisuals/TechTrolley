@@ -82,6 +82,9 @@ def conference_trucks(request, pk):
         if isinstance(expected, bool) or not str(expected).isdigit(): return Response({'error': 'invalid_expected_revision'}, status=400)
         from .revisions import lock_conference_for_write
         conference = lock_conference_for_write(pk, {'challan_assets': request.data.get('asset_ids', [])})
+        from .challan_lock import challans_locked
+        if challans_locked(conference):
+            return Response({'error': 'challan_edit_window_closed'}, status=409)
         if conference.lifecycle_state != 'open':
             return Response({'error': 'event_is_sealed'}, status=409)
         from .models import TruckManifest
@@ -171,6 +174,9 @@ def truck_challan_detail(request, truck_pk):
     if expected is None:
         return Response({'error': 'expected_revision_required'}, status=428)
     conference = lock_conference_for_write(truck.conference_id, request.data)
+    from .challan_lock import challans_locked
+    if challans_locked(conference):
+        return Response({'error': 'challan_edit_window_closed'}, status=409)
     if conference.lifecycle_state != 'open':
         return Response({'error': 'event_is_sealed'}, status=409)
     if isinstance(expected, bool) or not str(expected).isdigit() or int(expected) != conference.revision:
@@ -253,6 +259,9 @@ def add_asset_to_truck(request, pk):
     if isinstance(expected, bool) or not str(expected).isdigit(): return Response({'error': 'invalid_expected_revision'}, status=400)
     from .revisions import lock_conference_for_write
     conference = lock_conference_for_write(pk, {'challan_assets': request.data.get('asset_ids', [])})
+    from .challan_lock import challans_locked
+    if challans_locked(conference):
+        return Response({'error': 'challan_edit_window_closed'}, status=409)
     if conference.lifecycle_state != 'open':
         return Response({'error': 'event_is_sealed'}, status=409)
     from .models import TruckManifest

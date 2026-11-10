@@ -105,6 +105,10 @@ function getLaptopSubGroup(
 }
 
 interface ChallanViewProps {
+  loadHistory?: (id: string) => Promise<ChallanVersion[]>;
+  printVersion?: (snapshot: ChallanDocument) => void;
+  downloadOriginal?: (id: string, direction?: 'return') => void;
+  canCorrectLocked?: boolean;
   sourcesReady?: boolean;
   requiresCorrectionReason?: boolean;
   lockNumber?: boolean;
@@ -127,6 +131,8 @@ interface ChallanViewProps {
   localStorageSuffix?: string;
   legacyStorageSuffix?: string;
 }
+
+export type ChallanVersion = { revision: number; reason: string; created_at: string; snapshot: ChallanDocument };
 
 type ColumnKey = 'Seq' | 'SKU' | 'Asset' | 'Type' | 'Identifiers' | 'MAC' | 'IMEI' | 'Rate' | 'Qty' | 'Total' | 'Actions';
 
@@ -181,14 +187,20 @@ const fmtDate = (d?: string): string => {
 };
 
 export const ChallanView: React.FC<ChallanViewProps> = ({
-  draftAccountId, booking: liveBooking, client, assets: inventoryAssets, companySettings: liveCompanySettings, challanTitle, showScanToast, subrentalTickets, readOnly, localStorageSuffix, legacyStorageSuffix, document: providedDocument, onSaveDocument, useSavedDocument = true, sourcesReady = true, onRetrySources, requiresCorrectionReason = false, lockNumber = false, canImportSources = false
+  draftAccountId, booking: liveBooking, client, assets: inventoryAssets, companySettings: liveCompanySettings, challanTitle, showScanToast, subrentalTickets, readOnly: baseReadOnly, localStorageSuffix, legacyStorageSuffix, document: providedDocument, onSaveDocument, useSavedDocument = true, sourcesReady = true, onRetrySources, requiresCorrectionReason = false, lockNumber = false, canImportSources = false,
+  loadHistory, printVersion, downloadOriginal, canCorrectLocked = false
 }) => {
   const scope = documentScope(localStorageSuffix);
   const document = useSavedDocument ? providedDocument || liveBooking.challan_documents?.find(document => document.scope === scope) : undefined;
-  const booking = snapshotBooking(useSavedDocument ? liveBooking : { ...liveBooking, approximate_value: null }, document);
+  const locked = Boolean(useSavedDocument && liveBooking.challans_locked);
+  const readOnly = baseReadOnly || (locked && (!canCorrectLocked || !document));
+  const frozenCopy = Boolean(document && (document.state === 'issued' || locked));
+  const booking = snapshotBooking(useSavedDocument ? liveBooking : { ...liveBooking, approximate_value: null }, document, locked);
   const returnSourceDocument = !useSavedDocument ? liveBooking.challan_documents?.find(source => source.scope === scope) : undefined;
-  const frozenCompany = document?.state === 'issued' ? document.header.company : returnSourceDocument?.header.company;
-  const companySettings = frozenCompany ? { ...liveCompanySettings, ...frozenCompany } : liveCompanySettings;
+  const frozenCompany = frozenCopy ? document?.header.company || {} : returnSourceDocument?.header.company;
+  const companySettings = frozenCompany ? frozenCompany as CompanySettings : liveCompanySettings;
+  const [versions, setVersions] = React.useState<ChallanVersion[]>([]);
+  const [loadingHistory, setLoadingHistory] = React.useState(false);
   const legacyAssets = React.useMemo(() => legacyDocumentAssets(inventoryAssets, scope === 'master' ? subrentalTickets || [] : [], liveBooking, scope, `${booking.id}:${scope}`, useSavedDocument ? 'dispatch' : 'return'), [inventoryAssets, subrentalTickets, liveBooking, scope, useSavedDocument]);
   const overlaps = overlappingSourceIds(legacyAssets);
   const sourceWarnings = document ? [] : [...documentSourceWarnings(inventoryAssets, liveBooking, scope, useSavedDocument ? 'dispatch' : 'return'), ...overlaps.map(id => ({ assetId: String(id), message: `Item #${id} appears in both warehouse and supplier-ticket sources. Review this overlap before saving.` }))];
@@ -216,7 +228,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   const draftKey = challanDraftKey(window.location.origin, draftAccountId || 'unknown', String(booking.id), localStorageSuffix || 'master');
   const restoredDraft = React.useMemo(() => readOnly || !draftAccountId ? null : readDraft(localStorage, draftKey), [draftKey, readOnly]);
   const [activeDraftKey, setActiveDraftKey] = React.useState(draftKey);
-  const [isEditMode, setIsEditMode] = React.useState(Boolean(restoredDraft));
+  const [editing, setIsEditMode] = React.useState(Boolean(restoredDraft));
+  const isEditMode = editing && !readOnly;
   const [isSaving, setIsSaving] = React.useState(false);
   const [localAssets, setLocalAssets] = React.useState<Asset[]>(restoredDraft?.assets || assets);
   const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(restoredDraft ? restoredDraft.total : (booking.approximate_value ?? null));
@@ -338,7 +351,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     if (overlappingSourceIds(localAssets).length && !pending) { showScanToast?.('Warehouse and supplier-ticket rows overlap. Your draft remains open for review.', 'error'); return; }
     if (sourceWarnings.length && !pending) { showScanToast?.('Source quantities need review before saving this challan. Your draft remains open.', 'error'); return; }
     if (draftConflict && !pending) { showScanToast?.('This challan changed elsewhere. Review it before saving.', 'error'); return; }
-    if ((document?.state === 'issued' || requiresCorrectionReason) && !correctionReason.trim() && !pending) {
+    if ((document?.state === 'issued' || requiresCorrectionReason || locked) && !correctionReason.trim() && !pending) {
       showScanToast?.('Enter a reason for correcting this issued challan.', 'error'); return;
     }
     isSavingRef.current = true; setIsSaving(true);
@@ -350,7 +363,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         lines: localAssets.map((asset, index) => assetLine(asset, `${booking.id}:${scope}`, index)),
         number: challanNoOverride || '', total_override: totalValueOverride,
         document_date: documentDate,
-        state: issue || document?.state === 'issued' ? 'issued' : 'draft', correction_reason: correctionReason.trim(),
+        state: issue || document?.state === 'issued' || locked ? 'issued' : 'draft', correction_reason: correctionReason.trim(),
       };
       if (!pending && liveBooking.truck_manifest && scope === 'master') {
         payload.manifest_command = manifestCommand(liveBooking, 'save_master', {
@@ -412,6 +425,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
   const processedAssets = React.useMemo(() => {
     const combinedLocal = localAssets;
+    if (frozenCopy && !isEditMode) return assets;
     let list: Asset[] = [];
     if (!isGrouped || isEditMode) {
       list = [...combinedLocal];
@@ -463,7 +477,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       printName: printAliasOverrides[String(a.id)]
         ?? (isGrouped ? (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? '') : (a.aliasName || a.sku || ''))
     }));
-  }, [localAssets, isGrouped, isEditMode, printAliasOverrides]);
+  }, [localAssets, isGrouped, isEditMode, printAliasOverrides, frozenCopy, assets]);
 
   if (!sourcesReady) return <div role="alert" className="rounded-xl border border-amber-500 bg-amber-50 p-4 text-slate-900">
     <p>Loading event rental sources. The challan will appear when its sources are confirmed.</p>
@@ -472,6 +486,26 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
   return (
     <div className="challan-view flex flex-col gap-4">
+      {locked && <p className="print:hidden rounded border border-slate-300 bg-white p-3 text-sm text-slate-900">
+        {document ? 'Challan locked. Administrator corrections create a new version.' : 'Challan locked. This legacy copy needs archive review.'}
+      </p>}
+      {document?.provenance === 'reviewed_legacy_archive' && <p className="print:hidden text-sm text-slate-700">
+        {document.header.original_pdf_sha256 ? 'Reviewed legacy record with its original PDF.' : 'Reviewed reconstruction from legacy records.'}
+        {document.header.original_pdf_sha256 && downloadOriginal && <button type="button" className="ml-2 underline" onClick={() => downloadOriginal(document.id)}>Download original PDF</button>}
+        {document.header.original_return_pdf_sha256 && downloadOriginal && <button type="button" className="ml-2 underline" onClick={() => downloadOriginal(document.id, 'return')}>Download original return PDF</button>}
+      </p>}
+      {document && loadHistory && printVersion && <div className="print:hidden text-sm text-slate-800">
+        <button type="button" className="underline" disabled={loadingHistory} onClick={async () => {
+          setLoadingHistory(true);
+          try { setVersions(await loadHistory(document.id)); }
+          catch (error) { showScanToast?.(error instanceof Error ? error.message : 'Could not load earlier versions.', 'error'); }
+          finally { setLoadingHistory(false); }
+        }}>{loadingHistory ? 'Loading versions…' : 'Challan versions'}</button>
+        {versions.length > 0 && <ul className="mt-2 space-y-1">{versions.map(version => <li key={version.revision}>
+          <button type="button" className="underline" onClick={() => printVersion(version.snapshot)}>Open version {version.revision} for printing</button>
+          {version.reason && <span> · {version.reason}</span>}
+        </li>)}</ul>}
+      </div>}
       {sourceWarnings.length > 0 && <div role="alert" className="rounded-xl border border-amber-500 bg-amber-50 p-3 text-sm text-slate-900">
         <p className="font-bold">Source quantity review required</p>
         {sourceWarnings.map(warning => <p key={warning.assetId}>{warning.message}</p>)}
@@ -508,7 +542,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         A save is awaiting confirmation. Retry it before making further edits.
         <button disabled={isSaving} onClick={() => saveAllChanges()} className="ml-3 underline">Retry saved request</button>
       </div>}
-      {!readOnly && (document?.state === 'issued' || requiresCorrectionReason) && isEditMode && <label className="print:hidden text-sm">
+      {!readOnly && (document?.state === 'issued' || requiresCorrectionReason || locked) && isEditMode && <label className="print:hidden text-sm">
         Reason for correcting this issued challan
         <input disabled={isSaving || saveUncertain} value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} className="ml-3 rounded border p-2" />
       </label>}
@@ -578,7 +612,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
                 setShowPrintAliasEditor(prev => !prev);
                 if (showPrintAliasEditor) resetPrintAliases();
               }}
-              disabled={document?.state === 'issued'}
+              disabled={frozenCopy}
               className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                 showPrintAliasEditor
                   ? 'bg-violet-500 text-white shadow-lg shadow-violet-200'
@@ -701,8 +735,9 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             setChallanNoOverride={value => { if (!isSavingRef.current && !saveUncertain) { markDirty(); setChallanNoOverride(value); } }}
             subrentalTickets={undefined}
             challanTitle={challanTitle}
-            showEventContent={showEventContent}
-            showEventDate={showEventDate}
+            showEventContent={frozenCopy || showEventContent}
+            showEventDate={frozenCopy || showEventDate}
+            frozenDetails={frozenCopy}
           />
         </div>
       ))}
@@ -727,6 +762,7 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   challanTitle?: string;
   showEventContent?: boolean;
   showEventDate?: boolean;
+  frozenDetails?: boolean;
   ownerSectionsEnabled?: boolean;
 }
 
@@ -734,7 +770,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   booking, client, assets, companySettings, copyLabel, bw,
   visibleColumns, isEditMode, isSaving, onLocalUpdate, onRemoveRow,
   totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride, lockNumber,
-  subrentalTickets, challanTitle, showEventContent = true, showEventDate = true, ownerSectionsEnabled = false
+  subrentalTickets, challanTitle, showEventContent = true, showEventDate = true, ownerSectionsEnabled = false, frozenDetails = false
 }) => {
   const accent = bw ? '#111111' : '#00AEEF';
   const orange = bw ? '#111111' : '#F15A24';
@@ -905,10 +941,10 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         <div>
           <Logo size="sm" companySettings={companySettings} variant="challan" showText={false} />
           <div className="mt-1 text-[9px] text-gray-900 font-medium leading-snug">
-            <p className="font-black text-gray-900 uppercase tracking-tighter text-[10px]">{companySettings?.name || 'TECH TROLLEY'}</p>
-            <p className="whitespace-pre-wrap">{companySettings?.address || 'Warehouse Complex 7, Industrial Area Phase II, New Delhi - 110020.'}</p>
-            <p>GST: {companySettings?.gst_number || '07AAMAU9988Z2Z1'}</p>
-            <p>Tel: {companySettings?.phone || '+91 9999 888 777'} | Email: {companySettings?.email || 'support@amaudiovisuals.in'}</p>
+            <p className="font-black text-gray-900 uppercase tracking-tighter text-[10px]">{companySettings?.name || (frozenDetails ? 'Issuer not recorded' : 'TECH TROLLEY')}</p>
+            <p className="whitespace-pre-wrap">{companySettings?.address || (frozenDetails ? 'Address not recorded' : 'Warehouse Complex 7, Industrial Area Phase II, New Delhi - 110020.')}</p>
+            <p>GST: {companySettings?.gst_number || (frozenDetails ? '—' : '07AAMAU9988Z2Z1')}</p>
+            <p>Tel: {companySettings?.phone || (frozenDetails ? '—' : '+91 9999 888 777')} | Email: {companySettings?.email || (frozenDetails ? '—' : 'support@amaudiovisuals.in')}</p>
           </div>
         </div>
         <div className="challan-document-meta text-right">
@@ -935,7 +971,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
                 <span className="text-gray-900 mr-1"> CHALLAN Date:</span>
                 {booking.challanDate
                   ? fmtDate(booking.challanDate)
-                  : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  : frozenDetails ? 'Not recorded' : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </p>
             </div>
             <div className="mt-1 pt-1 text-right space-y-0.5" style={{ borderTop: `1px dashed #999` }}>

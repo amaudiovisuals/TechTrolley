@@ -14,7 +14,8 @@ from .asset_commands import CommandError, canonical_conference
 from .models import (Asset, Conference, TruckChallan, TruckManifest, TruckManifestEntry,
                      ChallanDocument, ChallanLine, ChallanRevision, MovementReceipt, SubrentalTicketItem)
 from .permissions import WAREHOUSE_ROLES, get_business_role
-from .challan_documents import document_data, capture_header, allocate_number, reserve_number, save_document, replace_lines
+from .challan_documents import document_data, capture_saved_header, allocate_number, reserve_number, save_document, replace_lines
+from .challan_lock import challans_locked, require_challan_edit
 
 
 def manifest_data(manifest):
@@ -123,9 +124,9 @@ def write_truck(document, entries, actor, reason, issue_date=None):
     positive = [entry for entry in entries if entry.quantity > 0]
     was_issued = document.state == 'issued'
     if was_issued and not reason: raise CommandError('issued_manifest_requires_correction_reason')
-    if not was_issued:
+    if not was_issued and not challans_locked(document.conference):
         master = document.conference.truck_manifest.master
-        document.header = capture_header(document.conference, document.truck, master.header.get('owner_sections_version'))
+        document.header = capture_saved_header(document.conference, document.truck, master.header.get('owner_sections_version'))
         if master.header.get('company'):
             document.header['company'] = dict(master.header['company'])
     if issue_date:
@@ -170,8 +171,11 @@ def execute_manifest_command(user, event_id, payload):
     list(Asset.objects.select_for_update().filter(pk__in=ids).order_by('pk'))
     event = Conference.objects.select_for_update().filter(pk=event_id).first()
     if not event: raise CommandError('unknown_conference', 404)
-    from .event_lifecycle import require_open_event
-    require_open_event(event)
+    require_challan_edit(
+        event, user, correction=command['action'] == 'save_master' and command['document']['state'] == 'issued',
+        reason=command['reason'] or (command['document']['correction_reason'] if command['action'] == 'save_master' else ''),
+        require_open=True,
+    )
     if event.is_audit: raise CommandError('audit_is_not_manifest_dispatch', 400)
     if event.revision != command['expected_event_revision']: raise CommandError('event_changed')
     trucks = {row.pk: row for row in TruckChallan.objects.select_for_update().filter(conference=event).order_by('pk')}

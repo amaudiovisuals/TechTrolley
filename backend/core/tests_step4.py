@@ -1,5 +1,6 @@
 """Disposable document tests: inventory conservation, retries and historical print data."""
 import copy
+from datetime import date, datetime, timezone
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -125,6 +126,44 @@ class ChallanDocumentTests(SnapshotTestCase):
         for fields in ({'state': 'issued'}, {'state': 'draft', 'correction_reason': 'reason'}, {'state': 'issued', 'number': 'OTHER', 'correction_reason': 'reason'}):
             with self.assertRaises(CommandError): self.save(self.payload(first['lines'], first, **fields))
         self.assertEqual(ChallanRevision.objects.count(), 1)
+
+    def test_india_deadline_preserves_custody_and_original_version(self):
+        self.event.end_date = date(2026, 11, 10)
+        self.event.save(update_fields=['end_date'])
+        issuer = CompanySettings.objects.create(name='Original AM', gst_number='OLD-GST')
+        warehouse = User.objects.create_user('lock-warehouse', is_staff=True)
+        warehouse.profile.role = 'godown_incharge'
+        warehouse.profile.save()
+        payload = self.payload(state='issued')
+        with patch('django.utils.timezone.now', return_value=datetime(2026, 11, 17, 18, 29, tzinfo=timezone.utc)):
+            original = save_document(warehouse, self.event.pk, 'master', payload)['document']
+        with patch('django.utils.timezone.now', return_value=datetime(2026, 11, 17, 18, 30, tzinfo=timezone.utc)):
+            command = self.payload(original['lines'], original, state='issued', correction_reason='Verified line correction')
+            with self.assertRaisesMessage(CommandError, 'challan_edit_window_closed'):
+                save_document(warehouse, self.event.pk, 'master', command)
+            self.assertTrue(save_document(warehouse, self.event.pk, 'master', payload)['replayed'])
+            response = self.client.patch(f'/api/conferences/{self.event.pk}/',
+                                         {'end_date': '2026-12-31', 'expected_revision': self.event.revision}, format='json')
+            self.assertEqual(response.status_code, 400)
+            truck = TruckChallan.objects.create(conference=self.event)
+            self.event.refresh_from_db()
+            response = self.client.patch(f'/api/truck-challans/{truck.pk}/',
+                                         {'label': 'Overwrite', 'expected_revision': self.event.revision}, format='json')
+            self.assertEqual(response.data['error'], 'challan_edit_window_closed')
+            issuer.name = 'New Pvt Ltd'
+            issuer.save()
+            self.event.lifecycle_state = 'completed'
+            self.event.save(update_fields=['lifecycle_state'])
+            command = self.payload(original['lines'], original, state='issued', correction_reason='Verified correction')
+            command['lines'] = copy.deepcopy(command['lines'])
+            command['lines'][0]['quantity'] = 1
+            corrected = self.save(command)['document']
+            self.assertEqual(corrected['header']['company']['name'], 'Original AM')
+            self.assertEqual(corrected['lines'][0]['quantity'], 1)
+            self.assertEqual(ChallanRevision.objects.get(revision=1).snapshot, original)
+            self.event.refresh_from_db()
+            self.assertEqual(self.event.revision, command['expected_event_revision'])
+            self.assertEqual(self.event.lifecycle_state, 'completed')
 
     def test_ticket_source_validation_and_duplicate_source_rejection(self):
         supplier = SubrentalCompany.objects.create(name='Supplier')

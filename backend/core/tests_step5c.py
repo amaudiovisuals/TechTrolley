@@ -283,6 +283,8 @@ class EventLifecycleTests(SnapshotTestCase):
         self.assertIn('physical_return_evidence_missing',self.codes())
 
     def test_legacy_truck_removal_retains_references_without_creating_return_proof(self):
+        self.event.end_date = None
+        self.event.save(update_fields=['end_date'])
         truck=TruckChallan.objects.create(conference=self.event);truck.assets.add(self.asset);self.event.refresh_from_db()
         response=self.client.patch(f'/api/truck-challans/{truck.pk}/',{'assets':[],'expected_revision':self.event.revision},format='json')
         self.assertEqual(response.status_code,200,response.data);self.assertTrue(self.event.challan_assets.filter(pk=self.asset.pk).exists())
@@ -293,6 +295,8 @@ class EventLifecycleTests(SnapshotTestCase):
         with self.assertRaises(CommandError):self.lifecycle()
 
     def test_initial_truck_subset_does_not_remove_existing_legacy_history(self):
+        self.event.end_date = None
+        self.event.save(update_fields=['end_date'])
         self.event.challan_assets.add(self.asset);other=Asset.objects.create(sku='NEW-TRUCK-ITEM');self.event.refresh_from_db()
         CompanySettings.objects.create(name='Synthetic truck numbers')
         response=self.client.post(f'/api/conferences/{self.event.pk}/trucks/',{'asset_ids':[other.pk],'expected_revision':self.event.revision},format='json')

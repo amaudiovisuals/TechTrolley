@@ -3,7 +3,7 @@ import { LedCasePicker } from './components/LedCasePicker';
 import { LedCaseRecord } from './components/LedCaseRecord';
 import { SavedWorkRecovery } from './components/SavedWorkRecovery';
 import OfflineScanning from './components/OfflineScanning';
-import { downloadEventPdf } from './state/privateDownloads';
+import { downloadEventPdf, downloadPrivatePdf } from './state/privateDownloads';
 import { eventEditorData, eventMetadata, eventDraftKey, readEventDraft } from './state/eventDrafts';
 import { resolveScan } from './state/scanIdentity';
 import { challanAssetIds } from './state/challanSelection';
@@ -8619,6 +8619,8 @@ const App: React.FC = () => {
               const trucks = conf.truckChallans || [];
               const hasTrucks = trucks.length > 0;
               const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
+              const canCorrectChallan = ['admin', 'boss'].includes(user?.role || '');
+              const canReadHistory = canCorrectChallan || ['godown_incharge', 'accounts'].includes(user?.role || '');
 
               const targetAssetIds = challanAssetIds(conf, hasTransfers ? challanDetailTab : 'dispatch', activeTruck);
 
@@ -9313,6 +9315,7 @@ const App: React.FC = () => {
                       accountId={String(user?.user_id || user?.email || '')}
                       conferenceId={String(conf.id)} truckId={activeTruck?.id}
                       canIssue={['admin', 'boss', 'godown_incharge'].includes(user?.role || '')}
+                      locked={conf.challans_locked} canCorrect={canCorrectChallan}
                       apiFetch={apiFetch} apiBase={API_BASE}
                     />}
 
@@ -9323,6 +9326,21 @@ const App: React.FC = () => {
                       client={MOCK_CLIENTS[0]}
                       assets={effectiveAssets}
                       lockNumber={Boolean(conf.truck_manifest)}
+                      canCorrectLocked={canCorrectChallan}
+                      loadHistory={canReadHistory ? async id => {
+                        const response = await apiFetch(`${API_BASE}/api/challan-documents/${id}/history/`);
+                        if (!response.ok) throw Error('Could not load challan versions.');
+                        return response.json();
+                      } : undefined}
+                      printVersion={snapshot => handlePrintChallan({
+                        ...conf, challans_locked: true,
+                        challan_documents: [...(conf.challan_documents || []).filter(row => row.scope !== snapshot.scope), snapshot],
+                      }, 'dispatch', false, activeTruck)}
+                      downloadOriginal={canReadHistory ? (id, direction) => {
+                        const file = direction === 'return' ? 'original-return-pdf' : 'original-pdf';
+                        void downloadPrivatePdf(`${API_BASE}/api/challan-documents/${id}/${file}/`, 'Original-challan.pdf', apiFetch)
+                          .catch(error => showScanToast(error.message, 'error'));
+                      } : undefined}
                       canImportSources={confTicketSourceState.status === 'ready' && confTicketSourceState.eventId === conf.id}
                       requiresCorrectionReason={Boolean(conf.truck_manifest && conf.challan_documents?.some(doc => doc.truck_id && doc.state === 'issued'))}
                       sourcesReady={(hasTransfers && challanDetailTab === 'return') || challanSourcesReady(conf, activeTruck?.id)}

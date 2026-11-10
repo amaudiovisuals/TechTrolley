@@ -18,6 +18,8 @@ export type DeliveryIssueRequest = {
   reference: string; delivery_date: string; vehicle_number: string; driver_phone: string;
   rows: { key: string; name: string; quantity: number }[];
   supplier_details?: Record<string, SupplierPaperDetails>;
+  replaces_delivery_id?: number;
+  correction_reason?: string;
 };
 type StorageRead = Pick<Storage, 'getItem'>;
 export function deliveryPendingKey(origin: string, account: string, conference: string, truck?: number | string) {
@@ -27,6 +29,9 @@ export function deliveryPendingKey(origin: string, account: string, conference: 
 export function validDeliveryRequest(value: any): value is DeliveryIssueRequest {
   return value && typeof value === 'object' && !Array.isArray(value) &&
     (value.supplier_details === undefined || validSupplierDetails(value.supplier_details)) &&
+    (value.replaces_delivery_id === undefined || (Number.isSafeInteger(value.replaces_delivery_id) &&
+      value.replaces_delivery_id > 0 && typeof value.correction_reason === 'string' &&
+      value.correction_reason.trim().length > 0 && value.correction_reason.trim().length <= 500)) &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.request_key) &&
     typeof value.source_hash === 'string' && /^[0-9a-f]{64}$/i.test(value.source_hash) &&
     (value.truck_id === null || (Number.isInteger(value.truck_id) && value.truck_id > 0)) &&

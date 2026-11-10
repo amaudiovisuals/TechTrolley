@@ -5,12 +5,14 @@ import { setWorkBlocker } from '../state/workSafety';
 type Party = { name: string; address?: string; gst_number?: string; phone?: string; email?: string; website?: string };
 type Row = { key: string; asset_id?:number; name: string; sku: string; serial: string; quantity: number; owner_id: number | null; owner: Party | null };
 type Paper = { number: string; reference: string; direction: 'customer' | 'supplier'; issuer: Party; recipient: Party; rows: Row[];
+  truck_id?: number | null;
   dispatch_origins?: { kind: string; name: string; address: string; asset_ids: number[]; asset_quantities?:Record<string,number> }[];
   delivery_date: string; vehicle_number: string; driver_phone: string; destination: string; program: { name: string; start_date: string; end_date: string } };
 type Delivery = { id: number; reference: string; issued_at: string; issued_by: string; voided_at: string | null; void_reason: string;
-  snapshot: { customer_document: Paper; supplier_documents: Paper[] } };
+  snapshot: { customer_document: Paper; supplier_documents: Paper[]; replaces_delivery_id?: number; correction_reason?: string } };
 type Preview = { source_hash: string; suggested_reference: string; previously_delivered: Record<string, number>;
-  source: { rows: Row[]; issuer: Party; customer: Party; vehicle_number: string; driver_phone: string } };
+  source: { rows: Row[]; issuer: Party; customer: Party; vehicle_number: string; driver_phone: string;
+    replaces_delivery_id?: number; supplier_defaults?: Record<string, Paper> } };
 type Selection = { name: string; quantity: number; checked: boolean };
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -49,8 +51,9 @@ export function deliveryPaperHtml(paper: Paper, delivery: Delivery): string {
 }
 
 export const ProgramDeliveries: React.FC<{
-  conferenceId: string; truckId?: number | string; accountId: string; canIssue: boolean; apiFetch: (url: string, options?: any) => Promise<Response>; apiBase: string;
-}> = ({ conferenceId, truckId, accountId, canIssue, apiFetch, apiBase }) => {
+  conferenceId: string; truckId?: number | string; accountId: string; canIssue: boolean; locked?: boolean; canCorrect?: boolean;
+  apiFetch: (url: string, options?: any) => Promise<Response>; apiBase: string;
+}> = ({ conferenceId, truckId, accountId, canIssue, locked = false, canCorrect = false, apiFetch, apiBase }) => {
   const endpoint = `${apiBase}/api/conferences/${conferenceId}/deliveries/`;
   const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -58,6 +61,7 @@ export const ProgramDeliveries: React.FC<{
   const [preview, setPreview] = React.useState<Preview | null>(null);
   const [selected, setSelected] = React.useState<Record<string, Selection>>({});
   const [reference, setReference] = React.useState('');
+  const [correctionReason, setCorrectionReason] = React.useState('');
   const [deliveryDate, setDeliveryDate] = React.useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -113,18 +117,28 @@ export const ProgramDeliveries: React.FC<{
     return () => { setWorkBlocker(key, false); window.removeEventListener('beforeunload', warn); };
   }, [pendingKey, preview, pending, busy, storageError]);
 
-  async function start() {
+  async function start(replaces?: number) {
     if (busyRef.current || pending || !recoveryReady || storageError) return;
     setBusy(true); setError(''); setOpened(null);
     try {
-      const data: Preview = await json(await apiFetch(`${endpoint}preview/${truckId ? `?truck_id=${truckId}` : ''}`));
+      const query = new URLSearchParams();
+      if (truckId) query.set('truck_id', String(truckId));
+      if (replaces) query.set('replaces_delivery_id', String(replaces));
+      const data: Preview = await json(await apiFetch(`${endpoint}preview/${query.size ? `?${query}` : ''}`));
       setPreview(data); setReference(data.suggested_reference); setVehicle(data.source.vehicle_number); setPhone(data.source.driver_phone);
+      setCorrectionReason('');
       setEditingSupplier(null);
-      setSupplierDetails(Object.fromEntries(data.source.rows.filter(row => row.owner_id && row.owner).map(row => [String(row.owner_id), {
-        issuer_name: row.owner!.name, issuer_address: row.owner!.address || '', issuer_gst_number: row.owner!.gst_number || '',
-        recipient_name: data.source.issuer.name, recipient_address: data.source.issuer.address || '', recipient_gst_number: data.source.issuer.gst_number || '',
-        destination: data.source.issuer.address || '', vehicle_number: '', driver_phone: '',
-      }])));
+      setSupplierDetails(Object.fromEntries(data.source.rows.filter(row => row.owner_id && row.owner).map(row => {
+        const original = data.source.supplier_defaults?.[String(row.owner_id)];
+        const issuer = original?.issuer || row.owner!;
+        const recipient = original?.recipient || data.source.issuer;
+        return [String(row.owner_id), {
+          issuer_name: issuer.name, issuer_address: issuer.address || '', issuer_gst_number: issuer.gst_number || '',
+          recipient_name: recipient.name, recipient_address: recipient.address || '', recipient_gst_number: recipient.gst_number || '',
+          destination: original?.destination ?? data.source.issuer.address ?? '',
+          vehicle_number: original?.vehicle_number || '', driver_phone: original?.driver_phone || '',
+        }];
+      })));
       setSelected(Object.fromEntries(data.source.rows.map(row => {
         const remaining = Math.max(0, row.quantity - (data.previously_delivered[row.key] || 0));
         return [row.key, { name: row.name, quantity: remaining || row.quantity, checked: remaining > 0 }];
@@ -139,6 +153,7 @@ export const ProgramDeliveries: React.FC<{
     if (!requestRef.current && preview) requestRef.current = {
       request_key: crypto.randomUUID(), source_hash: preview.source_hash, truck_id: truckId ? Number(truckId) : null,
       reference, delivery_date: deliveryDate, vehicle_number: vehicle, driver_phone: phone,
+      ...(preview.source.replaces_delivery_id ? { replaces_delivery_id: preview.source.replaces_delivery_id, correction_reason: correctionReason.trim() } : {}),
       supplier_details: Object.fromEntries(Object.entries(supplierDetails).filter(([owner]) => preview.source.rows.some(row => String(row.owner_id) === owner && selected[row.key]?.checked))),
       rows: (Object.entries(selected) as [string, Selection][]).filter(([, row]) => row.checked).map(([key, row]) => ({ key, name: row.name, quantity: row.quantity })),
     };
@@ -185,7 +200,7 @@ export const ProgramDeliveries: React.FC<{
     <h2 className="font-bold text-lg">Saved delivery challans</h2>
     <p className="text-sm">Issue once for each delivery to automatically save the customer challan and each supplier → issuing company challan. Company details and supplier equipment fill automatically. Reprints reuse the saved numbers; opening or printing a paper does not create another delivery.</p>
     <div className="flex gap-3">
-      {canIssue && <button className={button} disabled={busy || loading || pending || !recoveryReady || Boolean(storageError)} onClick={start}>New delivery{truckId ? ' for this truck' : ''}</button>}
+      {canIssue && !locked && <button className={button} disabled={busy || loading || pending || !recoveryReady || Boolean(storageError)} onClick={() => start()}>New delivery{truckId ? ' for this truck' : ''}</button>}
       <button className={button} disabled={busy || loading} onClick={reload}>Reload saved deliveries</button>
     </div>
     {loading && <p role="status">Loading saved deliveries…</p>}
@@ -199,11 +214,15 @@ export const ProgramDeliveries: React.FC<{
     {deliveries.map(delivery => <div key={delivery.id} className="border border-slate-200 rounded-lg p-3 space-y-2">
       <p className="font-bold">{delivery.reference} — {delivery.snapshot.customer_document.delivery_date}{delivery.voided_at ? ' — VOID' : ''}</p>
       {delivery.voided_at && <p>Reason: {delivery.void_reason}</p>}
+      {delivery.snapshot.replaces_delivery_id && <p>Replacement for delivery {delivery.snapshot.replaces_delivery_id} · {delivery.snapshot.correction_reason}</p>}
       <div className="flex flex-wrap gap-2">{[delivery.snapshot.customer_document, ...delivery.snapshot.supplier_documents].map(paper =>
         <button key={paper.number} className={button} onClick={() => { setOpened({ delivery, paper }); setPreview(null); }} disabled={pending}>
           {paper.direction === 'customer' ? 'Customer' : paper.issuer.name} — {paper.number}
         </button>)}
-        {canIssue && !delivery.voided_at && <button className="text-red-700 underline px-3" disabled={busy} onClick={() => { setVoidId(delivery.id); setVoidReason(''); }}>Void delivery</button>}
+        {canIssue && (!locked || canCorrect) && !delivery.voided_at && <button className="text-red-700 underline px-3" disabled={busy} onClick={() => { setVoidId(delivery.id); setVoidReason(''); }}>Void delivery</button>}
+        {canCorrect && delivery.voided_at && !deliveries.some(d => d.snapshot.replaces_delivery_id === delivery.id) &&
+          (delivery.snapshot.customer_document.truck_id ?? null) === (truckId ? Number(truckId) : null) &&
+          <button className={button} disabled={busy || pending || !recoveryReady || Boolean(storageError)} onClick={() => start(delivery.id)}>Prepare replacement</button>}
       </div>
     </div>)}
     {voidId && <div className="p-3 border border-red-300 space-y-2">
@@ -213,10 +232,11 @@ export const ProgramDeliveries: React.FC<{
       <button className={button} disabled={busy} onClick={() => setVoidId(null)}>Cancel</button>
     </div>}
     {preview && <div className="border border-sky-300 p-4 space-y-4">
-      <h3 className="font-bold">Review this delivery before issuing</h3>
+      <h3 className="font-bold">{preview.source.replaces_delivery_id ? 'Review the replacement challans' : 'Review this delivery before issuing'}</h3>
       <p className="text-sm">From {preview.source.issuer.name} to {preview.source.customer.name}. Supplier papers fill from the saved supplier and issuing-company details, with blank vehicle/driver fields and the issuing-company address as the delivery address. Equipment and quantities only; rental charges are separate.</p>
       <p className="text-sm">Select only equipment in this delivery. Previously delivered quantities start unselected; select them explicitly if the equipment is being delivered again. Ticket equipment is selected from the program view.</p>
       <fieldset disabled={busy || pending} className="space-y-3">
+        {preview.source.replaces_delivery_id && <label>Correction reason <input className="border p-2" maxLength={500} value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} /></label>}
         <div className="flex flex-wrap gap-3">
           <label>Delivery reference <input className="border p-2" value={reference} maxLength={100} onChange={e => setReference(e.target.value)} /></label>
           <label>Delivery date <input className="border p-2" type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} /></label>

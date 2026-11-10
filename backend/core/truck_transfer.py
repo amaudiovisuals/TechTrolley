@@ -45,8 +45,8 @@ def transfer_truck_allocation(user, truck_id, payload):
     source_info = TruckChallan.objects.filter(pk=truck_id).values('conference_id').first()
     if not source_info: raise CommandError('unknown_source', 404)
     event = Conference.objects.select_for_update().get(pk=source_info['conference_id'])
-    from .event_lifecycle import require_open_event
-    require_open_event(event)
+    from .challan_lock import require_challan_edit
+    require_challan_edit(event, require_open=True)
     from .models import TruckManifest
     if TruckManifest.objects.filter(conference=event).exists(): raise CommandError('use_manifest_commands')
     if event.consumable_allocations.exists() or event.consumable_data or any(asset.type == 'Consumables' for asset in assets.values()):

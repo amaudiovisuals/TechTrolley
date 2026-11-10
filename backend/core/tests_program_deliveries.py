@@ -1,6 +1,7 @@
 """Production delivery snapshots across the audited stock/document upgrade."""
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import date
 from threading import Barrier
 from unittest import skipUnless
 from uuid import uuid4
@@ -72,6 +73,38 @@ class ProgramDeliveryTests(TestCase):
         old={'version':1,'customer_document':{'number':'OLD','rows':[]},'supplier_documents':[]}
         ProgramDelivery.objects.create(conference=self.event,request_key=uuid4(),request_hash='old',reference='Preupgrade',snapshot=old,issued_by='Recorded operator')
         self.assertEqual(self.client.get(self.url).data[0]['snapshot'],old)
+
+    def test_locked_pair_requires_admin_and_replacement_uses_frozen_issuer(self):
+        body = self.payload()
+        issued = self.issue(body)
+        self.assertEqual(issued.status_code, 201)
+        delivery = issued.data
+        self.event.end_date = date(2020, 1, 1)
+        self.event.save(update_fields=['end_date'])
+        self.assertEqual(self.preview().status_code, 400)
+        self.assertEqual(self.issue(body).status_code, 200)
+        void_url = f"{self.url}{delivery['id']}/void/"
+        self.assertEqual(self.client.post(void_url, {'reason': 'Wrong description'}, format='json').status_code, 403)
+        admin = User.objects.create_user('delivery-corrector')
+        admin.profile.role = 'admin'
+        admin.profile.save()
+        self.client.force_authenticate(admin)
+        self.assertEqual(self.client.post(void_url, {'reason': 'Wrong description'}, format='json').status_code, 200)
+        self.settings.name = 'Later company'
+        self.settings.save()
+        self.supplier.subrental_company = None
+        self.supplier.save()
+        preview = self.preview(f"?replaces_delivery_id={delivery['id']}")
+        self.assertEqual(preview.status_code, 200, preview.data)
+        replacement = self.payload(preview.data, replaces_delivery_id=delivery['id'], correction_reason='Correct label')
+        replacement['rows'][0]['name'] = 'Corrected label'
+        saved = self.issue(replacement)
+        self.assertEqual(saved.status_code, 201, saved.data)
+        self.assertEqual(saved.data['snapshot']['replaces_delivery_id'], delivery['id'])
+        self.assertEqual(saved.data['snapshot']['customer_document']['issuer']['name'], 'Pvt Ltd original')
+        self.assertNotEqual(saved.data['snapshot']['customer_document']['number'], delivery['snapshot']['customer_document']['number'])
+        self.assertEqual(ProgramDelivery.objects.get(pk=delivery['id']).snapshot, delivery['snapshot'])
+        self.assertEqual(self.issue(replacement).status_code, 200)
     def test_supplier_defaults_use_supplier_and_issuer_parties_but_not_customer_transport(self):
         self.settings.gst_number='PVT-GST';self.settings.save()
         self.company.gst_number='SUPPLIER-GST';self.company.save()

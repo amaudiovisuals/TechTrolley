@@ -23,6 +23,7 @@ from . import transfer_views
 from . import truck_views
 from . import ai_views
 from .challan_documents import challan_document, challan_history
+from .challan_archive_files import archived_challan_logo, archived_challan_pdf
 from . import staff_commands, event_lifecycle, reconciliation_commands
 
 urlpatterns = [
@@ -58,6 +59,9 @@ urlpatterns = [
     path('conferences/<int:pk>/quantity-transfers/', quantity_transfers, name='quantity_transfers'),
     path('conferences/<int:pk>/challan-documents/<str:scope>/', challan_document, name='challan_document'),
     path('challan-documents/<uuid:document_id>/history/', challan_history, name='challan_history'),
+    path('challan-documents/<uuid:document_id>/original-pdf/', archived_challan_pdf, name='archived_challan_pdf'),
+    path('challan-documents/<uuid:document_id>/original-return-pdf/', archived_challan_pdf, {'direction': 'return'}, name='archived_return_challan_pdf'),
+    path('challan-logos/<str:sha256>/', archived_challan_logo, name='archived_challan_logo'),
     path('conferences/<int:pk>/asset-commands/', asset_commands, name='asset_commands'),
     # API endpoints or views
     path('ai-assistant/', ai_views.ai_assistant_chat, name='ai_assistant'),

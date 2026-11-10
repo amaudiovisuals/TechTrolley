@@ -289,6 +289,16 @@ class ConferenceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def validate(self, data):
+        from .challan_lock import challans_locked
+        if self.instance and challans_locked(self.instance):
+            paper_fields = {
+                'end_date', 'start_date', 'name', 'association_name', 'billing_address',
+                'transport_address', 'gst_number', 'contact_person', 'contact_phone',
+                'contact_email', 'conference_type', 'vehicle_number', 'driver_phone',
+                'challan_date', 'challan_number', 'approximate_value',
+            }
+            if any(getattr(self.instance, field) != data[field] for field in paper_fields & data.keys()):
+                raise serializers.ValidationError({'challan': 'The paperwork window has closed. Use a reviewed challan correction.'})
         protected = {'lifecycle_state', 'completed_at', 'completed_by', 'archived_at', 'archived_by'}
         supplied = protected & set(self.initial_data)
         if supplied:
@@ -303,6 +313,10 @@ class ConferenceSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         data['pdf_document'] = f'/api/conferences/{instance.pk}/download-pdf/' if instance.pdf_document else None
         from .challan_documents import document_data
+        from .challan_lock import lock_on, challans_locked
+        deadline = lock_on(instance)
+        data['challan_lock_on'] = deadline.isoformat() if deadline else None
+        data['challans_locked'] = challans_locked(instance)
         from .quantity_commands import allocation_data
         data['quantity_allocations'] = {str(a.asset_id): allocation_data(a) for a in instance.quantity_allocations.all()}
         data['quantity_assets_details'] = SimpleAssetSerializer(Asset.objects.filter(

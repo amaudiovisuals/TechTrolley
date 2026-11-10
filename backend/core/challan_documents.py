@@ -19,6 +19,7 @@ from .models import (Asset, Conference, TruckChallan, SubrentalTicketItem, Subre
                      ChallanDocument, ChallanLine, ChallanRevision, MovementReceipt,
                      ChallanNumberLock, ChallanNumberReservation, CompanySettings)
 from .permissions import WAREHOUSE_ROLES, get_business_role
+from .challan_lock import require_challan_edit
 
 SNAPSHOT_FIELDS = {'sku': 100, 'alias_name': 200, 'serial_number': 2000,
                    'description': 10000, 'type': 100, 'mac_address': 100,
@@ -193,8 +194,8 @@ def normalize(payload):
             'state': state, 'correction_reason': reason.strip()}
 
 
-def capture_header(event, truck=None, owner_sections_version=1):
-    settings = CompanySettings.objects.order_by('pk').first()
+def capture_header(event, truck=None, owner_sections_version=1, *, issuer=None):
+    settings = issuer or CompanySettings.objects.order_by('pk').first()
     keys = ['name', 'association_name', 'billing_address', 'transport_address', 'gst_number',
             'contact_person', 'contact_phone', 'contact_email', 'conference_type', 'start_date', 'end_date']
     header = {key: str(getattr(event, key) or '') for key in keys}
@@ -207,6 +208,17 @@ def capture_header(event, truck=None, owner_sections_version=1):
         header['company'] = {key: str(getattr(settings, key) or '') for key in ['name', 'address', 'phone', 'email', 'gst_number', 'website', 'powered_by_name']}
         header['company']['logo'] = settings.logo.url if settings.logo else None
     if owner_sections_version == 1: header['owner_sections_version'] = 1
+    return header
+
+
+def capture_saved_header(event, truck=None, owner_sections_version=1):
+    from .challan_archive_files import archive_file, issuer_logo
+    issuer = CompanySettings.objects.order_by('pk').first()
+    header = capture_header(event, truck, owner_sections_version, issuer=issuer)
+    logo = issuer_logo(issuer)
+    if logo:
+        archive_file(*logo)
+        header['company']['logo'] = f'/api/challan-logos/{logo[0]}/'
     return header
 
 
@@ -250,8 +262,6 @@ def save_document(user, event_id, scope, payload, coordinated=False):
         event = Conference.objects.select_for_update().get(pk=event_id)
     except Conference.DoesNotExist:
         raise CommandError('unknown_conference', 404)
-    from .event_lifecycle import require_open_event
-    require_open_event(event)
     trucks = list(TruckChallan.objects.select_for_update().filter(conference=event).order_by('pk'))
     from .models import TruckManifest
     if TruckManifest.objects.filter(conference=event).exists() and not coordinated:
@@ -262,17 +272,24 @@ def save_document(user, event_id, scope, payload, coordinated=False):
         if not truck:
             raise CommandError('unknown_document_scope', 404)
     document = ChallanDocument.objects.select_for_update().filter(conference=event, scope=scope).first()
+    late_correction = require_challan_edit(
+        event, user, correction=bool(document and command['state'] == 'issued'),
+        reason=command['correction_reason'], require_open=True,
+    )
     if command['expected_revision'] != (document.revision if document else 0):
         raise CommandError('document_changed')
     if command['expected_event_revision'] != event.revision:
         raise CommandError('event_changed')
     was_issued = bool(document and document.state == 'issued')
-    if was_issued:
+    if was_issued or late_correction:
         if command['state'] != 'issued' or not command['correction_reason']:
             raise CommandError('issued_document_requires_correction_reason')
         if command['number'] != document.number:
             raise CommandError('issued_number_is_permanent')
-    if command['state'] == 'issued' and (not command['lines'] or not command['document_date']):
+    if command['state'] == 'issued' and (not command['lines'] or not command['document_date']) and not (
+        was_issued and document.provenance == 'reviewed_legacy_archive'
+        and (command['lines'] or document.header.get('original_pdf_sha256'))
+    ):
         raise CommandError('issued_document_requires_lines_and_date', 400)
     originals = {str(line.pk): line for line in document.lines.all()} if document else {}
     foreign_ids = ChallanLine.objects.filter(pk__in=[line['id'] for line in command['lines']])
@@ -358,7 +375,7 @@ def save_document(user, event_id, scope, payload, coordinated=False):
                 other_quantity += value
             if quantity + other_quantity > asset.quantity:
                 raise CommandError('truck_allocations_exceed_stock')
-    number = reserve_number(command['number'], event, truck, document)
+    number = document.number if was_issued or late_correction else reserve_number(command['number'], event, truck, document)
     new_document = document is None
     if not document:
         document = ChallanDocument(conference=event, truck=truck, scope=scope, provenance='legacy_snapshot_at_first_save')
@@ -367,12 +384,15 @@ def save_document(user, event_id, scope, payload, coordinated=False):
     document.document_date = date.fromisoformat(command['document_date']) if command['document_date'] else None
     document.total_override = Decimal(command['total_override']) if command['total_override'] is not None else None
     # Capture headers at each draft save/issue; issued corrections retain original headers.
-    if not was_issued:
-        document.header = capture_header(event, truck, 1 if new_document else document.header.get('owner_sections_version'))
+    if not (was_issued or late_correction):
+        document.header = capture_saved_header(event, truck, 1 if new_document else document.header.get('owner_sections_version'))
     document.revision += 1
     document.save()
     replace_lines(document, command['lines'])
-    if truck:
+    if late_correction:
+        # The late correction revises paper, not the event or its warehouse custody.
+        pass
+    elif truck:
         event.challan_assets.add(*list(truck.assets.values_list('pk', flat=True)))
         truck.asset_quantities = allocated
         truck.challan_number = number
@@ -381,7 +401,8 @@ def save_document(user, event_id, scope, payload, coordinated=False):
     else:
         # Compatibility number only. Custody and frozen legacy membership remain untouched.
         event.challan_number = number
-    event.save(update_fields=['challan_number'])
+    if not late_correction:
+        event.save(update_fields=['challan_number'])
     data = document_data(document)
     ChallanRevision.objects.create(document=document, revision=document.revision, actor=user,
                                    reason=command['correction_reason'], snapshot=data)
@@ -408,6 +429,8 @@ def challan_document(request, pk, scope):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def challan_history(request, document_id):
+    if get_business_role(request.user) not in WAREHOUSE_ROLES | {'accounts'}:
+        return Response({'error': 'not_authorized'}, status=403)
     if not ChallanDocument.objects.filter(pk=document_id).exists():
         return Response({'error': 'unknown_document'}, status=404)
     return Response([{'revision': row.revision, 'reason': row.reason,

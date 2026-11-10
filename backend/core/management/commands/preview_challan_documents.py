@@ -10,6 +10,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--conference', type=int)
+        parser.add_argument('--numbered-only', action='store_true', help='Limit the archive review to numbered non-audit challans.')
         parser.add_argument('--output', help='Optional private JSON path; must not exist already.')
 
     def handle(self, *args, **options):
@@ -17,7 +18,7 @@ class Command(BaseCommand):
             if connection.vendor == 'postgresql':
                 with connection.cursor() as cursor:
                     cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            result = preview_legacy_documents(options['conference'])
+            result = preview_legacy_documents(options['conference'], numbered_only=options['numbered_only'])
         if options['output']:
             try:
                 descriptor = os.open(options['output'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

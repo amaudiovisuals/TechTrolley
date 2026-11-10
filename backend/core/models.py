@@ -475,6 +475,13 @@ class ChallanNumberReservation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class ChallanArchiveFile(models.Model):
+    """Content-addressed original files retained with the database backup."""
+    sha256 = models.CharField(max_length=64, primary_key=True)
+    content_type = models.CharField(max_length=32)
+    content = models.BinaryField()
+
+
 class ChallanDocument(models.Model):
     import uuid
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
