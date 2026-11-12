@@ -8662,6 +8662,7 @@ const App: React.FC = () => {
                                                 body: JSON.stringify({
                                                   assets: newAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),
                                                   challan_assets: newChallanAssets.map(id => parseInt(String(id), 10)).filter(id => !isNaN(id)),
+                                                  staged_assets: newStaged,
                                                   requirements: (conferenceFormData.requirements || []).map(id => parseInt(String(id), 10)).filter(id => !isNaN(id))
                                                 })
                                               });
@@ -8799,8 +8800,9 @@ const App: React.FC = () => {
                             (() => {
                               const requirementIds = new Set((conferenceFormData.requirements || []).map(String));
                               const assignedIds = new Set((conferenceFormData.assets || []).map(String));
+                              const stagedIds = new Set((conferenceFormData.staged_assets || []).map(String));
 
-                              if (requirementIds.size === 0 && assignedIds.size === 0) {
+                              if (requirementIds.size === 0 && assignedIds.size === 0 && stagedIds.size === 0) {
                                 return (
                                   <div className="col-span-2 py-20 text-center space-y-4">
                                     <div className="text-slate-200 text-6xl"><i className="fa-solid fa-clipboard-list"></i></div>
@@ -8814,7 +8816,7 @@ const App: React.FC = () => {
                                   {/* F-3: Cart view — Admin: Staged + Pending + Assigned grouped by alias */}
                                   {(() => {
                                     const aPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
-                                    const stagedList = aPool.filter(a => new Set((conferenceFormData.staged_assets || []).map(String)).has(String(a.id)));
+                                    const stagedList = aPool.filter(a => stagedIds.has(String(a.id)));
                                     const pendingList = aPool.filter(a => requirementIds.has(String(a.id)) && !assignedIds.has(String(a.id)));
                                     const assignedList = aPool.filter(a => assignedIds.has(String(a.id)));
                                     type CartEntry = { asset: Asset; type: 'staged' | 'pending' | 'extra' | 'assigned' };
