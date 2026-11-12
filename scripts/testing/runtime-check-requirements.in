@@ -1,0 +1,2 @@
+# Validation uses exactly the same direct runtime candidate as the application.
+-r ../../backend/requirements.in

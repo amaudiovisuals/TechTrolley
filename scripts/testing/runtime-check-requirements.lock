@@ -1,0 +1,3 @@
+# Single runtime lock: validation must not drift from the application candidate.
+--require-hashes
+-r ../../backend/requirements.lock
