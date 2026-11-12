@@ -1,7 +1,12 @@
+from django.core.exceptions import SuspiciousOperation
+from rest_framework.exceptions import APIException, ValidationError as APIValidationError
+from .permissions import AssetWritePermission, QuantityAssignmentPermission, WarehouseWriteAuthenticatedRead
+from .permissions import AdministratorWriteAuthenticatedRead, PublicSettingsReadAdministratorWrite
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse
 from django.db.models import Q
+from django.db import transaction, DatabaseError
 from .models import Asset, Conference, DeliveryChallan, Employee, CompanySettings
 from django.core.files.uploadedfile import UploadedFile
 from .forms import AssetForm, ConferenceForm
@@ -10,9 +15,9 @@ import io
 import pandas as pd
 
 def dashboard(request):
-    total_assets = Asset.objects.filter(is_temporary=False).count()
-    assets_in_use = Asset.objects.filter(is_temporary=False, status='In Use').count()
-    assets_available = Asset.objects.filter(is_temporary=False, status='Available').count()
+    total_assets = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').count()
+    assets_in_use = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status='In Use').count()
+    assets_available = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status='Available').count()
     conferences = Conference.objects.all().order_by('-start_date')[:5]
     
     context = {
@@ -29,10 +34,10 @@ from .serializers import AssetSerializer, EmployeeSerializer
 
 @api_view(['GET'])
 def asset_stats(request):
-    total = Asset.objects.filter(is_temporary=False).count()
-    ready = Asset.objects.filter(is_temporary=False, status='Available').count()
-    in_use = Asset.objects.filter(is_temporary=False, status__in=['In Use', 'Dispatched']).count()
-    maintenance = Asset.objects.filter(is_temporary=False, status='Maintenance').count()
+    total = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').count()
+    ready = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status='Available').count()
+    in_use = Asset.objects.exclude(stock_kind='led_case').filter(is_temporary=False, status__in=['In Use', 'Dispatched']).count()
+    maintenance = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').filter(Q(status__in=['Maintenance', 'Damaged', 'On Service', 'Expired']) | Q(condition='Damaged') | Q(flag__in=['Required Service', 'On Service', 'Expired'])).count()
     
     return Response({
         "total": total,
@@ -41,50 +46,66 @@ def asset_stats(request):
         "maintenance": maintenance
     })
 
+
+@api_view(['GET'])
+@transaction.atomic
+def employee_allocations(request):
+    # Allocation summaries are independent of inventory pagination/search.
+    from django.db import connection
+    from .models import StaffAllocation
+    from django.db.models import Exists, OuterRef
+    if connection.vendor == 'postgresql':
+        with connection.cursor() as cursor:
+            cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+    assets = list(Asset.objects.annotate(annotated_staff_open=Exists(StaffAllocation.objects.filter(asset=OuterRef('pk'),returned_at__isnull=True))).filter(Q(assigned_to__isnull=False)|Q(annotated_staff_open=True)).select_related('assigned_to', 'subrental_company').order_by('pk'))
+    active = {row.asset_id:row for row in StaffAllocation.objects.filter(asset_id__in=[a.pk for a in assets],returned_at__isnull=True).select_related('employee')}
+    data = AssetSerializer(assets, many=True).data
+    for asset, item in zip(assets, data):
+        row = active.get(asset.pk)
+        item['allocation_employee_id'] = row.employee_id if row else asset.assigned_to_id
+        item['allocation_employee_name'] = row.employee.name if row else asset.assigned_to.name
+        item['subrental_company_name'] = asset.subrental_company.name if asset.subrental_company else None
+        item['staff_issue'] = {'id':str(row.pk) if row else None,'issued_at':row.issued_at.isoformat() if row and row.issued_at else None,
+                               'issued_by':row.issued_by_id if row else None,'provenance':row.provenance if row else 'legacy_assignment_unrecorded',
+                               'history_matches_current_custodian':row is None or row.employee_id==asset.assigned_to_id}
+    return Response(data)
+
+
+@api_view(['GET'])
+def staff_issue_candidates(request):
+    from .permissions import get_business_role, WAREHOUSE_ROLES
+    if get_business_role(request.user) not in WAREHOUSE_ROLES:
+        return Response({'error':'not_authorized'},status=403)
+    from django.db.models import Exists, OuterRef, Value, CharField
+    from .models import StaffAllocation
+    held=Conference.objects.filter(is_audit=False).filter(Q(assets=OuterRef('pk'))|Q(crosscheck_assets=OuterRef('pk'))|Q(staged_assets=OuterRef('pk')))
+    rows=Asset.objects.exclude(stock_kind='led_case').filter(assigned_to__isnull=True,is_temporary=False,quantity=1,quantity_tracking=False,flag='',status='Available',parent_asset__isnull=True,sub_assets__isnull=True).exclude(type='Consumables').exclude(condition='Damaged').exclude(quantity_allocations__isnull=False).exclude(consumable_allocations__isnull=False)
+    rows=rows.annotate(event_held=Exists(held),annotated_staff_open=Exists(StaffAllocation.objects.filter(asset=OuterRef('pk'),returned_at__isnull=True)),annotated_conference=Value(None,output_field=CharField())).filter(event_held=False,annotated_staff_open=False).select_related('subrental_company').order_by('pk')
+    search=request.query_params.get('search','').strip()[:200]
+    if search:rows=rows.filter(Q(sku__icontains=search)|Q(alias_name__icontains=search)|Q(serial_number__icontains=search)|Q(barcode__icontains=search))
+    from rest_framework.pagination import PageNumberPagination
+    pager=PageNumberPagination();pager.page_size=25
+    selected=pager.paginate_queryset(rows,request)
+    data=AssetSerializer(selected,many=True).data
+    for asset,item in zip(selected,data):item['subrental_company_name']=asset.subrental_company.name if asset.subrental_company else None
+    return pager.get_paginated_response(data)
+
 @api_view(['GET'])
 def unique_aliases(request):
-    data = Asset.objects.values('alias_name', 'type').distinct()
+    data = Asset.objects.exclude(stock_kind='led_case').values('alias_name', 'type').distinct()
     return Response(list(data))
 
 from datetime import date
-from django.db import connection, utils
+from django.db import connection, utils, transaction
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def nuke_ghosts(request):
-    Asset.objects.filter(status__in=['In Use', 'Dispatched']).update(status='Available')
-    
-    today = date.today()
-    ended_confs = Conference.objects.filter(end_date__lt=today)
-    
-    for conf in ended_confs:
-        if hasattr(conf, 'staged_assets'): conf.staged_assets.clear()
-        if hasattr(conf, 'crosscheck_assets'): conf.crosscheck_assets.clear()
-        if hasattr(conf, 'assets'): conf.assets.clear()
 
-    return Response({"message": "Database cleaned! All assets forced to Available."})
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def snipe_91(request):
-    try:
-        conf = Conference.objects.get(id=91)
-        if hasattr(conf, 'staged_assets'): conf.staged_assets.clear()
-        if hasattr(conf, 'crosscheck_assets'): conf.crosscheck_assets.clear()
-        if hasattr(conf, 'assets'): conf.assets.clear()
-        return Response({"message": "Target 91 neutralized!"})
-    except Conference.DoesNotExist:
-        return Response({"message": "Target 91 not found."})
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def global_status_reset(request):
-    count = Asset.objects.all().update(status='Available')
-    return Response({"message": f"Global wipe complete! {count} assets are now Available."})
 
 @api_view(['GET', 'POST'])
+@permission_classes([WarehouseWriteAuthenticatedRead])
+@transaction.atomic
 def asset_list(request):
     if request.method == 'GET':
         from django.db.models import OuterRef, Subquery
@@ -93,20 +114,23 @@ def asset_list(request):
         from django.db.models import Value
 
         # Optimized subqueries to get the current conference name without N+1 hits
-        assigned_qs = Conference.objects.filter(assets=OuterRef('pk')).values('name')[:1]
-        crosscheck_qs = Conference.objects.filter(crosscheck_assets=OuterRef('pk')).values('name')[:1]
+        assigned_qs = Conference.objects.filter(assets=OuterRef('pk'), is_audit=False).order_by('pk').values('name')[:1]
+        crosscheck_qs = Conference.objects.filter(crosscheck_assets=OuterRef('pk'), is_audit=False).order_by('pk').values('name')[:1]
 
         # Filter by subrental company if provided
         subrental_company_id = request.query_params.get('subrental_company_id')
         
         assets_query = Asset.objects.annotate(
             annotated_conference=Coalesce(Subquery(assigned_qs), Subquery(crosscheck_qs), Value(None))
-        ).select_related('assigned_to', 'parent_asset', 'subrental_company').prefetch_related(
+        ).select_related('assigned_to', 'parent_asset', 'subrental_company', 'led_panel_record__case__source_asset', 'led_case_conversion').prefetch_related(
             'sub_assets',
             'sub_assets__assigned_to',
             'assigned_conferences',
             'ticket_items__ticket__conference'
         )
+        from .models import StaffAllocation
+        from django.db.models import Exists
+        assets_query = assets_query.annotate(annotated_staff_open=Exists(StaffAllocation.objects.filter(asset=OuterRef('pk'),returned_at__isnull=True)))
 
         # Exclude temporary items created inside subrental tickets from all inventory views,
         # but keep temporary/ad-hoc items that were attached to a conference, challan, or truck challan
@@ -115,14 +139,16 @@ def asset_list(request):
         ).distinct()
 
         is_all_query = request.GET.get('all') == 'true'
+        if not (is_all_query and request.query_params.get('include_containers') == 'true'):
+            assets_query = assets_query.exclude(stock_kind='led_case')
         if subrental_company_id:
             if subrental_company_id == 'null':
                 assets_query = assets_query.filter(subrental_company__isnull=True)
             else:
                 assets_query = assets_query.filter(subrental_company_id=subrental_company_id)
         elif is_all_query:
-            # The complete lookup includes idle permanent inventory across owners.
-            # The temporary-item attachment filter above remains in force.
+            # Permanent supplier-owned stock shares the warehouse scan index.
+            # Ticket-only temporary rows still follow the attachment filter above.
             pass
         else:
             # By default, show ONLY our main inventory in paginated inventory view
@@ -163,6 +189,21 @@ def asset_list(request):
         return paginator.get_paginated_response(serializer.data)
     elif request.method == 'POST':
         is_many = isinstance(request.data, list)
+        # Ownership reviews lock kit assets before owner companies. Registration
+        # uses the same order, including bulk imports, so it cannot slip a new
+        # member into a classification/kit review while that review commits.
+        rows = request.data if is_many else [request.data]
+        parents, owners = set(), set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for field, target in (('parent_asset', parents), ('subrental_company', owners)):
+                value = row.get(field)
+                if str(value).isdigit():
+                    target.add(int(value))
+        list(Asset.objects.select_for_update().filter(pk__in=parents).order_by('pk'))
+        from .models import SubrentalCompany
+        list(SubrentalCompany.objects.select_for_update().filter(pk__in=owners).order_by('pk'))
         serializer = AssetSerializer(data=request.data, many=is_many)
         if serializer.is_valid():
             serializer.save()
@@ -170,8 +211,20 @@ def asset_list(request):
         return Response(serializer.errors, status=400)
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([AssetWritePermission])
+@transaction.atomic
 def asset_detail(request, pk):
-    asset = get_object_or_404(Asset, pk=pk)
+    if request.method != 'GET':
+        parent = Asset.objects.filter(pk=pk).values_list('parent_asset_id', flat=True).first()
+        ids = {pk} | ({parent} if parent else set())
+        proposed_parent = request.data.get('parent_asset') if isinstance(request.data, dict) else None
+        if str(proposed_parent).isdigit():
+            ids.add(int(proposed_parent))
+        list(Asset.objects.select_for_update().filter(pk__in=ids).order_by('pk'))
+        current_parent = Asset.objects.filter(pk=pk).values_list('parent_asset_id', flat=True).first()
+        if current_parent and current_parent not in ids:
+            return Response({'error': 'inventory_kit_links_changed_retry'}, status=409)
+    asset = get_object_or_404(Asset.objects.select_for_update() if request.method != 'GET' else Asset.objects.all(), pk=pk)
 
     if request.method == 'GET':
         serializer = AssetSerializer(asset)
@@ -180,30 +233,17 @@ def asset_detail(request, pk):
     elif request.method in ['PUT', 'PATCH']:
         partial = (request.method == 'PATCH')
         
-        # Handle system user assignment (bridging to Employee record)
-        assigned_to = request.data.get('assigned_to')
-        if assigned_to and isinstance(assigned_to, str) and assigned_to.startswith('u-'):
-            user_id = assigned_to.split('-')[1]
-            from django.contrib.auth.models import User
-            from .models import Employee
-            u = get_object_or_404(User, pk=user_id)
-            # Find or create matching employee
-            emp, created = Employee.objects.get_or_create(
-                email=u.email,
-                defaults={
-                    'name': u.email.split('@')[0].upper(),
-                    'employee_id': f"SYS-{u.id}",
-                    'department': 'Management',
-                    'phone': '-',
-                    'role': u.profile.role if hasattr(u, 'profile') else 'admin'
-                }
-            )
-            # Update the request data to use the actual Employee ID
-            data = request.data.copy()
-            data['assigned_to'] = emp.id
-            serializer = AssetSerializer(asset, data=data, partial=partial)
-        else:
-            serializer = AssetSerializer(asset, data=request.data, partial=partial)
+        context = request.data.get('conference_id')
+        if context is not None:
+            if isinstance(context, bool) or not str(context).isdigit():
+                return Response({'error': 'invalid_conference_context'}, status=400)
+            from .models import Conference
+            context_event = Conference.objects.select_for_update().filter(pk=int(context)).first()
+            if context_event is None:
+                return Response({'error': 'unknown_conference'}, status=404)
+            if context_event.lifecycle_state != 'open':
+                return Response({'error': 'event_is_sealed'}, status=409)
+        serializer = AssetSerializer(asset, data=request.data, partial=partial)
 
         if serializer.is_valid():
             serializer.save()
@@ -240,10 +280,23 @@ def asset_detail(request, pk):
         return Response(serializer.errors, status=400)
 
     elif request.method == 'DELETE':
-        asset.delete()
+        if asset.stock_kind != 'equipment':
+            return Response({'error': 'LED_case_and_panel_history_is_protected'}, status=409)
+        from django.db.models.deletion import ProtectedError
+        if asset.ownership_targets.exists():
+            return Response({'error': 'inventory_item_has_ownership_history'}, status=409)
+        if asset.assigned_to_id or any(getattr(asset, relation).exists() for relation in
+                ('assigned_conferences', 'crosscheck_conferences', 'staged_conferences', 'requirement_conferences', 'challan_conferences', 'truck_challans', 'ticket_items')):
+            return Response({'error': 'inventory_item_has_custody_or_legacy_history'}, status=409)
+        try:
+            asset.delete()
+        except ProtectedError:
+            return Response({'error': 'inventory_item_has_challan_history'}, status=409)
         return Response(status=204)
 
 @api_view(['GET', 'POST'])
+@permission_classes([WarehouseWriteAuthenticatedRead])
+@transaction.atomic
 def asset_sub_assets(request, pk):
     """
     GET  /api/assets/<pk>/sub-assets/  → list all sub-assets of this asset
@@ -260,6 +313,10 @@ def asset_sub_assets(request, pk):
         if not child_id:
             return Response({'error': 'child_id is required'}, status=400)
         child = get_object_or_404(Asset, pk=child_id)
+        locked = {a.pk: a for a in Asset.objects.select_for_update().filter(pk__in=[parent.pk, child.pk]).order_by('pk')}
+        parent, child = locked[parent.pk], locked[child.pk]
+        if parent.stock_kind != 'equipment' or child.stock_kind != 'equipment':
+            return Response({'error': 'LED_case_mapping_is_separate_from_kit_links'}, status=409)
         if child.pk == parent.pk:
             return Response({'error': 'An asset cannot be its own sub-asset'}, status=400)
         child.parent_asset = parent
@@ -268,6 +325,7 @@ def asset_sub_assets(request, pk):
         return Response(serializer.data)
 
 @api_view(['DELETE'])
+@permission_classes([WarehouseWriteAuthenticatedRead])
 def asset_sub_asset_remove(request, pk, child_pk):
     """
     DELETE /api/assets/<pk>/sub-assets/<child_pk>/  → unlink a child asset
@@ -318,29 +376,34 @@ from django.conf import settings
 import os
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def download_conference_pdf(request, conference_id):
-    """
-    Forces the download of an uploaded logistics PDF instead of opening it in a tab.
-    """
+    from .permissions import get_business_role, WAREHOUSE_ROLES, technician_has_event
+    from .private_media import open_media, MAX_PDF_BYTES
+    from django.http import FileResponse, Http404
+    role = get_business_role(request.user)
+    if role not in WAREHOUSE_ROLES | {'accounts'} and not (
+        role == 'technician' and technician_has_event(request.user, conference_id)
+    ):
+        return Response({'detail': 'You are not assigned to this event document.'}, status=403)
     conference = get_object_or_404(Conference, id=conference_id)
-    if not conference.pdf_document:
-        return Response({'detail': 'No document attached to this conference'}, status=404)
-        
-    path = conference.pdf_document.path
-    if not os.path.exists(path):
-        return Response({'detail': 'File not found on server'}, status=404)
-        
-    filename = os.path.basename(path)
-    with open(path, 'rb') as f:
-        response = HttpResponse(f.read(), content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename=\"{filename}\"'
-        return response
+    stream = open_media(conference.pdf_document, 'conference_pdfs', MAX_PDF_BYTES)
+    if stream.read(5) != b'%PDF-':
+        stream.close()
+        raise Http404
+    stream.seek(0)
+    response = FileResponse(stream, as_attachment=True,
+        filename=f'Conference_{conference.pk}.pdf', content_type='application/pdf')
+    response['Cache-Control'] = 'private, no-store'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Content-Security-Policy'] = "sandbox; default-src 'none'"
+    return response
 
 from rest_framework.decorators import api_view
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AdministratorWriteAuthenticatedRead])
+@transaction.atomic
 def employee_list(request):
     if request.method == 'GET':
         employees = Employee.objects.all()
@@ -349,11 +412,22 @@ def employee_list(request):
     elif request.method == 'POST':
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         
-        email = (data.get('email') or '').strip()
+        email = (data.get('email') or '').strip().casefold()
+        data['email'] = email
         if not email:
             return Response({'email': ['Login ID / Email is required.']}, status=400)
 
         from django.contrib.auth.models import User
+        password = data.get('password') or None
+        if password is not None:
+            if not isinstance(password,str) or len(password)<10:
+                return Response({'password':['Use at least 10 characters, or leave blank until a password is set.']},status=400)
+            from django.contrib.auth.password_validation import validate_password
+            from django.core.exceptions import ValidationError
+            try:
+                validate_password(password,user=User(username=email,email=email))
+            except ValidationError as error:
+                return Response({'password':error.messages},status=400)
         if User.objects.filter(username__iexact=email).exists() or User.objects.filter(email__iexact=email).exists():
             return Response({'email': ['A user with this login ID / email already exists.']}, status=400)
         if Employee.objects.filter(email__iexact=email).exists():
@@ -380,40 +454,35 @@ def employee_list(request):
             employee = serializer.save()
             
             # Check if an auth.User needs to be provisioned for this Employee
-            password = data.get('password') or 'amoffice'
+            password = data.get('password') or None
             if employee.email:
                 from .models import UserProfile
-                user_obj = User.objects.filter(username__iexact=employee.email).first()
-                if not user_obj:
-                    user_obj = User.objects.filter(email__iexact=employee.email).first()
-                
                 is_admin = (employee.role in ('admin', 'boss'))
-                if not user_obj:
-                    user_obj = User.objects.create_user(
-                        username=employee.email,
-                        email=employee.email,
-                        password=password,
-                        is_staff=is_admin,
-                        is_superuser=is_admin
-                    )
-                else:
-                    if password:
-                        user_obj.set_password(password)
-                    if is_admin:
-                        user_obj.is_staff = True
-                        user_obj.is_superuser = True
-                    user_obj.save()
-                
+                user_obj = User.objects.create_user(username=employee.email, email=employee.email,
+                    password=password, is_staff=is_admin, is_superuser=is_admin)
+                employee.user = user_obj
+                employee.identity_revision += 1
+                employee.save(update_fields=['user', 'identity_revision'])
+                from .models import MovementReceipt, EmployeeIdentityHistory
+                import uuid, hashlib, json
+                request_id = uuid.uuid4()
+                result = {'operation':'employee_provision','request_id':str(request_id),'employee_id':employee.pk,'user_id':user_obj.pk}
+                receipt = MovementReceipt.objects.create(actor=request.user, request_id=request_id,
+                    payload_hash=hashlib.sha256(json.dumps(result,sort_keys=True).encode()).hexdigest(),result=result)
+                EmployeeIdentityHistory.objects.create(employee=employee,user=user_obj,actor=request.user,receipt=receipt,
+                    reason='Employee and login created together',snapshot={'employee_id':employee.pk,'employee_code':employee.employee_id,'user_id':user_obj.pk})
+
                 # Sync UserProfile role
                 profile, _ = UserProfile.objects.get_or_create(user=user_obj)
                 profile.role = employee.role or 'technician'
                 profile.save()
                     
-            return Response(serializer.data, status=201)
+            return Response({**serializer.data,'login_password_set':bool(password)}, status=201)
         return Response(serializer.errors, status=400)
 
 @api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AdministratorWriteAuthenticatedRead])
+@transaction.atomic
 def employee_detail(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
 
@@ -429,33 +498,27 @@ def employee_detail(request, pk):
         return Response(serializer.errors, status=400)
 
     elif request.method == 'DELETE':
-        from django.contrib.auth.models import User
-        if employee.email and request.user.email.lower() != employee.email.lower():
-            User.objects.filter(username__iexact=employee.email).exclude(is_superuser=True).delete()
-            User.objects.filter(email__iexact=employee.email).exclude(is_superuser=True).delete()
+        if employee.assets.exists() or employee.staff_allocations.exists() or employee.user_id or employee.identity_history.exists():
+            return Response({'error':'employee_has_custody_or_identity_history'},status=409)
         employee.delete()
         return Response(status=204)
 
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([PublicSettingsReadAdministratorWrite])
+@transaction.atomic
 def company_settings(request):
     from .serializers import CompanySettingsSerializer
     try:
-        # Ensure there's at least one settings object
-        settings_obj, created = CompanySettings.objects.get_or_create(pk=1)
-
         if request.method == 'GET':
-            from .models import get_current_financial_year
-            current_fy = get_current_financial_year()
-            stored_fy = (settings_obj.challan_fy or '').strip()
-            if not stored_fy:
-                settings_obj.challan_fy = current_fy
-                settings_obj.save(update_fields=['challan_fy'])
-
+            settings_obj = CompanySettings.objects.order_by('pk').first() or CompanySettings()
             serializer = CompanySettingsSerializer(settings_obj, context={'request': request})
-            return Response(serializer.data)
+            data = serializer.data
+            if not request.user.is_authenticated:
+                public_fields = {'name', 'logo', 'powered_by_name', 'theme_template', 'website'}
+                data = {key: value for key, value in data.items() if key in public_fields}
+            return Response(data)
         
         elif request.method == 'POST':
             # ONLY Authenticated users can change settings
@@ -468,6 +531,11 @@ def company_settings(request):
             else:
                 data = request.data.copy()
             
+            # Parse the bounded request before taking the shared numbering lock.
+            from .challan_documents import number_mutex
+            number_mutex()
+            settings_obj = CompanySettings.objects.select_for_update().order_by('pk').first() or CompanySettings()
+
             # Logo management
             if 'logo' in data:
                 logo_val = data.get('logo')
@@ -475,8 +543,8 @@ def company_settings(request):
                     # If it's a string (URL) or empty, we handle it
                     if not logo_val:
                          # Explicitly clearing the logo
-                         if settings_obj.logo:
-                             settings_obj.logo.delete(save=False)
+                         # Retain the prior private file; validation failure or a
+                         # DB rollback must not destroy the branding image.
                          settings_obj.logo = None
                     # Remove from data so serializer doesn't try to save a string to ImageField
                     del data['logo']
@@ -495,6 +563,8 @@ def company_settings(request):
                 return Response(serializer.data)
             return Response(serializer.errors, status=400)
 
+    except (APIException, SuspiciousOperation):
+        raise
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
@@ -532,69 +602,12 @@ def bulk_upload_assets(request):
 from rest_framework.authtoken.models import Token as AuthToken
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([QuantityAssignmentPermission])
 def asset_assign_quantity(request, pk):
+    # Retired non-atomic splitter: a stale browser must never clone an identity.
     asset = get_object_or_404(Asset, pk=pk)
-    if asset.subrental_company_id and (asset.quantity > 1 or asset.type == 'Consumables'):
-        return Response({'error': 'Supplier bulk items and consumables need their quantity and return workflow enabled before assignment.'}, status=409)
-    quantity_to_assign = int(request.data.get('quantity', 0))
-    conference_id = request.data.get('conference_id')
-    
-    if quantity_to_assign <= 0:
-        return Response({'error': 'Quantity must be greater than 0'}, status=400)
-    
-    if quantity_to_assign > asset.quantity:
-        return Response({'error': 'Not enough quantity available'}, status=400)
-    
-    conference = get_object_or_404(Conference, pk=conference_id)
-    
-    # If it's a full assignment of an available item, just update status
-    # BUT if it's already "In Use" or "Crosscheck" (somehow scanned again), we might want to split or add.
-    # To keep it simple: always split or create a new "In Use" record if it's coming from "Available".
-    
-    if quantity_to_assign == asset.quantity and asset.status == 'Available':
-        # Full assignment of an Available asset
-        asset.status = 'In Use'
-        asset.save()
-        conference.assets.add(asset)
-        return Response(AssetSerializer(asset).data)
-    else:
-        # Partial assignment: split the record
-        # 1. Create a new record for the assigned portion
-        new_asset = Asset(
-            sku=asset.sku,
-            alias_name=asset.alias_name,
-            mac_address=asset.mac_address,
-            imei_number_1=asset.imei_number_1,
-            imei_number_2=asset.imei_number_2,
-            serial_number=asset.serial_number,
-            description=asset.description,
-            is_barcode_added=asset.is_barcode_added,
-            barcode=asset.barcode,
-            barcode_type=asset.barcode_type,
-            qr_code=asset.qr_code,
-            type=asset.type,
-            quantity=quantity_to_assign,
-            item_price=asset.item_price,
-            depreciation_percentage=asset.depreciation_percentage,
-            status='In Use',
-            condition=asset.condition,
-            parent_asset=asset.parent_asset
-        )
-        new_asset.save()
-        
-        # 2. Update the original record
-        asset.quantity -= quantity_to_assign
-        if asset.quantity == 0:
-            # If we took all from a record that wasn't "Available" initially (unlikely in current flow)
-            # or if we want to delete empty records. Let's keep it for now.
-            pass
-        asset.save()
-        
-        # 3. Add to conference
-        conference.assets.add(new_asset)
-        
-        return Response(AssetSerializer(new_asset).data)
+    from .quantity_commands import is_quantity_stock
+    return Response({'error': 'use_quantity_commands' if is_quantity_stock(asset) else 'use_asset_commands'}, status=409)
 
 def download_asset_template(request):
     """
@@ -641,7 +654,7 @@ def export_inventory(request):
         return download_asset_template(request)
     if export_type != 'master':
         return Response({'error': 'Choose template or master export.'}, status=400)
-    assets = Asset.objects.filter(is_temporary=False).select_related('assigned_to', 'parent_asset')  # BUG J-13: Exclude temp assets from export
+    assets = Asset.objects.filter(is_temporary=False).exclude(stock_kind='led_case').select_related('assigned_to', 'parent_asset')  # BUG J-13: Exclude temp assets from export
     owner = request.query_params.get('subrental_company_id')
     if owner and owner != 'null':
         if not owner.isdigit():
@@ -705,98 +718,10 @@ from decimal import Decimal
 
 @api_view(['POST'])
 def system_recovery(request):
-    """
-    One-click database repair: runs migrations and restores key assignments.
-    """
-    # BUG J-4: Strict superuser guard — only superusers may run recovery
     if not request.user.is_superuser:
         return Response({'error': 'Unauthorized'}, status=403)
+    return Response({'error': 'controlled_release_required',
+                     'message': 'Database schema changes require the controlled release workflow. No migration was run.'}, status=409)
 
-    # Run migrations to fix missing columns/tables on live site
-    from django.core.management import call_command
-    try:
-        call_command('migrate', interactive=False)
-        migration_error = None
-    except Exception as e:
-        migration_error = str(e)
-
-    # BUG J-4: Hardcoded assignments loop removed — it polluted the live DB with hardcoded employee names.
-    # If specific asset assignments need recovering, do them via the admin panel or a data migration.
-
-    return Response({
-        "message": "Recovery complete!" if not migration_error else f"Recovery partial: {migration_error}",
-        "migrations_applied": not bool(migration_error),
-        "total_assets": Asset.objects.count()
-    })
-
-@api_view(['POST'])
-@permission_classes([AllowAny]) # Allow easy triggering via browser for now
-def ad_hoc_cleanup(request):
-    """Delete all ad‑hoc assets and deduplicate the database.
-    This removes:
-    1. Assets whose SKU starts with ``ADHOC-``.
-    2. Assets present only via ``challan_assets`` (not linked to ``assets`` or ``staged_assets``).
-    3. Duplicate assets by serial number (keeps the earliest entry).
-    """
-    from django.db.models import Count
-    from .models import Asset, Conference
-
-    # Delete by SKU prefix
-    sku_deleted, _ = Asset.objects.filter(sku__startswith='ADHOC-').delete()
-
-    # Delete assets that exist only via challan linkage
-    challan_ids = set(Conference.objects.values_list('challan_assets', flat=True))
-    linked_ids = set(Conference.objects.values_list('assets', flat=True)) | set(Conference.objects.values_list('staged_assets', flat=True))
-    only_challan_qs = Asset.objects.filter(id__in=challan_ids).exclude(id__in=linked_ids)
-    only_deleted, _ = only_challan_qs.delete()
-
-    # Deduplicate by serial_number (keep earliest)
-    duplicates = Asset.objects.exclude(serial_number__exact='').exclude(serial_number__isnull=True).values('serial_number').annotate(count=Count('id')).filter(count__gt=1)
-    total_deleted_dup = 0
-    for d in duplicates:
-        serial = d['serial_number']
-        assets = Asset.objects.filter(serial_number=serial).order_by('id')
-        to_keep = assets.first()
-        to_delete = assets.exclude(id=to_keep.id)
-        cnt = to_delete.count()
-        to_delete.delete()
-        total_deleted_dup += cnt
-
-    total_now = Asset.objects.count()
-    return Response({
-        "message": "Ad‑hoc cleanup complete",
-        "deleted_by_sku": sku_deleted,
-        "deleted_challan_only": only_deleted,
-        "deleted_duplicates": total_deleted_dup,
-        "total_assets_remaining": total_now,
-    })
 
 # ---------- New endpoint: permanently delete ad‑hoc assets ----------
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def delete_ad_hoc_assets(request):
-    """Permanently delete all assets created as ad‑hoc.
-    This removes:
-    1. Any asset whose SKU starts with ``ADHOC-``.
-    2. Assets that appear only in ``challan_assets`` and are not linked to the main inventory
-       (i.e., not present in ``assets`` or ``staged_assets`` of any conference).
-    """
-    from .models import Asset, Conference
-
-    # 1. Delete by SKU prefix
-    sku_deleted, _ = Asset.objects.filter(sku__startswith='ADHOC-').delete()
-
-    # 2. Delete assets that exist only via challan linkage
-    challan_ids = set(Conference.objects.values_list('challan_assets', flat=True))
-    linked_ids = set(Conference.objects.values_list('assets', flat=True)) | set(Conference.objects.values_list('staged_assets', flat=True))
-    only_challan_qs = Asset.objects.filter(id__in=challan_ids).exclude(id__in=linked_ids)
-    only_deleted, _ = only_challan_qs.delete()
-
-    total_remaining = Asset.objects.count()
-    return Response({
-        "message": "Ad‑hoc assets deleted",
-        "deleted_by_sku": sku_deleted,
-        "deleted_challan_only": only_deleted,
-        "total_assets_remaining": total_remaining,
-    })
-

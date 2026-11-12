@@ -3,15 +3,21 @@ Serializers for the TechTrolley core application.
 Handles data transformation for Assets, Employees, Conferences, Users, and Company Settings.
 """
 from django.contrib.auth.models import User
-from django.db import OperationalError
+from django.db import OperationalError, transaction
 from rest_framework import serializers
 
 from .models import Asset, Employee, Conference, CompanySettings, SubrentalCompany, SubrentalTicket, SubrentalTicketItem, TruckChallan
 
 class SubrentalCompanySerializer(serializers.ModelSerializer):
+    def validate(self, data):
+        if 'inventory_mode' in self.initial_data:
+            raise serializers.ValidationError({'inventory_mode': 'Use reviewed inventory classification; it does not change ownership or stock.'})
+        return data
+
     class Meta:
         model = SubrentalCompany
         fields = '__all__'
+        read_only_fields = ['inventory_mode', 'ownership_revision']
 
 class EmployeeSerializer(serializers.ModelSerializer):
     employee_id = serializers.CharField(required=False, allow_blank=True)
@@ -22,6 +28,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = '__all__'
+        read_only_fields = ['user', 'identity_revision']
+
+    def validate(self, data):
+        for field, current in [('user', self.instance.user_id if self.instance else None), ('identity_revision', self.instance.identity_revision if self.instance else 0)]:
+            if field in self.initial_data and self.initial_data[field] != current:
+                raise serializers.ValidationError({field:'Use the reviewed employee-link command.'})
+        return data
 
     def create(self, validated_data):
         import time
@@ -52,6 +65,12 @@ class TruckChallanSerializer(serializers.ModelSerializer):
         fields = ['id', 'conference', 'truck_number', 'label', 'vehicle_number', 'driver_phone', 'assets', 'asset_quantities', 'created_at']
 
 class SimpleAssetSerializer(serializers.ModelSerializer):
+    warehouse_managed = serializers.SerializerMethodField()
+    subrental_inventory_mode = serializers.ReadOnlyField(source='subrental_company.inventory_mode')
+    def get_warehouse_managed(self, obj):
+        from .inventory_ownership import warehouse_managed
+        return warehouse_managed(obj)
+
     subrental_company_name = serializers.ReadOnlyField(source='subrental_company.name')
     """
     Ultra-lightweight Asset Serializer for embedded challan & truck asset representations.
@@ -60,14 +79,15 @@ class SimpleAssetSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Asset
+        read_only_fields = ['staff_revision', 'custody_revision', 'ownership_revision']
         fields = [
-            'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
+            'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity', 'stock_kind',
             'item_price', 'barcode_type', 'barcode', 'qr_code', 'description', 'status',
-            'subrental_company', 'subrental_company_name', 'is_temporary'
+            'subrental_company', 'subrental_company_name', 'warehouse_managed', 'subrental_inventory_mode', 'mac_address', 'imei_number_1', 'imei_number_2',
+            'purchased_date', 'depreciation_percentage', 'current_value'
         ]
 
 class SubAssetSerializer(serializers.ModelSerializer):
-    subrental_company_name = serializers.ReadOnlyField(source='subrental_company.name')
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
     current_conference_name = serializers.SerializerMethodField()
 
@@ -76,17 +96,26 @@ class SubAssetSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'sku', 'alias_name', 'serial_number', 'type', 'quantity',
             'status', 'flag', 'condition', 'barcode_type', 'barcode', 'qr_code', 'assigned_to', 'assigned_to_name',
-            'parent_asset', 'current_conference_name', 'subrental_company', 'subrental_company_name',
+            'parent_asset', 'current_conference_name', 'subrental_company',
         ]
 
     def get_current_conference_name(self, obj):
-        if hasattr(obj, 'annotated_conference'):
-            return obj.annotated_conference
-        conf = obj.assigned_conferences.first() or obj.crosscheck_conferences.first()
-        return conf.name if conf else None
+        from .custody import current_conference_name
+        return current_conference_name(obj)
 
 class AssetSerializer(serializers.ModelSerializer):
+    led_case = serializers.SerializerMethodField()
+    led_panel_origin = serializers.SerializerMethodField()
+    current_value = serializers.SerializerMethodField()
+    warehouse_managed = serializers.SerializerMethodField()
+    subrental_inventory_mode = serializers.ReadOnlyField(source='subrental_company.inventory_mode')
+    def get_warehouse_managed(self, obj):
+        from .inventory_ownership import warehouse_managed
+        return warehouse_managed(obj)
+
     subrental_company_name = serializers.ReadOnlyField(source='subrental_company.name')
+    quantity_available = serializers.SerializerMethodField()
+    quantity_tracking = serializers.SerializerMethodField()
     assigned_to_name = serializers.ReadOnlyField(source='assigned_to.name')
     sub_assets = SubAssetSerializer(many=True, read_only=True)
     current_conference_name = serializers.SerializerMethodField()
@@ -99,6 +128,7 @@ class AssetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Asset
+        read_only_fields = ['staff_revision', 'custody_revision', 'stock_kind']
         fields = [
             'id', 'sku', 'alias_name', 'mac_address', 'imei_number_1', 'imei_number_2', 
             'serial_number', 'description', 'is_barcode_added', 'type', 'quantity',
@@ -106,21 +136,99 @@ class AssetSerializer(serializers.ModelSerializer):
             'available_from', 'available_till', 'created_at',
             'barcode_type', 'barcode', 'qr_code', 'status', 'flag', 'condition', 'last_maintained', 
             'current_venue', 'return_date', 'assigned_to', 'assigned_to_name',
-            'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'subrental_company_name', 'deployment_history',
-            'is_temporary',
+            'parent_asset', 'sub_assets', 'current_conference_name', 'subrental_company', 'subrental_company_name', 'warehouse_managed', 'subrental_inventory_mode', 'deployment_history',
+            'is_temporary', 'quantity_tracking', 'quantity_available', 'staff_revision', 'custody_revision', 'ownership_revision', 'stock_kind', 'led_case', 'led_panel_origin', 'current_value',
         ]
 
+    def get_quantity_tracking(self, obj):
+        from .quantity_commands import is_quantity_stock
+        return is_quantity_stock(obj)
+
+    def get_current_value(self, obj):
+        # Preserve ordinary legacy display behaviour; converted panels use their
+        # exact share of the original case valuation rather than six round-downs.
+        return obj.current_value if obj.stock_kind == 'led_panel' else None
+
+    def get_quantity_available(self, obj):
+        from .custody import available_quantity
+        return available_quantity(obj)
+
+    def get_led_case(self, obj):
+        if obj.stock_kind != 'led_case':
+            return None
+        from .led_cases import case_data
+        return case_data(obj.led_case_conversion)
+
+    def get_led_panel_origin(self, obj):
+        if obj.stock_kind != 'led_panel':
+            return None
+        row = obj.led_panel_record
+        return {'case_asset_id': row.case.source_asset_id, 'box_code': row.case.source_asset.sku, 'slot': row.slot}
+
+    def validate(self, data):
+        if 'stock_kind' in self.initial_data and self.initial_data['stock_kind'] != (self.instance.stock_kind if self.instance else 'equipment'):
+            raise serializers.ValidationError({'stock_kind': 'Use the reviewed LED box conversion.'})
+        if self.instance and self.instance.stock_kind == 'led_case':
+            raise serializers.ValidationError('The converted box is a protected historical/container record. Edit its panels instead.')
+        if self.instance and self.instance.stock_kind == 'led_panel':
+            for field in ('quantity', 'item_price', 'purchased_date', 'depreciation_percentage', 'parent_asset', 'is_temporary', 'type', 'sku'):
+                if field in data and data[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError({field: 'Converted panel count, origin and valuation require a reviewed change. Individual QR/serial labels may be added normally.'})
+        parent = data.get('parent_asset', self.instance.parent_asset if self.instance else None)
+        if parent and parent.stock_kind != 'equipment':
+            raise serializers.ValidationError({'parent_asset': 'Converted LED cases/panels are not a kit parent.'})
+        owner = data.get('subrental_company', self.instance.subrental_company if self.instance else None)
+        if parent and (not self.instance or 'parent_asset' in data or 'subrental_company' in data) and parent.subrental_company_id != (owner.pk if owner else None):
+            raise serializers.ValidationError({'parent_asset': 'A kit and its components must have the same inventory owner. Use a reviewed complete-kit ownership change.'})
+        if parent and self.instance and parent.pk == self.instance.pk:
+            raise serializers.ValidationError({'parent_asset': 'An asset cannot be its own kit parent.'})
+        if self.instance and 'subrental_company' in data and data['subrental_company'] != self.instance.subrental_company:
+            raise serializers.ValidationError({'subrental_company': 'Use a reviewed ownership change; ticket edits cannot move inventory ownership.'})
+        if 'assigned_to' in data and data['assigned_to'] != (self.instance.assigned_to if self.instance else None):
+            raise serializers.ValidationError({'assigned_to':'Use the recorded staff issue/return command.'})
+        if self.instance and self.instance.status in {'In Use', 'Crosscheck'} and data.get('status') == 'Available' and not self.instance.flag and self.instance.condition != 'Damaged':
+            from .custody import derived_status
+            if derived_status(self.instance) == 'Available':
+                raise serializers.ValidationError({'status': 'Use reviewed custody reconciliation to clear an unproved custody lock.'})
+        if self.instance and self.instance.staff_allocations.filter(returned_at__isnull=True).exists():
+            for field in ('quantity', 'type', 'parent_asset'):
+                if field in data and data[field] != getattr(self.instance, field):
+                    raise serializers.ValidationError({field:'Return issued equipment before changing its inventory identity.'})
+        if self.instance and self.instance.type == 'Consumables' and data.get('quantity', self.instance.quantity) < self.instance.quantity:
+            raise serializers.ValidationError({'quantity': 'Use verified consumable settlement or a reviewed stock adjustment.'})
+        if self.instance and 'quantity' in data and self.instance.ticket_items.exists():
+            from .supplier_balances import order_capacity
+            from .asset_commands import CommandError
+            try:
+                committed_orders = order_capacity(self.instance)
+            except CommandError:
+                raise serializers.ValidationError({'quantity': 'Legacy supplier orders need review before changing declared capacity.'})
+            if data['quantity'] < committed_orders:
+                raise serializers.ValidationError({'quantity': 'Declared supplier capacity cannot be below unresolved orders.'})
+        if self.instance and self.instance.quantity != 1 and self.instance.type != 'Consumables':
+            self.instance.quantity_tracking = True
+        if self.instance and (self.instance.quantity_allocations.exists() or self.instance.consumable_allocations.exists()):
+            from .quantity_commands import outstanding
+            if data.get('quantity', self.instance.quantity) < outstanding(self.instance):
+                raise serializers.ValidationError({'quantity': 'Stock cannot be below reserved, dispatched and unchecked units.'})
+            for field in ('type', 'parent_asset', 'subrental_company', 'assigned_to'):
+                current = getattr(self.instance, field)
+                if field in data and data[field] != current:
+                    raise serializers.ValidationError({field: 'Quantity history requires a reviewed stock change.'})
+        return data
+
+    def update(self, instance, validated_data):
+        staff_return = instance.assigned_to_id is not None and 'assigned_to' in validated_data and validated_data['assigned_to'] is None
+        result = super().update(instance, validated_data)
+        if staff_return:
+            from .custody import synchronize_statuses
+            synchronize_statuses([result.pk])
+            result.refresh_from_db(fields=['status'])
+        return result
+
     def get_current_conference_name(self, obj):
-        if hasattr(obj, 'annotated_conference'):
-            return obj.annotated_conference
-        conf = obj.assigned_conferences.first() or obj.crosscheck_conferences.first()
-        if conf: return conf.name
-        
-        try:
-            ticket_item = obj.ticket_items.select_related('ticket__conference').first()
-            if ticket_item: return ticket_item.ticket.conference.name
-        except: pass
-        return None
+        from .custody import current_conference_name
+        return current_conference_name(obj)
 
     def get_deployment_history(self, obj):
         history = []
@@ -162,75 +270,87 @@ class AssetSerializer(serializers.ModelSerializer):
 
 
 class ConferenceSerializer(serializers.ModelSerializer):
+    def validate_pdf_document(self, value):
+        if value is None:
+            return value
+        from .private_media import MAX_PDF_BYTES
+        if value.size > MAX_PDF_BYTES or value.size == 0:
+            raise serializers.ValidationError('Use a PDF no larger than 20 MB.')
+        header = value.read(5)
+        value.seek(0)
+        if header != b'%PDF-':
+            raise serializers.ValidationError('The document must be a PDF.')
+        return value
+
+    expected_revision = serializers.IntegerField(required=False, write_only=True, min_value=0)
     class Meta:
         model = Conference
+        read_only_fields = ['revision', 'lifecycle_state', 'completed_at', 'completed_by', 'archived_at', 'archived_by']
         fields = '__all__'
 
-    def to_representation(self, instance):
-        # Professional Database Shield: If new tables are missing from the DB (e.g. after a git pull 
-        # but before running migrations), we dynamically strip those fields to prevent an API crash.
-        data = None
-        try:
-            data = super().to_representation(instance)
-        except OperationalError as e:
-            error_str = str(e)
-            missing_fields = []
-            if 'core_conference_requirements' in error_str: missing_fields.append('requirements')
-            if 'core_conference_challan_assets' in error_str: missing_fields.append('challan_assets')
-            
-            if missing_fields:
-                original_fields = self.fields
-                # Dynamically rebuild the field list excluding only the ones causing the crash
-                self.fields = {k: v for k, v in self.fields.items() if k not in missing_fields}
-                try:
-                    data = super().to_representation(instance)
-                    for f in missing_fields: data[f] = [] # Return empty arrays instead of error
-                finally:
-                    self.fields = original_fields
-            else:
-                raise e
-
-        # Inject challan_assets_details and truck challans data gracefully (using SimpleAssetSerializer)
-        if data is not None:
-            try:
-                data['challan_assets_details'] = SimpleAssetSerializer(instance.challan_assets.all(), many=True).data
-            except Exception:
-                data['challan_assets_details'] = []
-
-            try:
-                trucks = instance.truck_challans.all().order_by('truck_number')
-                trucks_data = []
-                for t in trucks:
-                    if not t.challan_number:
-                        from .models import CompanySettings, generate_challan_number
-                        if t.truck_number == 1 and instance.challan_number:
-                            t.challan_number = instance.challan_number
-                        else:
-                            settings_obj = CompanySettings.objects.first()
-                            if settings_obj:
-                                t.challan_number = generate_challan_number(settings_obj)
-                        if t.challan_number:
-                            t.save(update_fields=['challan_number'])
-                    trucks_data.append({
-                        'id': t.pk,
-                        'conference': instance.pk,
-                        'truck_number': t.truck_number,
-                        'label': t.label or f"Truck {t.truck_number}",
-                        'vehicle_number': t.vehicle_number or '',
-                        'driver_phone': t.driver_phone or '',
-                        'challan_number': t.challan_number or '',
-                        'assets': list(t.assets.values_list('pk', flat=True)),
-                        'asset_quantities': t.asset_quantities or {},
-                        'assets_details': SimpleAssetSerializer(t.assets.all(), many=True).data,
-                        'created_at': t.created_at.isoformat() if t.created_at else '',
-                    })
-                data['truck_challans_data'] = trucks_data
-            except Exception:
-                data['truck_challans_data'] = []
-
+    def validate(self, data):
+        from .challan_lock import challans_locked
+        if self.instance and challans_locked(self.instance):
+            paper_fields = {
+                'end_date', 'start_date', 'name', 'association_name', 'billing_address',
+                'transport_address', 'gst_number', 'contact_person', 'contact_phone',
+                'contact_email', 'conference_type', 'vehicle_number', 'driver_phone',
+                'challan_date', 'challan_number', 'approximate_value',
+            }
+            if any(getattr(self.instance, field) != data[field] for field in paper_fields & data.keys()):
+                raise serializers.ValidationError({'challan': 'The paperwork window has closed. Use a reviewed challan correction.'})
+        protected = {'lifecycle_state', 'completed_at', 'completed_by', 'archived_at', 'archived_by'}
+        supplied = protected & set(self.initial_data)
+        if supplied:
+            previous = super().to_representation(self.instance) if self.instance else {}
+            for field in supplied:
+                if not self.instance or self.initial_data[field] != previous[field]:
+                    raise serializers.ValidationError({field: 'Use the verified event lifecycle command.'})
         return data
 
+    def to_representation(self, instance):
+        # A failed/missing table is a failed read, never a fabricated empty list.
+        data = super().to_representation(instance)
+        data['pdf_document'] = f'/api/conferences/{instance.pk}/download-pdf/' if instance.pdf_document else None
+        from .challan_documents import document_data
+        from .challan_lock import lock_on, challans_locked
+        deadline = lock_on(instance)
+        data['challan_lock_on'] = deadline.isoformat() if deadline else None
+        data['challans_locked'] = challans_locked(instance)
+        from .quantity_commands import allocation_data
+        data['quantity_allocations'] = {str(a.asset_id): allocation_data(a) for a in instance.quantity_allocations.all()}
+        data['quantity_assets_details'] = SimpleAssetSerializer(Asset.objects.filter(
+            pk__in=data['quantity_allocations']).select_related('subrental_company').order_by('pk'), many=True).data
+        from .consumable_commands import allocation_data as consumable_data
+        data['consumable_ledger'] = {str(a.asset_id): consumable_data(a) for a in instance.consumable_allocations.all()}
+        consumable_ids = set(data['consumable_ledger'])
+        if isinstance(instance.consumable_data, dict):
+            consumable_ids.update(instance.consumable_data)
+        data['consumable_assets_details'] = SimpleAssetSerializer(Asset.objects.filter(
+            pk__in=[int(key) for key in consumable_ids if str(key).isdigit()]).select_related('subrental_company').order_by('pk'), many=True).data
+        data['challan_documents'] = [document_data(document) for document in instance.challan_documents.all()]
+        from .dispatch_origins import event_origins
+        data['dispatch_origins'] = event_origins(instance)
+        from .models import TruckManifest
+        from .truck_manifests import manifest_data
+        manifest = TruckManifest.objects.filter(conference=instance).first()
+        data['truck_manifest'] = manifest_data(manifest) if manifest else None
+        data['challan_assets_details'] = SimpleAssetSerializer(instance.challan_assets.select_related('subrental_company'), many=True).data
+        data['truck_challans_data'] = [{
+            'id': truck.pk, 'conference': instance.pk, 'truck_number': truck.truck_number,
+            'label': truck.label or f'Truck {truck.truck_number}',
+            'vehicle_number': truck.vehicle_number or '', 'driver_phone': truck.driver_phone or '',
+            'challan_number': truck.challan_number or '',
+            'assets': list(truck.assets.values_list('pk', flat=True)),
+            'asset_quantities': truck.asset_quantities or {},
+            'assets_details': SimpleAssetSerializer(truck.assets.select_related('subrental_company'), many=True).data,
+            'created_at': truck.created_at.isoformat() if truck.created_at else '',
+        } for truck in instance.truck_challans.all().order_by('truck_number')]
+        return data
+
+    @transaction.atomic
     def create(self, validated_data):
+        validated_data.pop('expected_revision', None)
         assets_data = validated_data.pop('assets', [])
         requirements_data = validated_data.pop('requirements', [])
         crosscheck_data = validated_data.pop('crosscheck_assets', [])
@@ -243,13 +363,16 @@ class ConferenceSerializer(serializers.ModelSerializer):
 
         # J-112: Auto-assign challan number in structured format e.g. "26-27/AMDL-00122"
         # generate_challan_number() handles FY detection, per-FY reset, and counter increment atomically.
+        from .challan_documents import allocate_number, reserve_number
         if not validated_data.get('challan_number'):
-            settings_obj = CompanySettings.objects.first()
-            if settings_obj:
-                from .models import generate_challan_number
-                validated_data['challan_number'] = generate_challan_number(settings_obj)
+            validated_data['challan_number'] = allocate_number()
             
         conference = Conference.objects.create(**validated_data)
+        from .asset_commands import CommandError
+        try:
+            reserve_number(conference.challan_number, conference, None)
+        except CommandError as error:
+            raise serializers.ValidationError({'challan_number': error.code})
         
         if assets_data: conference.assets.set(assets_data)
         if crosscheck_data: conference.crosscheck_assets.set(crosscheck_data)
@@ -264,7 +387,16 @@ class ConferenceSerializer(serializers.ModelSerializer):
             
         return conference
 
+    @transaction.atomic
     def update(self, instance, validated_data):
+        validated_data.pop('expected_revision', None)
+        if 'challan_number' in validated_data and validated_data['challan_number'] != instance.challan_number:
+            from .challan_documents import reserve_number
+            from .asset_commands import CommandError
+            try:
+                validated_data['challan_number'] = reserve_number(validated_data['challan_number'], instance, None)
+            except CommandError as error:
+                raise serializers.ValidationError({'challan_number': error.code})
         assets_data = validated_data.pop('assets', None)
         requirements_data = validated_data.pop('requirements', None)
         crosscheck_data = validated_data.pop('crosscheck_assets', None)
@@ -300,17 +432,34 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'email', 'date_joined', 'is_staff', 'role']
 
 
+class RasterLogoField(serializers.ImageField):
+    def to_internal_value(self, data):
+        from .upload_safety import raster_logo
+        raster_logo(data)
+        return super().to_internal_value(data)
+
+
 class CompanySettingsSerializer(serializers.ModelSerializer):
+    logo = RasterLogoField(required=False, allow_null=True)
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['logo'] = '/api/public-logo/' if instance.logo else None
+        return data
+
     class Meta:
         model = CompanySettings
         fields = '__all__'
 class SubrentalTicketItemSerializer(serializers.ModelSerializer):
+    supplier_balance = serializers.SerializerMethodField()
+    def get_supplier_balance(self, obj):
+        from .supplier_balances import balance_data
+        return balance_data(obj)
     asset_details = AssetSerializer(source='asset', read_only=True)
     asset_name = serializers.SerializerMethodField()
 
     class Meta:
         model = SubrentalTicketItem
-        fields = ['id', 'ticket', 'asset', 'asset_details', 'asset_name', 'rental_price', 'quantity']
+        fields = ['id', 'ticket', 'asset', 'asset_details', 'asset_name', 'rental_price', 'quantity', 'supplier_balance']
 
     def get_asset_name(self, obj):
         if obj.asset:
@@ -321,6 +470,7 @@ class SubrentalTicketSerializer(serializers.ModelSerializer):
     items = SubrentalTicketItemSerializer(many=True, read_only=True)
     company_name = serializers.ReadOnlyField(source='company.name')
     conference_name = serializers.ReadOnlyField(source='conference.name')
+    conference_revision = serializers.ReadOnlyField(source='conference.revision')
     class Meta:
         model = SubrentalTicket
-        fields = ['id', 'company', 'company_name', 'conference', 'conference_name', 'created_at', 'available_from', 'available_till', 'items']
+        fields = ['id', 'company', 'company_name', 'conference', 'conference_name', 'conference_revision', 'created_at', 'available_from', 'available_till', 'items']

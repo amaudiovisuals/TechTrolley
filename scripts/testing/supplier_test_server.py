@@ -1,0 +1,34 @@
+"""Synthetic loopback supplier fixture; no project settings or business DB."""
+import os,sys,tempfile
+from pathlib import Path
+from wsgiref.simple_server import make_server
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'backend'));os.environ.pop('DJANGO_SETTINGS_MODULE',None)
+from django.conf import settings
+with tempfile.TemporaryDirectory(prefix='tt-supplier-fixture-') as media:
+    settings.configure(SECRET_KEY='synthetic-supplier-only',DEBUG=False,INSTALLED_APPS=['django.contrib.auth','django.contrib.contenttypes','django.contrib.sessions','rest_framework','rest_framework.authtoken','core'],DATABASES={'default':{'ENGINE':'django.db.backends.sqlite3','NAME':':memory:'}},ROOT_URLCONF=__name__,MIDDLEWARE=[],ALLOWED_HOSTS=['127.0.0.1'],MEDIA_ROOT=media,USE_TZ=True,DEFAULT_AUTO_FIELD='django.db.models.BigAutoField',PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],REST_FRAMEWORK={'DEFAULT_PERMISSION_CLASSES':['rest_framework.permissions.IsAuthenticated'],'DEFAULT_AUTHENTICATION_CLASSES':['rest_framework.authentication.TokenAuthentication']})
+    import django;django.setup()
+    from django.core.management import call_command
+    from django.core.handlers.wsgi import WSGIHandler
+    from django.db import connection
+    from django.urls import path,include
+    from django.http import JsonResponse
+    from django.contrib.auth.models import User
+    from rest_framework.authtoken.models import Token
+    from core.models import Asset,Conference,CompanySettings,SubrentalCompany,SubrentalTicket,SubrentalTicketItem,SupplierChange,MovementReceipt,ChallanDocument,ChallanLine
+    assert connection.settings_dict['NAME']==':memory:';call_command('migrate',verbosity=0)
+    actor=User.objects.create_user('supplier-browser',email='supplier-browser@example.test');actor.profile.role='admin';actor.profile.save();Token.objects.create(user=actor,key='synthetic-supplier-token');CompanySettings.objects.create(name='Synthetic supplier fixture')
+    other_actor=User.objects.create_user('other-supplier-browser',email='other-supplier@example.test');other_actor.profile.role='admin';other_actor.profile.save();Token.objects.create(user=other_actor,key='synthetic-other-supplier-token')
+    company=SubrentalCompany.objects.create(name='AM Audiovisuals');event=Conference.objects.create(name='Supplier save fixture',start_date='2026-10-14',end_date='2026-10-15');ticket=SubrentalTicket.objects.create(company=company,conference=event)
+    shared=Asset.objects.create(sku='IDLE-SUPPLIER-QR',alias_name='Idle shared warehouse device',subrental_company=company)
+    for number in range(51): Asset.objects.create(sku=f'COMPANY-STOCK-{number:02}',alias_name=f'Supplier warehouse stock {number:02}',subrental_company=company)
+    owned=Asset.objects.create(sku='MAIN-QR',alias_name='Owned stock device')
+    temp=Asset.objects.create(sku='EDIT-ROW',alias_name='Editable rental row',quantity=5,is_temporary=True,subrental_company=company)
+    item=SubrentalTicketItem.objects.create(ticket=ticket,asset=temp,quantity=2,rental_price=10)
+    doc=ChallanDocument.objects.create(conference=event,scope='master',number='PRESERVED-MANUAL',state='issued');ChallanLine.objects.create(document=doc,source_kind='manual',snapshot={'alias_name':'Preserved manual supplier note'},quantity=2,unit_value=20,position=0)
+    def inspect(request):return JsonResponse({'events':list(Conference.objects.order_by('pk').values('id','name','revision')),'items':list(SubrentalTicketItem.objects.order_by('pk').values('id','ticket_id','asset_id','quantity','rental_price')),'assets':list(Asset.objects.order_by('pk').values('id','sku','alias_name','quantity','subrental_company_id')),'changes':SupplierChange.objects.count(),'receipts':MovementReceipt.objects.count(),'documents':list(ChallanDocument.objects.values('number','revision','state')),'lines':list(ChallanLine.objects.values('snapshot','quantity','unit_value'))})
+    def compete(request):event.refresh_from_db();event.name='Supplier save fixture';event.save();return JsonResponse({'changed':True})
+    def later(request):item.refresh_from_db();item.rental_price=77;item.save();event.refresh_from_db();event.save();return JsonResponse({'changed':True})
+    def role(request):actor.profile.role=request.GET.get('role','admin');actor.profile.save();return JsonResponse({'role':actor.profile.role})
+    urlpatterns=[path('api/',include('core.urls')),path('_fixture/inspect/',inspect),path('_fixture/compete/',compete),path('_fixture/later/',later),path('_fixture/role/',role)]
+    print('SYNTHETIC_SUPPLIER_READY',flush=True)
+    with make_server('127.0.0.1',4334,WSGIHandler()) as server:server.serve_forever()

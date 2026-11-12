@@ -11,6 +11,9 @@ import os
 
 from django.core.asgi import get_asgi_application
 
+from django.core.exceptions import ImproperlyConfigured
+if 'DJANGO_ENV' not in os.environ:
+    raise ImproperlyConfigured('Set DJANGO_ENV explicitly before starting WSGI/ASGI')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 application = get_asgi_application()
