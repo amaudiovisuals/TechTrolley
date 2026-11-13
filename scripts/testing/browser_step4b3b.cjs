@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {spawn}=require('node:child_process'),{pathToFileURL}=require('node:url');
-const ROOT=path.resolve(__dirname,'../..');const {chromium}=require(process.env.TT_PLAYWRIGHT_MODULE||'/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const ROOT=path.resolve(__dirname,'../..');
+const {chromium,launchOptions}=require('./browser_runtime.cjs');
 const checks=[];async function check(name,run){await run();checks.push(name);}
 (async()=>{
  const backend=spawn(process.env.TT_TEST_PYTHON || path.join(ROOT,'backend/venv/bin/python'),[path.join(__dirname,'manifest_test_server.py')],{cwd:ROOT,stdio:['ignore','pipe','pipe']});
@@ -9,7 +10,7 @@ const checks=[];async function check(name,run){await run();checks.push(name);}
  try{
   await ready;const{createServer}=await import(pathToFileURL(path.join(ROOT,'frontend/node_modules/vite/dist/node/index.js')).href);
   server=await createServer({root:path.join(ROOT,'frontend'),configFile:path.join(ROOT,'frontend/vite.config.ts'),server:{host:'127.0.0.1',port:4321,strictPort:true}});await server.listen();
-  browser=await chromium.launch({headless:true,executablePath:process.env.TT_CHROME_EXECUTABLE||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+  browser=await chromium.launch(launchOptions());
   const context=await browser.newContext(),writes=[],errors=[];
   await context.route('**/*',async route=>{const req=route.request(),url=new URL(req.url());if(url.origin==='http://127.0.0.1:4321')return route.continue();if(url.origin!=='http://127.0.0.1:8000')return route.abort();
    if(req.method()==='OPTIONS')return route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'}});
