@@ -86,7 +86,7 @@ export const ProgramDeliveries: React.FC<{
 
   async function json(response: Response) {
     const body = await response.json();
-    if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : JSON.stringify(body));
+    if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : Array.isArray(body) && body.every(entry => typeof entry === 'string') ? body.join(' ') : JSON.stringify(body));
     return body;
   }
   const reload = React.useCallback(async () => {

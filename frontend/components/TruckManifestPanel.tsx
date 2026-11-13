@@ -24,14 +24,13 @@ export const TruckManifestPanel: React.FC<Props> = ({ booking, canWrite, disable
     }
     catch (error) { setError((error as Error).message); }
   };
+  if (!booking.truck_manifest && !trucks.length && !missing.length) return null;
   return <section className="p-5 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 text-white" data-testid="truck-manifest-panel">
     <h3 className="font-bold">Truck quantities</h3>
     <p className="text-sm text-slate-300">Split saved challan lines between trucks. Inventory scans and warehouse returns remain separate operations.</p>
     {master && missing.length > 0 && <p role="alert" className="text-amber-300">New recorded quantities need master review. Open the master challan, update existing quantities or use Add latest event items, then save before allocating those units.</p>}
     {error && <p role="alert" className="text-red-300">{error}</p>}
     {!booking.truck_manifest ? <>
-      <p className="text-sm">{master ? 'Truck 1 starts with the saved master lines. Truck 2 starts empty.' : 'Save the master challan before distributing its lines.'}</p>
-      {canWrite && <button type="button" disabled={disabled || !master || trucks.length > 0} onClick={() => { void run('start'); }} className="rounded bg-sky-600 p-3">Start truck manifest</button>}
       {trucks.length > 0 && <p>Existing legacy trucks need review before conversion.</p>}
     </> : <>
       <div className="flex gap-3 flex-wrap"><button type="button" onClick={() => onViewTruck(null)}>View master challan</button>{trucks.map(truck => <button type="button" key={truck.id} onClick={() => onViewTruck(truck.id)}>View {truck.label} challan</button>)}</div>

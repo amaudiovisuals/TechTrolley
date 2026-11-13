@@ -75,6 +75,23 @@ class ChallanDocumentTests(SnapshotTestCase):
             self.save(command)
         self.assertEqual(error.exception.code, 'request_id_reused')
 
+    def test_discount_is_versioned_and_omitting_it_preserves_the_saved_choice(self):
+        first = self.save()['document']
+        self.assertNotIn('discount_60', first['header'])
+        discounted = self.save(self.payload(first['lines'], first, discount_60=True))['document']
+        self.assertIs(discounted['header']['discount_60'], True)
+        self.assertIsNone(discounted['total_override'])
+
+        retained = self.save(self.payload(discounted['lines'], discounted))['document']
+        self.assertIs(retained['header']['discount_60'], True)
+        cleared = self.save(self.payload(retained['lines'], retained, discount_60=False))['document']
+        self.assertNotIn('discount_60', cleared['header'])
+        self.assertIs(ChallanRevision.objects.get(document_id=discounted['id'], revision=discounted['revision']).snapshot['header']['discount_60'], True)
+
+        with self.assertRaises(CommandError) as error:
+            self.save(self.payload(cleared['lines'], cleared, discount_60=1))
+        self.assertEqual(error.exception.code, 'invalid_discount')
+
     def test_line_edits_never_change_inventory_or_depreciation(self):
         line = self.line(self.asset, 'owned', quantity=10)
         first = self.save(self.payload([line]))['document']

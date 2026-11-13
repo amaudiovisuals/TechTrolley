@@ -108,6 +108,8 @@ function getLaptopSubGroup(
 interface ChallanViewProps {
   loadHistory?: (id: string) => Promise<ChallanVersion[]>;
   printVersion?: (snapshot: ChallanDocument) => void;
+  printDiscount60?: boolean;
+  onPrintDiscountChange?: (value: boolean | undefined) => void;
   downloadOriginal?: (id: string, direction?: 'return') => void;
   canCorrectLocked?: boolean;
   sourcesReady?: boolean;
@@ -187,9 +189,13 @@ const fmtDate = (d?: string): string => {
   return d;
 };
 
+function challanOverride(value: number | null | undefined, frozen: boolean) {
+  return value === 0 && !frozen ? null : value ?? null;
+}
+
 export const ChallanView: React.FC<ChallanViewProps> = ({
   draftAccountId, booking: liveBooking, client, assets: inventoryAssets, companySettings: liveCompanySettings, challanTitle, showScanToast, subrentalTickets, readOnly: baseReadOnly, localStorageSuffix, legacyStorageSuffix, document: providedDocument, onSaveDocument, useSavedDocument = true, sourcesReady = true, onRetrySources, requiresCorrectionReason = false, lockNumber = false, canImportSources = false,
-  loadHistory, printVersion, downloadOriginal, canCorrectLocked = false
+  loadHistory, printVersion, printDiscount60, onPrintDiscountChange, downloadOriginal, canCorrectLocked = false
 }) => {
   const scope = documentScope(localStorageSuffix);
   const document = useSavedDocument ? providedDocument || liveBooking.challan_documents?.find(document => document.scope === scope) : undefined;
@@ -197,6 +203,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   const readOnly = baseReadOnly || (locked && (!canCorrectLocked || !document));
   const frozenCopy = Boolean(document && (document.state === 'issued' || locked));
   const booking = snapshotBooking(useSavedDocument ? liveBooking : { ...liveBooking, approximate_value: null }, document, locked);
+  const savedTotalOverride = challanOverride(booking.approximate_value, frozenCopy);
+  const savedDiscount60 = document?.header.discount_60 === true;
   const returnSourceDocument = !useSavedDocument ? liveBooking.challan_documents?.find(source => source.scope === scope) : undefined;
   const frozenCompany = frozenCopy ? document?.header.company || {} : returnSourceDocument?.header.company;
   const companySettings = frozenCompany ? frozenCompany as CompanySettings : liveCompanySettings;
@@ -233,7 +241,9 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   const isEditMode = editing && !readOnly;
   const [isSaving, setIsSaving] = React.useState(false);
   const [localAssets, setLocalAssets] = React.useState<Asset[]>(restoredDraft?.assets || assets);
-  const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(restoredDraft ? restoredDraft.total : (booking.approximate_value ?? null));
+  const [totalValueOverride, setTotalValueOverride] = React.useState<number | null>(restoredDraft ? challanOverride(restoredDraft.total, frozenCopy) : savedTotalOverride);
+  const [discount60, setDiscount60] = React.useState(restoredDraft?.discount60 ?? savedDiscount60);
+  const shownDiscount60 = frozenCopy ? isEditMode ? discount60 : savedDiscount60 : printDiscount60 ?? discount60;
   const [challanNoOverride, setChallanNoOverride] = React.useState<string | null>(restoredDraft ? restoredDraft.number : (booking.challanNumber ?? null));
   const [dirty, setDirty] = React.useState(Boolean(restoredDraft));
   const dirtyRef = React.useRef(Boolean(restoredDraft));
@@ -275,7 +285,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       const draft = restoredDraft;
       setActiveDraftKey(draftKey);
       setLocalAssets(draft?.assets || assets);
-      setTotalValueOverride(draft ? draft.total : (booking.approximate_value ?? null));
+      setTotalValueOverride(draft ? challanOverride(draft.total, frozenCopy) : savedTotalOverride);
+      setDiscount60(draft?.discount60 ?? savedDiscount60);
       setChallanNoOverride(draft ? draft.number : (booking.challanNumber ?? null));
       dirtyRef.current = Boolean(draft); setDirty(Boolean(draft));
       baseRevisionRef.current = draft?.baseRevision ?? sourceRevision;
@@ -292,20 +303,21 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     }
     // Clean documents follow the server, including empty lists and intentional removals.
     setLocalAssets(assets);
-    setTotalValueOverride(booking.approximate_value ?? null);
+    setTotalValueOverride(savedTotalOverride);
+    setDiscount60(savedDiscount60);
     setChallanNoOverride(booking.challanNumber ?? null);
     baseRevisionRef.current = sourceRevision;
     baseDocumentRef.current = document?.id ?? null;
     setDocumentDate(booking.challanDate ?? null);
-  }, [assets, sourceRevision, booking.approximate_value, booking.challanNumber, draftKey, activeDraftKey, isSaving]);
+  }, [assets, sourceRevision, savedTotalOverride, savedDiscount60, frozenCopy, booking.challanNumber, draftKey, activeDraftKey, isSaving]);
 
   React.useEffect(() => {
     if (readOnly || !draftAccountId || activeDraftKey !== draftKey || !dirty) return;
     const stored = writeDraft(localStorage, draftKey, { schema: 2, baseRevision: baseRevisionRef.current,
       documentId: baseDocumentRef.current, documentDate,
-      assets: localAssets, total: totalValueOverride, number: challanNoOverride, updatedAt: new Date().toISOString() });
+      assets: localAssets, total: totalValueOverride, discount60, number: challanNoOverride, updatedAt: new Date().toISOString() });
     setDraftStorageFailed(!stored);
-  }, [localAssets, totalValueOverride, challanNoOverride, documentDate, dirty, activeDraftKey, draftKey, readOnly, draftAccountId, isSaving, draftConflict]);
+  }, [localAssets, totalValueOverride, discount60, challanNoOverride, documentDate, dirty, activeDraftKey, draftKey, readOnly, draftAccountId, isSaving, draftConflict]);
 
   React.useEffect(() => {
     setWorkBlocker(draftKey, dirty || isSaving || isEditMode || saveUncertain);
@@ -316,11 +328,17 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
     return () => { setWorkBlocker(draftKey, false); window.removeEventListener('beforeunload', beforeUnload); };
   }, [draftKey, dirty, isSaving, isEditMode, saveUncertain]);
 
+  React.useEffect(() => {
+    if (!onPrintDiscountChange) return;
+    onPrintDiscountChange(frozenCopy || !useSavedDocument ? undefined : discount60);
+    return () => onPrintDiscountChange(undefined);
+  }, [onPrintDiscountChange, frozenCopy, useSavedDocument, discount60]);
+
   const useLatestSaved = () => {
     if (saveUncertain) { showScanToast?.('Retry the unconfirmed save before discarding this draft.', 'warning'); return; }
     if (dirtyRef.current && !window.confirm('Discard your unsaved draft and load the latest saved challan?')) return;
     removeDraft(localStorage, draftKey); dirtyRef.current = false; setDirty(false); setDraftConflict(false);
-    setLocalAssets(assets); setTotalValueOverride(booking.approximate_value ?? null);
+    setLocalAssets(assets); setTotalValueOverride(savedTotalOverride); setDiscount60(savedDiscount60);
     setChallanNoOverride(booking.challanNumber ?? null); baseRevisionRef.current = sourceRevision;
     baseDocumentRef.current = document?.id ?? null; setDocumentDate(booking.challanDate ?? null);
     setIsEditMode(false);
@@ -364,7 +382,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         expected_event_revision: document ? liveBooking.revision ?? 0 : baseRevisionRef.current,
         lines: localAssets.map((asset, index) => assetLine(asset, `${booking.id}:${scope}`, index)),
         number: challanNoOverride || '', total_override: totalValueOverride,
-        document_date: documentDate,
+        discount_60: discount60, document_date: documentDate,
         state: issue || document?.state === 'issued' || locked ? 'issued' : 'draft', correction_reason: correctionReason.trim(),
       };
       if (!pending && liveBooking.truck_manifest && scope === 'master') {
@@ -381,7 +399,8 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
       baseRevisionRef.current = saved.revision;
       baseDocumentRef.current = saved.id;
       setLocalAssets(saved.lines.map(lineAsset)); setChallanNoOverride(saved.number);
-      setTotalValueOverride(saved.total_override === null ? null : Number(saved.total_override));
+      setTotalValueOverride(challanOverride(saved.total_override === null ? null : Number(saved.total_override), saved.state === 'issued'));
+      setDiscount60(saved.header.discount_60 === true);
       localStorage.removeItem(pendingKey); removeDraft(localStorage, draftKey);
       dirtyRef.current = false; setDirty(false); setDraftConflict(false); setSaveUncertain(false);
       setIsEditMode(false); setCorrectionReason('');
@@ -522,7 +541,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
         {draftConflict && <div>
           <p className="mt-2 font-bold">The saved challan changed elsewhere. Your draft is preserved. Compare both versions before choosing which to save.</p>
           <details className="mt-2"><summary className="cursor-pointer underline">Compare with the latest saved version</summary>
-            <p>Latest saved number: {booking.challanNumber}; value: {booking.approximate_value ?? 'automatic'}</p>
+            <p>Latest saved number: {booking.challanNumber}; value: {savedTotalOverride ?? 'automatic'}</p>
             <table className="w-full text-left"><thead><tr><th>Saved item</th><th>Quantity</th><th>Rate</th></tr></thead><tbody>
               {assets.map(asset => <tr key={asset.id}><td>{asset.aliasName || asset.sku}</td><td>{asset.quantity}</td><td>{asset.itemPrice}</td></tr>)}
             </tbody></table>
@@ -722,8 +741,13 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             isSaving={isSaving || saveUncertain}
             onLocalUpdate={handleLocalUpdate}
             onRemoveRow={removeRow}
-            totalOverride={totalValueOverride}
-            setTotalOverride={value => { if (!isSavingRef.current && !saveUncertain) { markDirty(); setTotalValueOverride(value); } }}
+            totalOverride={frozenCopy && !isEditMode ? savedTotalOverride : totalValueOverride}
+            discount60={shownDiscount60}
+            onToggleDiscount={index === 0 && useSavedDocument && !readOnly && (!frozenCopy || isEditMode) ? () => {
+              if (!isSavingRef.current && !saveUncertain) { markDirty(); setDiscount60(value => !value); }
+            } : undefined}
+            onSaveDiscount={!isEditMode && discount60 !== savedDiscount60 && !requiresCorrectionReason && onSaveDocument ? () => saveAllChanges() : undefined}
+            setTotalOverride={value => { if (!isSavingRef.current && !saveUncertain) { markDirty(); setTotalValueOverride(challanOverride(value, frozenCopy)); } }}
             challanNoOverride={challanNoOverride}
             lockNumber={lockNumber}
             setChallanNoOverride={value => { if (!isSavingRef.current && !saveUncertain) { markDirty(); setChallanNoOverride(value); } }}
@@ -749,6 +773,9 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
   onLocalUpdate: (id: string, field: keyof Asset, value: any) => void;
   onRemoveRow: (id: string) => void;
   totalOverride: number | null;
+  discount60: boolean;
+  onToggleDiscount?: () => void;
+  onSaveDiscount?: () => void;
   setTotalOverride: (val: number | null) => void;
   challanNoOverride: string | null;
   setChallanNoOverride: (val: string | null) => void;
@@ -763,7 +790,7 @@ interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
 const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   booking, client, assets, companySettings, copyLabel, bw,
   visibleColumns, isEditMode, isSaving, onLocalUpdate, onRemoveRow,
-  totalOverride, setTotalOverride, challanNoOverride, setChallanNoOverride, lockNumber,
+  totalOverride, setTotalOverride, discount60, onToggleDiscount, onSaveDiscount, challanNoOverride, setChallanNoOverride, lockNumber,
   subrentalTickets, challanTitle, showEventContent = true, showEventDate = true, ownerSectionsEnabled = false, frozenDetails = false
 }) => {
   const accent = bw ? '#111111' : '#00AEEF';
@@ -781,9 +808,10 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   const subrentalTotal = subrentalTickets?.reduce((sum, t) =>
     sum + (t.items?.reduce((iSum: number, item: any) => iSum + (Number(item.rental_price) * item.quantity), 0) || 0), 0) || 0;
 
-  const totalValue = totalOverride !== null
-    ? totalOverride
-    : (assets.reduce((sum, row) => sum + challanLineTotalCents(row), 0) / 100) + subrentalTotal;
+  const rowTotalCents = assets.reduce((sum, row) => sum + challanLineTotalCents(row), 0) + Math.round(subrentalTotal * 100);
+  const baseTotalCents = totalOverride === null ? rowTotalCents : Math.round(totalOverride * 100);
+  const totalValue = (discount60 ? Math.round(baseTotalCents * 0.4) : baseTotalCents) / 100;
+  const exactTotal = ownerSectionsEnabled || !frozenDetails || discount60;
 
   const renderCell = (asset: ChallanDisplayRow, col: ColumnKey, index: number) => {
     if (isEditMode) {
@@ -1148,23 +1176,36 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
           </tr>
           <tr className="bg-gray-50">
             <td colSpan={visibleColumns.length} className="py-1 px-2 text-right text-[10px] font-black text-gray-900 uppercase tracking-widest">
-              GRAND TOTAL:
-              {isEditMode ? (
+              {onToggleDiscount && <button
+                type="button" aria-pressed={discount60} disabled={isSaving} onClick={onToggleDiscount}
+                className={`print:hidden mr-2 rounded border px-2 py-1 ${discount60 ? 'border-sky-300 bg-sky-100 text-sky-900' : 'border-slate-300 bg-white text-slate-700'}`}
+              >60% discount</button>}
+              {onToggleDiscount && onSaveDiscount && <button
+                type="button" disabled={isSaving} onClick={onSaveDiscount}
+                className="print:hidden mr-2 rounded border border-slate-300 bg-white px-2 py-1 text-slate-700"
+              >Save Changes</button>}
+              {isEditMode && <label className="print:hidden mr-2 text-slate-700">
+                Total override
                 <input
-                disabled={isSaving}
-                  type="number"
-                  className="w-24 ml-2 bg-white border border-slate-200 rounded px-1 text-[12px] text-right text-orange-500 font-black focus:outline-none focus:border-orange-500"
-                  value={totalValue}
-                  onChange={e => setTotalOverride(parseFloat(e.target.value) || 0)}
+                  disabled={isSaving}
+                  type="number" min="0" step="0.01"
+                  className="ml-1 w-24 rounded border border-slate-300 bg-white px-1 text-right"
+                  value={totalOverride ?? ''}
+                  placeholder="Automatic"
+                  onChange={event => {
+                    const value = event.target.valueAsNumber;
+                    if (event.target.value === '') setTotalOverride(null);
+                    else if (Number.isFinite(value) && value >= 0) setTotalOverride(value);
+                  }}
                 />
-              ) : (
-                <span className="text-[12px] ml-2" style={{ color: orange }}>₹{ownerSectionsEnabled ? totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : Math.round(totalValue).toLocaleString()}</span>
-              )}
+              </label>}
+              GRAND TOTAL:
+              <span data-challan-grand-total className="text-[12px] ml-2" style={{ color: orange }}>₹{exactTotal ? totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : Math.round(totalValue).toLocaleString()}</span>
             </td>
           </tr>
           <tr>
             <td colSpan={visibleColumns.length} className="pb-1 px-2 text-right text-[8px] text-gray-900 italic font-bold">
-              ({numberToWords(totalValue, ownerSectionsEnabled)})
+              ({numberToWords(totalValue, exactTotal)})
             </td>
           </tr>
         </tfoot>

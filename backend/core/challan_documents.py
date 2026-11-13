@@ -116,7 +116,7 @@ def reserve_number(number, event, truck, document=None):
 
 def normalize(payload):
     allowed = {'request_id', 'expected_revision', 'expected_event_revision', 'lines', 'number',
-               'total_override', 'document_date', 'state', 'correction_reason'}
+               'total_override', 'document_date', 'state', 'correction_reason', 'discount_60'}
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise CommandError('invalid_payload', 400)
     try:
@@ -187,11 +187,14 @@ def normalize(payload):
     reason = payload.get('correction_reason', '')
     if not isinstance(reason, str) or len(reason) > 2000:
         raise CommandError('invalid_correction_reason', 400)
+    if 'discount_60' in payload and type(payload['discount_60']) is not bool:
+        raise CommandError('invalid_discount', 400)
+    discount = {'discount_60': payload['discount_60']} if 'discount_60' in payload else {}
     return {'request_id': request_id, 'expected_revision': payload['expected_revision'],
             'expected_event_revision': payload['expected_event_revision'], 'lines': normalized,
             'number': number.strip(), 'total_override': str(decimal_value(payload['total_override'])) if payload.get('total_override') is not None else None,
             'document_date': document_date.isoformat() if document_date else None,
-            'state': state, 'correction_reason': reason.strip()}
+            'state': state, 'correction_reason': reason.strip(), **discount}
 
 
 def capture_header(event, truck=None, owner_sections_version=1, *, issuer=None):
@@ -384,11 +387,16 @@ def save_document(user, event_id, scope, payload, coordinated=False):
     document.state = command['state']
     document.document_date = date.fromisoformat(command['document_date']) if command['document_date'] else None
     document.total_override = Decimal(command['total_override']) if command['total_override'] is not None else None
+    discount = command.get('discount_60', document.header.get('discount_60', False))
     # Capture headers at each draft save/issue; issued corrections retain original headers.
     if not (was_issued or late_correction):
         document.header = capture_saved_header(event, truck, 1 if new_document else document.header.get('owner_sections_version'))
         if document.header.get('owner_sections_version') == 1:
             document.header['alias_grouping_version'] = 1
+    if discount:
+        document.header['discount_60'] = True
+    else:
+        document.header.pop('discount_60', None)
     document.revision += 1
     document.save()
     replace_lines(document, command['lines'])

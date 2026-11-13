@@ -53,7 +53,37 @@ const { chromium, launchOptions } = require('./browser_runtime.cjs');
    assert.equal(await copy.locator('[data-owner-section="owned"]').first().textContent(),'Owned stock — AM Audiovisuals Pvt Ltd');
    await copy.close();
   });
-  await check('Old saved documents remain flat before and after a draft save',async()=>{await page.getByRole('button',{name:/Back to List/}).click();await page.getByRole('row').filter({hasText:'Old flat document'}).getByRole('button',{name:'View',exact:true}).click();await page.getByText('Old flat row',{exact:true}).first().waitFor();assert.equal(await page.locator('[data-owner-section]').count(),0);await page.getByRole('button',{name:'Edit Mode',exact:true}).click();await page.getByRole('button',{name:'Save Changes',exact:true}).click();await page.getByRole('button',{name:'Edit Mode',exact:true}).waitFor();assert.equal((await inspect()).old_header.owner_sections_version,undefined);assert.equal(await page.locator('[data-owner-section]').count(),0);});
+  await check('An old zero draft prints the row sum or the selected discount without saving, and keeps a saved choice on reload',async()=>{
+   await page.getByRole('button',{name:/Back to List/}).click();
+   await page.getByRole('row').filter({hasText:'Old flat document'}).getByRole('button',{name:'View',exact:true}).click();
+   await page.getByText('Old flat row',{exact:true}).first().waitFor();
+   assert.equal(await page.locator('[data-owner-section]').count(),0);
+   const total=target=>target.locator('[data-challan-grand-total]').first();
+   const discount=page.getByRole('button',{name:'60% discount',exact:true});
+   assert.equal(await total(page).textContent(),'₹20.00');
+   assert.equal(await discount.getAttribute('aria-pressed'),'false');
+   const before=await inspect();
+   await discount.click();
+   const pending=context.waitForEvent('page');
+   await page.getByRole('button',{name:'Print Challan',exact:true}).click();
+   const copy=await pending;copy.on('pageerror',error=>errors.push(error.message));
+   await copy.getByText('Old flat row',{exact:true}).first().waitFor();
+   assert.equal(await total(copy).textContent(),'₹8.00');
+   await copy.close();
+   assert.equal((await inspect()).revisions,before.revisions);
+   await page.getByRole('button',{name:'Save Changes',exact:true}).click();
+   await page.getByText('Challan saved.',{exact:true}).waitFor();
+   await page.reload();await open('Old flat document');
+   await page.getByText('Old flat row',{exact:true}).first().waitFor();
+   const saved=await inspect();
+   assert.equal(saved.old_header.owner_sections_version,undefined);
+   assert.equal(saved.old_header.discount_60,true);
+   assert.equal(await total(page).textContent(),'₹8.00');
+   await discount.click();
+   assert.equal(await total(page).textContent(),'₹20.00');
+   await page.getByRole('button',{name:'Save Changes',exact:true}).click();
+   await page.getByText('Challan saved.',{exact:true}).waitFor();
+  });
   await check('Conflicting ticket and warehouse references show a warning and cannot save a new document',async()=>{await page.getByRole('button',{name:/Back to List/}).click();await page.getByRole('row').filter({hasText:'Overlapping source review'}).getByRole('button',{name:'View',exact:true}).click();await page.getByText(/appears in both warehouse and supplier-ticket sources/).waitFor();const before=await inspect();await page.getByRole('button',{name:'Edit Mode',exact:true}).click();await page.getByRole('button',{name:'Save Changes',exact:true}).click();await page.getByText(/Warehouse and supplier-ticket rows overlap/).waitFor();assert.equal((await inspect()).documents,before.documents);await page.getByRole('button',{name:'Close Edit Mode',exact:true}).click();});
   await page.getByRole('button',{name:'Reports',exact:true}).first().click();
   await check('Reports ownership failures show an error, hide export and recover actual counts',async()=>{const owners=page.getByRole('region',{name:'Inventory by owner'});await owners.getByRole('button',{name:'Export ownership report'}).waitFor();failOwners=true;await owners.getByRole('button',{name:'Reload ownership report'}).click();await owners.getByRole('alert').waitFor();assert.equal(await owners.getByRole('button',{name:'Export ownership report'}).count(),0);failOwners=false;await owners.getByRole('button',{name:'Reload ownership report'}).click();await owners.getByRole('button',{name:'Export ownership report'}).waitFor();const workbook=await download(owners.getByRole('button',{name:'Export ownership report'}));const rows=XLSX.utils.sheet_to_json(workbook.Sheets['Inventory owners']);assert.equal(rows.find(r=>r.Owner==='Renamed AM owner')['Inventory records'],2);assert.equal(rows.find(r=>r.Owner==='Renamed AM owner')['Inventory classification'],'Shared godown stock');});
@@ -62,7 +92,8 @@ const { chromium, launchOptions } = require('./browser_runtime.cjs');
    await page.goto('http://127.0.0.1:4335/testing/challan.html');
    await page.waitForFunction(()=>window.__fixture);
    await page.evaluate(()=>{
-    const {first,poll}=window.__fixture;
+    const {first,poll,value}=window.__fixture;
+    value(0);
     poll([
      {...first,id:'11',sku:'CABLE-11',serialNumber:'TEST-11',aliasName:'HDMI Fibre Long Cable',itemPrice:100,current_value:80.25},
      {...first,id:'12',sku:'CABLE-12',serialNumber:'TEST-12',aliasName:'hdmi  fibre long cable ',quantity:2,itemPrice:200,current_value:125.15},
@@ -81,6 +112,15 @@ const { chromium, launchOptions } = require('./browser_runtime.cjs');
    await page.getByRole('button',{name:'Ungroup Items'}).click();
    assert.equal(await rows.count(),3);
    assert.equal(await paper.getByRole('columnheader',{name:'Unit Rate'}).count(),1);
+   assert.deepEqual(await page.locator('[data-challan-grand-total]').allTextContents(), ['₹540.66','₹540.66','₹540.66']);
+   const discount=page.getByRole('button',{name:'60% discount',exact:true});
+   assert.equal(await discount.getAttribute('aria-pressed'),'false');
+   await discount.click();
+   assert.deepEqual(await page.locator('[data-challan-grand-total]').allTextContents(), ['₹216.26','₹216.26','₹216.26']);
+   assert.equal(await page.getByText('(Rupees Two Hundred Sixteen and Twenty Six Paise Only)',{exact:true}).count(),3);
+   await page.getByRole('button',{name:'Save Changes',exact:true}).click();
+   assert.equal(await page.evaluate(()=>window.__saved.at(-1).discount_60),true);
+   assert.equal(await page.evaluate(()=>window.__saved.at(-1).total_override),null);
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_app:true,business_database:false,environment:'Disposable migrated in-memory SQLite/Django HTTP; fresh Chrome; real XLSX downloads; external traffic blocked'},null,2));
  }catch(e){console.error(log);throw e;}finally{closing=true;clearTimeout(timer);if(browser)await browser.close();if(server)await server.close();backend.kill('SIGTERM');}

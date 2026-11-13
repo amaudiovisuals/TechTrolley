@@ -55,6 +55,22 @@ class ProgramDeliveryTests(TestCase):
         self.event.refresh_from_db()
         return execute_consumable_command(self.user,self.event.pk,{'request_id':str(uuid4()),'action':action,
             'expected_revision':self.event.revision,'items':[{'asset_id':self.supplier.pk,'requested':4,'returned':returned,'confirmed':confirmed}]})
+    def test_bulk_error_identifies_the_saved_item_and_recorded_quantity(self):
+        self.supplier.quantity = 10
+        self.supplier.quantity_tracking = True
+        self.supplier.save(update_fields=['quantity', 'quantity_tracking'])
+        line = self.document.lines.get(asset=self.supplier)
+        line.quantity = 6
+        line.save(update_fields=['quantity'])
+
+        missing = self.preview()
+        self.assertEqual(missing.status_code, 400)
+        self.assertIn('Supplier speaker has no recorded bulk quantity', str(missing.data))
+        self.quantity('stage', 4)
+        mismatch = self.preview()
+        self.assertEqual(mismatch.status_code, 400)
+        self.assertIn('Supplier speaker has 6 on the saved challan and 4 recorded', str(mismatch.data))
+
     def test_customer_and_each_supplier_paper_use_saved_quantities_only(self):
         unit=Asset.objects.create(sku='OTHER',subrental_company=self.other)
         ChallanLine.objects.create(document=self.document,asset=unit,supplier=self.other,source_kind='supplier',quantity=1,unit_value=0,position=2,snapshot={'sku':unit.sku,'supplier_name':self.other.name})

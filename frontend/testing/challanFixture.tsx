@@ -25,7 +25,7 @@ function Fixture() {
     if (documents[documentKey]) setDocuments(previous => ({ ...previous, [documentKey]: { ...previous[documentKey], revision: nextRevision,
       lines: legacyDocumentAssets(newRows, [], { id: event } as any, `${event}:master`).map(asset => asset.challanLine) } }));
   },
-    account: setAccount, event: setEvent, truck: setTruck, fail: setFail, blocked: hasPendingWork, first,
+    account: setAccount, event: setEvent, truck: setTruck, fail: setFail, blocked: hasPendingWork, first, value: setValue,
     state: () => ({ rows, revision, account, event, truck }) };
   return <><div data-testid="toast">{toast}</div><ChallanView draftAccountId={account}
     booking={{ id: event, conferenceName: 'Synthetic event', revision, approximate_value: value, challanNumber: number } as any}
@@ -36,7 +36,7 @@ function Fixture() {
       if (fail) throw Object.assign(Error('Synthetic rejection; changes remain unsaved'), { definitive: true });
       saved.push(payload);
       const document = { ...payload, id: 'synthetic-document', scope, revision: (documents[documentKey]?.revision || 0) + 1,
-        header: {}, total_override: payload.total_override === null ? null : String(payload.total_override) } as any;
+        header: payload.discount_60 ? { discount_60: true } : {}, total_override: payload.total_override === null ? null : String(payload.total_override) } as any;
       setDocuments(previous => ({ ...previous, [documentKey]: document }));
       setRevision(r => r + 1); return document;
     }} /> </>;

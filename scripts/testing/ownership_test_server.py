@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix='tt-document-sources-') as media:
     bad_ticket = SubrentalTicket.objects.create(company=supplier, conference=conflict)
     SubrentalTicketItem.objects.create(ticket=bad_ticket, asset=rental, quantity=2, rental_price=10)
     old_event = Conference.objects.create(name='Old flat document', challan_number='OLD-FLAT', approximate_value=None)
-    old_doc = ChallanDocument.objects.create(conference=old_event, scope='master', number='OLD-FLAT', header=capture_header(old_event, owner_sections_version=None))
+    old_doc = ChallanDocument.objects.create(conference=old_event, scope='master', number='OLD-FLAT', total_override=0, header=capture_header(old_event, owner_sections_version=None))
     ChallanLine.objects.create(document=old_doc, asset=owned, source_kind='owned', snapshot={'alias_name': 'Old flat row'}, quantity=1, unit_value=20, position=0)
 
     def inspect(request):
