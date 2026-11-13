@@ -27,15 +27,16 @@ const checks = [];
 async function check(name, callback) { await callback(); checks.push(name); }
 function editor(overrides = {}) {
   const cache = new Map(); const state = { edit: true, dirty: true, uncertain: false, toasts: [], calls: [] };
-  const scope = { crypto, ...helpers, ...ownerHelpers, document: null, requiresCorrectionReason: false, sourcesReady: true, sourceWarnings: [], correctionReason: '', documentDate: '2026-10-08',
+  const scope = { crypto, ...helpers, ...ownerHelpers, document: null, locked: false, requiresCorrectionReason: false, sourcesReady: true, sourceWarnings: [], correctionReason: '', documentDate: '2026-10-08',
     draftConflict: false, isSavingRef: { current: false }, baseRevisionRef: { current: 5 }, baseDocumentRef: { current: null },
     draftKey: 'isolated-draft', pendingKey: 'isolated-draft:save', editorKeyRef: { current: 'isolated-draft' },
     dirtyRef: { current: true }, scope: 'master', booking: { id: '101' }, liveBooking: { revision: 5 },
     localAssets: [{ id: `new-${crypto.randomUUID()}`, aliasName: 'Manual two', quantity: 2, itemPrice: 12.5 }],
-    challanNoOverride: 'TEST-1', totalValueOverride: 0,
+    challanNoOverride: 'TEST-1', totalValueOverride: null, discount60: true,
+    challanOverride: (value, frozen) => value === 0 && !frozen ? null : value ?? null,
     localStorage: { getItem: key => cache.get(key) ?? null, setItem: (key, value) => cache.set(key, value), removeItem: key => cache.delete(key) },
     setIsSaving() {}, setSaveUncertain: value => { state.uncertain = value; },
-    setLocalAssets: value => { state.rows = value; }, setChallanNoOverride() {}, setTotalValueOverride() {},
+    setLocalAssets: value => { state.rows = value; }, setChallanNoOverride() {}, setTotalValueOverride() {}, setDiscount60() {},
     setDirty: value => { state.dirty = value; }, setDraftConflict() {}, setIsEditMode: value => { state.edit = value; }, setCorrectionReason() {},
     removeDraft: (storage, key) => storage.removeItem(key), showScanToast: (...args) => state.toasts.push(args),
     onSaveDocument: async (scope, payload) => { state.calls.push(payload); return { id: 'document-1', ...payload, revision: 1, number: payload.number, header: {} }; },
@@ -69,9 +70,9 @@ function editor(overrides = {}) {
     assert.equal(helpers.documentUnitValue({ ...row, purchasedDate: '2000-01-01', depreciationPercentage: 99 }), 12.5);
     assert.equal(helpers.snapshotBooking({ conferenceName: 'New', billingAddress: 'New' }, { header: { name: 'Old', billing_address: 'Old' }, number: 'N', document_date: null, total_override: '0.00' }).billingAddress, 'Old');
   });
-  await check('A complete save sends one request for all lines and preserves zero total', async () => {
+  await check('A complete save sends all lines and the discount with an automatic total', async () => {
     const e = editor(); await e.save();
-    assert.equal(e.state.calls.length, 1); assert.equal(e.state.calls[0].total_override, 0);
+    assert.equal(e.state.calls.length, 1); assert.equal(e.state.calls[0].total_override, null); assert.equal(e.state.calls[0].discount_60, true);
     assert.equal(e.state.calls[0].expected_revision, 0); assert.equal(e.state.calls[0].expected_event_revision, 5);
     assert.equal(e.state.edit, false); assert.equal(e.state.dirty, false); assert.equal(e.cache.size, 0);
   });
