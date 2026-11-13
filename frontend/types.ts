@@ -276,6 +276,7 @@ export interface ChallanSave {
   expected_event_revision: number;
   number: string;
   total_override: number | null;
+  discount_60?: boolean;
   document_date: string | null;
   state: 'draft' | 'issued';
   correction_reason: string;

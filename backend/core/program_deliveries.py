@@ -154,8 +154,12 @@ def sources(conference, truck_id=None, lock=False):
                     raise ValidationError('The saved consumable quantity exceeds its recorded program allocation.')
             elif asset.quantity_tracking or asset.quantity != 1:
                 allocation = quantities.get(asset.pk)
-                if allocation is None or quantity > allocation.dispatched_total + allocation.reserved:
-                    raise ValidationError('The saved bulk quantity exceeds its recorded program allocation.')
+                item_name = snapshot.get('alias_name') or asset.sku
+                if allocation is None:
+                    raise ValidationError(f'{item_name} has no recorded bulk quantity for this program. Verify the actual quantity before issuing a new delivery.')
+                capacity = allocation.dispatched_total + allocation.reserved
+                if quantity > capacity:
+                    raise ValidationError(f'{item_name} has {quantity} on the saved challan and {capacity} recorded for this program. Review the program quantity and the saved challan before issuing a new delivery.')
             elif quantity > 1:
                 raise ValidationError('A single physical unit cannot have a delivery quantity above one.')
         owner_snapshot = party(owner) if owner else None

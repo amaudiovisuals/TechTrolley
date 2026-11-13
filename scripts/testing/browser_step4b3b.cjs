@@ -29,7 +29,8 @@ const checks=[];async function check(name,run){await run();checks.push(name);}
   await check('Actual saved master starts two truck documents including rented and manual sources without stock writes',async()=>{
    await page.getByRole('button',{name:'Edit Mode',exact:true}).click();await page.getByRole('button',{name:'Add Item',exact:true}).click();await page.locator('input[value="ADHOC-4"]').fill('Manual cable');await masterRow('Manual cable').locator('td').nth(5).locator('input').fill('4');
    await page.getByRole('button',{name:'Save Changes',exact:true}).click();await page.getByText('Challan saved.',{exact:true}).waitFor();
-   await clickCommand('Start truck manifest','start');await page.getByRole('button',{name:'View Truck 1 challan',exact:true}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'Start truck manifest',exact:true}).count(),0);
+   await clickCommand('+ Add Truck 2 (Split Challans)','start');await page.getByRole('button',{name:'View Truck 1 challan',exact:true}).waitFor();
    const saved=await inspect();assert.equal(saved.stock,100);assert.equal(saved.consumable_stock,5);assert.equal(saved.all_documents.length,3);assert.equal(saved.manifest_entries.length,4);assert.equal(saved.all_documents.find(doc=>doc.truck_id===1).lines.length,4);await page.getByLabel('Vehicle Truck 1',{exact:true}).fill('UNSAVED VEHICLE');
   });
   await check('Actual source selectors split bulk, consumable, rental and manual lines while master quantities remain fixed',async()=>{

@@ -686,6 +686,8 @@ const App: React.FC = () => {
   useEffect(() => { setChallanDetailTab('dispatch'); }, [selectedBookingForChallan?.id]);
 
   // Multi-Truck Challan State
+  const challanPrintDiscount = useRef<boolean | undefined>(undefined);
+  const setChallanPrintDiscount = useCallback((value: boolean | undefined) => { challanPrintDiscount.current = value; }, []);
   const [activeTruckChallanId, setActiveTruckChallanId] = useState<string | null>(null);
   const [showTruckTransferModal, setShowTruckTransferModal] = useState<{fromTruckId: string, toTruckId: string} | null>(null);
   const [editingTruckId, setEditingTruckId] = useState<string | null>(null);
@@ -2493,7 +2495,12 @@ const App: React.FC = () => {
       const result = await outbox.enqueueManifest(String(eventId), prepared || manifestCommand(current, action, fields));
       showScanToast('Truck manifest confirmed.', 'success'); return result;
     } catch (error) {
-      if (error instanceof RejectedMovement) (error as Error & { definitive?: boolean }).definitive = true;
+      if (error instanceof RejectedMovement) {
+        (error as Error & { definitive?: boolean }).definitive = true;
+        if (error.message === 'legacy_quantity_requires_reconciliation') {
+          error.message = 'A bulk item has no recorded quantity for this program. Verify its actual quantity before splitting the challan.';
+        }
+      }
       throw error;
     } finally {
       manifestFlightRef.current = false; setManifestSaving(false);
@@ -5942,7 +5949,8 @@ const App: React.FC = () => {
     conf: Booking | null,
     mode: 'dispatch' | 'return' = 'dispatch',
     forceChoice = false,
-    truckChallan?: TruckChallan | null
+    truckChallan?: TruckChallan | null,
+    discount60?: boolean
   ) => {
     // BUG J-1: Guard against null conference (e.g. unsaved editing state)
     if (!conf) {
@@ -5996,8 +6004,9 @@ const App: React.FC = () => {
     localStorage.setItem('print_assets_data', JSON.stringify(relevantAssets));
 
     // Open in new tab
-    const url = `${window.location.protocol}//${window.location.host}${window.location.pathname}?print=true&confId=${conf.id}`;
-    window.open(url, '_blank');
+    const params = new URLSearchParams({ print: 'true', confId: conf.id });
+    if (discount60 !== undefined) params.set('discount60', discount60 ? '1' : '0');
+    window.open(`${window.location.pathname}?${params}`, '_blank');
   };
 
   const renderChallanList = () => {
@@ -6573,6 +6582,7 @@ const App: React.FC = () => {
     if (!printConf) {
       return <div className="min-h-screen bg-white flex items-center justify-center text-black font-bold uppercase">Generating Challan Preview...</div>;
     }
+    const printDiscount = new URLSearchParams(window.location.search).get('discount60');
     const printTitle = localStorage.getItem('print_challan_title') || 'DELIVERY CHALLAN';
     const printTruckSuffix = localStorage.getItem('print_truck_suffix') || '';
 
@@ -6590,6 +6600,7 @@ const App: React.FC = () => {
         <ChallanView
           draftAccountId={String(user?.user_id || user?.email || "")}
           booking={printConf}
+          printDiscount60={printDiscount === '1' ? true : printDiscount === '0' ? false : undefined}
           client={MOCK_CLIENTS[0]}
           assets={printAssets}
           sourcesReady={localStorage.getItem('print_document_kind') === 'return' || challanSourcesReady(printConf, printTruckSuffix)}
@@ -8760,7 +8771,7 @@ const App: React.FC = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch', false, activeTruck)}
+                        onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch', false, activeTruck, challanPrintDiscount.current)}
                         className="px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold uppercase text-xs shadow-lg shadow-sky-500/20 transition-all flex items-center gap-2"
                       >
                         <i aria-hidden="true" className="fa-solid fa-print"></i>
@@ -8785,8 +8796,10 @@ const App: React.FC = () => {
                           </p>
                           <p className="text-[10px] text-slate-400 mt-0.5">Need to split this event across multiple trucks? Create individual truck challans with distinct vehicles, drivers, and items.</p>
                         </div>
-                        {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff) && (
+                        {(user?.role === 'admin' || user?.role === 'godown_incharge' || user?.is_staff ||
+                          (user?.role === 'boss' && conf.challan_documents?.some(doc => doc.scope === 'master'))) && (
                           <button
+                            disabled={manifestSaving || pendingMovementCount > 0}
                             onClick={() => handleAddTruck(conf.id)}
                             className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-emerald-500/20"
                           >
@@ -9325,6 +9338,7 @@ const App: React.FC = () => {
                       key={`${conf.id}_${activeTruck ? activeTruck.id : 'master'}_${hasTransfers && challanDetailTab === 'return' ? 'return' : 'dispatch'}`}
                       draftAccountId={String(user?.user_id || user?.email || "")}
                       booking={effectiveBooking}
+                      onPrintDiscountChange={setChallanPrintDiscount}
                       client={MOCK_CLIENTS[0]}
                       assets={effectiveAssets}
                       lockNumber={Boolean(conf.truck_manifest)}

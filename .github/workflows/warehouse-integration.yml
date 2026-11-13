@@ -66,6 +66,7 @@ jobs:
           node scripts/testing/browser_led_cases.cjs
           node scripts/testing/browser_program_deliveries.cjs
           node scripts/testing/browser_conference_camera.cjs
+          node scripts/testing/browser_step4b3b.cjs
           node scripts/testing/browser_step6b.cjs
           node scripts/testing/browser_worker_step3.cjs
       - uses: actions/upload-artifact@v4

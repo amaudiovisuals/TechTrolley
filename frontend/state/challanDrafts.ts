@@ -7,6 +7,7 @@ export interface ChallanDraft {
   documentDate?: string | null;
   assets: Asset[];
   total: number | null;
+  discount60?: boolean;
   number: string | null;
   updatedAt: string;
 }
@@ -20,6 +21,7 @@ export function readDraft(storage: Pick<Storage, 'getItem'>, key: string): Chall
       !value.assets.every((asset: any) => asset && typeof asset === 'object' && asset.id != null) ||
       !(value.total === null || (typeof value.total === 'number' && Number.isFinite(value.total))) ||
       !(value.number === null || typeof value.number === 'string')) return null;
+    if (value.discount60 !== undefined && typeof value.discount60 !== 'boolean') return null;
     if (value.documentId !== undefined && value.documentId !== null && typeof value.documentId !== 'string') return null;
     return value;
   } catch { return null; }
