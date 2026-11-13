@@ -434,9 +434,11 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
       combinedLocal.forEach(asset => {
         // For laptops, merge into MacBook / Windows Laptop sub-groups.
-        // For all other assets, group by their exact alias name as before.
+        // Match case and spacing without combining different suppliers or rates.
         const subGroup = getLaptopSubGroup(asset);
-        const key = `${asset.challanLine?.source_kind || 'manual'}:${asset.challanLine?.supplier_id || ''}:${asset.challanLine?.snapshot.supplier_name || ''}:${asset.itemPrice}:${subGroup ?? asset.aliasName ?? asset.sku ?? 'Unknown'}`;
+        const model = (subGroup || asset.aliasName?.trim() || asset.sku || 'Unknown').trim().replace(/\s+/g, ' ').toLowerCase();
+        const key = JSON.stringify([asset.challanLine?.source_kind || 'manual', asset.challanLine?.supplier_id ?? null,
+          asset.challanLine?.snapshot.supplier_name || '', documentUnitValue(asset), model]);
         if (!groups[key]) {
           groups[key] = {
             ...asset,
@@ -573,15 +575,15 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
                 {isEditMode ? 'Close Edit Mode' : 'Edit Mode'}
               </button>
             )}
-            <button
+            {!frozenCopy && <button
               onClick={() => setIsGrouped(!isGrouped)}
               className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isGrouped ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
-              title="Aggregate similar items by name"
+              title="Group matching names with the same owner and unit rate"
             >
               <i aria-hidden="true" className={`fa-solid ${isGrouped ? 'fa-layer-group' : 'fa-list'} mr-2`}></i>
               {isGrouped ? 'Ungroup Items' : 'Group by Model'}
-            </button>
+            </button>}
             {isEditMode && (
               <>
                 <button

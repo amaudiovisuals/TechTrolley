@@ -6479,8 +6479,8 @@ const App: React.FC = () => {
                   </td>
                   <td className="px-10 py-6 text-xs text-slate-400 uppercase font-bold truncate max-w-[150px]">{conf.association}</td>
                   <td className="px-10 py-6">
-                    <p className="text-xs text-slate-300 font-mono">{new Date(conf.startDate).toLocaleDateString()}</p>
-                    <p className="text-[10px] text-slate-500 mt-1 font-mono">to {new Date(conf.endDate).toLocaleDateString()}</p>
+                    <p className="text-xs text-slate-300 font-mono">{conf.startDate ? new Date(conf.startDate).toLocaleDateString() : 'Start date not recorded'}</p>
+                    <p className="text-[10px] text-slate-500 mt-1 font-mono">{conf.endDate ? `to ${new Date(conf.endDate).toLocaleDateString()}` : 'End date not recorded'}</p>
                   </td>
                   <td className="px-10 py-6 text-xs text-slate-400 uppercase font-bold">{conf.type}</td>
                   <td className="px-10 py-6 text-center">

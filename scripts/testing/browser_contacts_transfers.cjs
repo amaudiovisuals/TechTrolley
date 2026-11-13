@@ -20,22 +20,33 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
   await context.addInitScript(()=>{localStorage.setItem('token','synthetic-contacts-transfer-token');localStorage.setItem('user',JSON.stringify({user_id:1,email:'contacts@example.test',role:'admin',is_staff:true}));});
   page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4382/_fixture/inspect/')).json();
-  const open=async name=>{await page.getByRole('button',{name:'Conference',exact:true}).first().click();await page.getByRole('row').filter({hasText:name}).getByTitle('Edit Conference Details',{exact:true}).click();};
+  const open=async name=>{await page.getByRole('button',{name:'Conference',exact:true}).first().click();const row=page.getByRole('row').filter({hasText:name});
+   await row.getByText('Start date not recorded',{exact:true}).waitFor();
+   await row.getByText('End date not recorded',{exact:true}).waitFor();
+   await row.getByTitle('Edit Conference Details',{exact:true}).click();};
   const paper=()=>page.locator('.challan-copy').first();
   const openChallan=async name=>{await page.getByRole('button',{name:'Challans',exact:true}).first().click();await page.getByRole('row').filter({hasText:name}).getByRole('button',{name:'View',exact:true}).click();await paper().waitFor();};
   await page.goto('http://127.0.0.1:4381/');await open('Source venue program');
   await check('Customer and named venue save from current details without issuing papers or changing stock',async()=>{
-   await page.getByPlaceholder('Customer / Association Name',{exact:true}).fill('Saved <Example> customer');
+   await page.getByPlaceholder('Customer / Association Name',{exact:true}).fill('Conference form customer');
    await page.getByPlaceholder('Billing Address',{exact:true}).fill('Example billing road');await page.getByPlaceholder('GST Number',{exact:true}).fill('EXAMPLE-GST');
+   const saveCustomer=page.getByRole('button',{name:'Save current customer',exact:true});
+   assert.equal(await saveCustomer.isDisabled(),true);
+   await page.getByLabel('Name for this saved customer',{exact:true}).fill('Saved <Example> customer');
    await page.getByRole('button',{name:'Save current customer',exact:true}).click();await page.getByRole('button',{name:'Use customer Saved <Example> customer',exact:true}).waitFor();
+   assert.equal(await page.getByPlaceholder('Customer / Association Name',{exact:true}).inputValue(),'Conference form customer');
    await page.getByLabel('Name for this delivery address',{exact:true}).fill('Hotel — main hall');await page.getByRole('button',{name:'Save named delivery address',exact:true}).click();await page.getByRole('button',{name:'Use delivery address Hotel — main hall',exact:true}).waitFor();
    const state=await inspect();assert.equal(state.customers.length,1);assert.equal(state.venues.length,1);assert.equal(state.source_assets.length,2);assert.equal(state.target_assets.length,0);
    assert.equal(state.source_header.association_name,'Source customer');
+   await page.getByLabel('Name for this saved customer',{exact:true}).fill('Renamed <Example> customer');
+   await page.getByRole('button',{name:'Update saved customer',exact:true}).click();
+   await page.getByRole('button',{name:'Use customer Renamed <Example> customer',exact:true}).waitFor();
+   assert.equal((await inspect()).customers.length,1);
   });
   await page.reload();await open('Target venue program');
   await check('Saved suggestions survive reload and autofill customer GST, billing and named delivery address on another program',async()=>{
-   await page.getByLabel('Find saved customer',{exact:true}).fill('EXAMPLE-GST');await page.getByRole('button',{name:'Use customer Saved <Example> customer',exact:true}).click();
-   assert.equal(await page.getByPlaceholder('Customer / Association Name',{exact:true}).inputValue(),'Saved <Example> customer');
+   await page.getByLabel('Find saved customer',{exact:true}).fill('EXAMPLE-GST');await page.getByRole('button',{name:'Use customer Renamed <Example> customer',exact:true}).click();
+   assert.equal(await page.getByPlaceholder('Customer / Association Name',{exact:true}).inputValue(),'Renamed <Example> customer');
    assert.equal(await page.getByPlaceholder('Billing Address',{exact:true}).inputValue(),'Example billing road');assert.equal(await page.getByPlaceholder('GST Number',{exact:true}).inputValue(),'EXAMPLE-GST');
    await page.getByLabel('Find saved delivery address',{exact:true}).fill('main hall');await page.getByRole('button',{name:'Use delivery address Hotel — main hall',exact:true}).click();
    assert.equal(await page.getByPlaceholder('Transport / Delivery Address',{exact:true}).inputValue(),(await inspect()).source_address.trim());
