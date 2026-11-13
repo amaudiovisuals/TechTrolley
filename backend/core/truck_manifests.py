@@ -12,9 +12,10 @@ from rest_framework.response import Response
 
 from .asset_commands import CommandError, canonical_conference
 from .models import (Asset, Conference, TruckChallan, TruckManifest, TruckManifestEntry,
-                     ChallanDocument, ChallanLine, ChallanRevision, MovementReceipt, SubrentalTicketItem)
+                     ChallanDocument, ChallanLine, ChallanNumberReservation, ChallanRevision,
+                     MovementReceipt, SubrentalTicketItem)
 from .permissions import WAREHOUSE_ROLES, get_business_role
-from .challan_documents import document_data, capture_saved_header, allocate_number, reserve_number, save_document, replace_lines
+from .challan_documents import document_data, capture_saved_header, allocate_number, number_mutex, reserve_number, save_document, replace_lines
 from .challan_lock import challans_locked, require_challan_edit
 
 
@@ -26,7 +27,7 @@ def manifest_data(manifest):
 
 def normalize(payload):
     common = {'request_id', 'action', 'expected_event_revision', 'expected_document_revisions', 'reason'}
-    extras = {'start': set(), 'add': set(), 'move': {'from_truck_id', 'to_truck_id', 'items'},
+    extras = {'start': set(), 'add': set(), 'cancel': set(), 'move': {'from_truck_id', 'to_truck_id', 'items'},
               'issue': {'truck_id', 'document_date'}, 'save_master': {'document'}, 'metadata': {'truck_id', 'vehicle_number', 'driver_phone', 'label'}}
     if not isinstance(payload, dict) or payload.get('action') not in extras or set(payload) - common - extras[payload['action']]:
         raise CommandError('invalid_manifest_payload', 400)
@@ -153,6 +154,41 @@ def write_truck(document, entries, actor, reason, issue_date=None):
     ChallanRevision.objects.create(document=document, revision=document.revision, actor=actor, reason=reason, snapshot=document_data(document))
 
 
+def cancel_draft_split(event, master, manifest, trucks, documents):
+    truck_docs = [document for document in documents.values() if document.truck_id]
+    histories = ChallanRevision.objects.filter(document__in=truck_docs)
+    if (any(document.state != 'draft' or document.provenance != 'coordinated_manifest' for document in truck_docs)
+            or histories.filter(snapshot__state='issued').exists()):
+        raise CommandError('issued_truck_split_cannot_cancel')
+    truck_ids = {str(pk) for pk in trucks}
+    for delivery in event.issued_deliveries.all():
+        truck_id = delivery.snapshot.get('customer_document', {}).get('truck_id')
+        if str(truck_id) in truck_ids:
+            raise CommandError('issued_truck_split_cannot_cancel')
+    archive = {
+        'documents': [document_data(document) for document in truck_docs],
+        'revisions': [
+            {'document_id': str(row.document_id), 'revision': row.revision, 'reason': row.reason,
+             'actor_id': row.actor_id, 'created_at': row.created_at.isoformat(), 'snapshot': row.snapshot}
+            for row in histories.order_by('document_id', 'revision')
+        ],
+    }
+    number_mutex()
+    for number in {document.number for document in truck_docs} - {master.number, ''}:
+        reservation, _ = ChallanNumberReservation.objects.get_or_create(number=number)
+        if reservation.conference_id is not None:
+            if reservation.conference_id != event.pk:
+                raise CommandError('number_already_used')
+            reservation.conference_id = None
+            reservation.save(update_fields=['conference'])
+    manifest.entries.all().delete()
+    manifest.delete()
+    histories.delete()
+    ChallanDocument.objects.filter(pk__in=[document.pk for document in truck_docs]).delete()
+    TruckChallan.objects.filter(pk__in=trucks).delete()
+    return archive
+
+
 @transaction.atomic
 def execute_manifest_command(user, event_id, payload):
     command = normalize(json.loads(json.dumps(payload)))
@@ -160,12 +196,12 @@ def execute_manifest_command(user, event_id, payload):
     previous = MovementReceipt.objects.filter(actor=user, request_id=command['request_id']).first()
     if previous:
         if previous.payload_hash != fingerprint: raise CommandError('request_id_reused')
-        return {**previous.result, 'replayed': True}
+        return {**{key: value for key, value in previous.result.items() if key != 'cancelled_draft_archive'}, 'replayed': True}
     if get_business_role(user) not in WAREHOUSE_ROLES: raise CommandError('not_authorized', 403)
     receipt, created = MovementReceipt.objects.get_or_create(actor=user, request_id=command['request_id'], defaults={'payload_hash': fingerprint})
     if not created:
         if receipt.payload_hash != fingerprint: raise CommandError('request_id_reused')
-        return {**receipt.result, 'replayed': True}
+        return {**{key: value for key, value in receipt.result.items() if key != 'cancelled_draft_archive'}, 'replayed': True}
     ids = set(ChallanLine.objects.filter(document__conference_id=event_id).exclude(asset=None).values_list('asset_id', flat=True))
     if command['action'] == 'save_master': ids.update(line['asset_id'] for line in command['document']['lines'] if line['asset_id'])
     from .event_lifecycle import referenced_asset_ids
@@ -188,6 +224,7 @@ def execute_manifest_command(user, event_id, payload):
     if not master: raise CommandError('save_master_challan_first', 428)
     manifest = TruckManifest.objects.select_for_update().filter(conference=event).first()
     before = manifest_data(manifest) if manifest else None
+    cancelled = None
     if command['action'] == 'start':
         if manifest or trucks or any(scope != 'master' for scope in docs): raise CommandError('existing_trucks_require_review')
         sources = list(master.lines.select_related('asset').all())
@@ -207,11 +244,15 @@ def execute_manifest_command(user, event_id, payload):
         if not manifest: raise CommandError('start_truck_manifest_first', 428)
         if manifest.master_id != master.pk or set(docs) != {'master'} | {f'truck-{pk}' for pk in trucks}:
             raise CommandError('manifest_history_requires_review')
+        if any(docs[f'truck-{pk}'].truck_id != pk for pk in trucks):
+            raise CommandError('manifest_history_requires_review')
         entries = list(manifest.entries.select_for_update().select_related('master_line').order_by('truck_id', 'master_line_id'))
         for row in entries:
             if row.truck_id not in trucks or row.master_line.document_id != master.pk or sum(e.quantity for e in entries if e.master_line_id == row.master_line_id) > row.master_line.quantity:
                 raise CommandError('manifest_totals_require_review')
-        if command['action'] == 'add':
+        if command['action'] == 'cancel':
+            cancelled = cancel_draft_split(event, master, manifest, trucks, docs)
+        elif command['action'] == 'add':
             number = max(row.truck_number for row in trucks.values()) + 1
             truck = TruckChallan.objects.create(conference=event, truck_number=number, label=f'Truck {number}', challan_number=allocate_number())
             doc = ChallanDocument.objects.create(conference=event, truck=truck, scope=f'truck-{truck.pk}', number=truck.challan_number,
@@ -275,7 +316,10 @@ def execute_manifest_command(user, event_id, payload):
     event.refresh_from_db(); event.save(update_fields=['revision'])
     result = {'operation': 'manifest', 'request_id': command['request_id'], 'replayed': False,
               'manifest_before': before, 'conference': canonical_conference(event), 'document': document_data(ChallanDocument.objects.get(pk=master.pk))}
-    receipt.result = result; receipt.save(update_fields=['result'])
+    if cancelled is not None:
+        result['cancelled_draft_split'] = True
+    receipt.result = {**result, 'cancelled_draft_archive': cancelled} if cancelled is not None else result
+    receipt.save(update_fields=['result'])
     return result
 
 

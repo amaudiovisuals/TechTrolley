@@ -9,24 +9,41 @@ type Props = {
 export const TruckManifestPanel: React.FC<Props> = ({ booking, canWrite, disabled, onCommand, onViewTruck }) => {
   const master = booking.challan_documents?.find(doc => doc.scope === 'master');
   const trucks = booking.truckChallans || [];
+  const hasIssuedTruck = booking.challan_documents?.some(doc => doc.truck_id && doc.state === 'issued');
   const recorded = { ...Object.fromEntries(Object.entries((booking.quantity_allocations || {}) as Record<string, any>).map(([id, row]) => [id, Number(row.dispatched_total || 0) + Number(row.reserved || 0)])),
     ...Object.fromEntries(Object.entries((booking.consumable_ledger || {}) as Record<string, any>).map(([id, row]) => [id, row.requested])) };
   const missing = Object.entries(recorded).filter(([id, quantity]) => Number(quantity) > 0 && Number(quantity) > (master?.lines.find(line => String(line.asset_id) === id && !line.ticket_item_id)?.quantity || 0));
   const [from, setFrom] = useState(''), [to, setTo] = useState(''), [quantities, setQuantities] = useState<Record<string, number>>({});
   const [reason, setReason] = useState(''), [documentDate, setDocumentDate] = useState(master?.document_date || '');
   const [error, setError] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [metadata, setMetadata] = useState<Record<string, any>>({});
   const run = async (action: string, fields: Record<string, any> = {}) => {
     setError('');
     try {
       await onCommand(action, fields); setQuantities({});
+      if (action === 'cancel') {
+        setFrom(''); setTo(''); setMetadata({}); setConfirmCancel(false);
+        onViewTruck(null);
+      }
       if (action === 'metadata') setMetadata(prev => { const next = { ...prev }; delete next[String(fields.truck_id)]; return next; });
     }
     catch (error) { setError((error as Error).message); }
   };
   if (!booking.truck_manifest && !trucks.length && !missing.length) return null;
   return <section className="p-5 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 text-white" data-testid="truck-manifest-panel">
-    <h3 className="font-bold">Truck quantities</h3>
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="font-bold">Truck quantities</h3>
+      {canWrite && booking.truck_manifest && !hasIssuedTruck && !booking.challans_locked && !confirmCancel &&
+        <button type="button" disabled={disabled} onClick={() => setConfirmCancel(true)} className="rounded border border-red-400 px-3 py-2 text-sm text-red-200">Cancel draft split</button>}
+    </div>
+    {confirmCancel && <div className="rounded border border-amber-400 bg-slate-800 p-3 text-sm">
+      <p>Remove the draft trucks and return to the master challan?</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" disabled={disabled} onClick={() => void run('cancel', { reason: 'Draft truck split cancelled' })} className="rounded bg-red-700 px-3 py-2">Remove draft trucks</button>
+        <button type="button" disabled={disabled} onClick={() => setConfirmCancel(false)} className="rounded border border-slate-400 px-3 py-2">Keep split</button>
+      </div>
+    </div>}
     <p className="text-sm text-slate-300">Split saved challan lines between trucks. Inventory scans and warehouse returns remain separate operations.</p>
     {master && missing.length > 0 && <p role="alert" className="text-amber-300">New recorded quantities need master review. Open the master challan, update existing quantities or use Add latest event items, then save before allocating those units.</p>}
     {error && <p role="alert" className="text-red-300">{error}</p>}
