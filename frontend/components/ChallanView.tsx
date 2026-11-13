@@ -3,7 +3,8 @@ import { setWorkBlocker } from '../state/workSafety';
 import React from 'react';
 import { Booking, Asset, Client, CompanySettings, ChallanDocument, ChallanSave } from '../types';
 import { assetLine, documentScope, legacyDocumentAssets, lineAsset, snapshotBooking, documentUnitValue, documentSourceWarnings } from '../state/challanDocuments';
-import { ownerSections, overlappingSourceIds, importChallanSources } from '../state/ownerSections';
+import { challanLineTotalCents, challanOwnerKey, ownerSections, overlappingSourceIds, importChallanSources } from '../state/ownerSections';
+import type { ChallanDisplayRow } from '../state/ownerSections';
 import { Logo } from './Logo';
 import { manifestCommand } from '../state/truckManifests';
 import { paperOrigins } from '../state/dispatchOrigins';
@@ -248,6 +249,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   const [draftStorageFailed, setDraftStorageFailed] = React.useState(false);
   const markDirty = () => { dirtyRef.current = true; setDirty(true); };
   const [isGrouped, setIsGrouped] = React.useState(true);
+  const useGroupedLayout = (frozenCopy ? document?.header.alias_grouping_version === 1 : isGrouped) && !isEditMode;
   const [showEventContent, setShowEventContent] = React.useState(true);
   const [showEventDate, setShowEventDate] = React.useState(true);
   // J-111: Print-only alias overrides — keyed by asset ID (or group key).
@@ -424,44 +426,37 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   };
 
   const processedAssets = React.useMemo(() => {
-    const combinedLocal = localAssets;
-    if (frozenCopy && !isEditMode) return assets;
-    let list: Asset[] = [];
-    if (!isGrouped || isEditMode) {
+    const combinedLocal = frozenCopy && !isEditMode ? assets : localAssets;
+    if (frozenCopy && !isEditMode && !useGroupedLayout) return assets;
+    let list: ChallanDisplayRow[];
+    if (!useGroupedLayout) {
       list = [...combinedLocal];
     } else {
-      const groups: Record<string, Asset & { serials: string[], ids: (string | number)[] }> = {};
+      const groups = new Map<string, { aliasName: string; members: Asset[] }>();
 
-      combinedLocal.forEach(asset => {
-        // For laptops, merge into MacBook / Windows Laptop sub-groups.
-        // Match case and spacing without combining different suppliers or rates.
-        const subGroup = getLaptopSubGroup(asset);
-        const model = (subGroup || asset.aliasName?.trim() || asset.sku || 'Unknown').trim().replace(/\s+/g, ' ').toLowerCase();
-        const key = JSON.stringify([asset.challanLine?.source_kind || 'manual', asset.challanLine?.supplier_id ?? null,
-          asset.challanLine?.snapshot.supplier_name || '', documentUnitValue(asset), model]);
-        if (!groups[key]) {
-          groups[key] = {
-            ...asset,
-            quantity: 0,
-            serials: [],
-            ids: []
-          };
-          // Override aliasName on the group header so the display name is correct
-          if (subGroup) (groups[key] as any).aliasName = subGroup;
-        }
-        groups[key].quantity += (Number(asset.quantity ?? 1));
-        if (asset.serialNumber && asset.serialNumber.trim()) {
-          groups[key].serials.push(asset.serialNumber.trim());
-        }
-        groups[key].ids.push(asset.id);
+      for (const asset of combinedLocal) {
+        const aliasName = (asset.aliasName?.trim() || getLaptopSubGroup(asset) || asset.sku || 'Unknown').replace(/\s+/g, ' ');
+        const key = JSON.stringify([challanOwnerKey(asset), aliasName.toLowerCase()]);
+        const group = groups.get(key);
+        if (group) group.members.push(asset);
+        else groups.set(key, { aliasName, members: [asset] });
+      }
+      list = [...groups.values()].map(({ aliasName, members }) => {
+        const identifiers = (field: 'sku' | 'serialNumber' | 'macAddress' | 'imeiNumber1' | 'imeiNumber2') =>
+          [...new Set(members.map(asset => asset[field]?.trim()).filter(Boolean))].join(', ');
+        return {
+          ...members[0],
+          aliasName,
+          id: `group:${members.map(asset => asset.id).join(':')}`,
+          sku: identifiers('sku'),
+          serialNumber: identifiers('serialNumber'),
+          macAddress: identifiers('macAddress'),
+          imeiNumber1: identifiers('imeiNumber1'),
+          imeiNumber2: identifiers('imeiNumber2'),
+          quantity: members.reduce((sum, asset) => sum + Number(asset.quantity ?? 1), 0),
+          groupedTotalCents: members.reduce((sum, asset) => sum + challanLineTotalCents(asset), 0),
+        };
       });
-
-      list = Object.values(groups).map(g => ({
-        ...g,
-        serialNumber: g.serials.length > 0 ? g.serials.join(', ') : '',
-        // We keep the first ID for the row key, but note it's a group
-        id: `group:${g.ids.join(':')}`
-      }));
     }
 
     // Alphabetical sort by name (aliasName or sku)
@@ -473,13 +468,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
     return sorted.map(a => ({
       ...a,
-      // J-111: Inject the print-only alias override as a non-persisted field `printName`.
-      // For laptops, default to the OS sub-group label (MacBook / Windows Laptop).
-      // This is read by renderCell and never flows into onLocalUpdate or saveAllChanges.
-      printName: printAliasOverrides[String(a.id)]
-        ?? (isGrouped ? (getLaptopSubGroup(a) ?? a.aliasName ?? a.sku ?? '') : (a.aliasName || a.sku || ''))
+      printName: (frozenCopy ? undefined : printAliasOverrides[String(a.id)]) ?? (a.aliasName || a.sku || '')
     }));
-  }, [localAssets, isGrouped, isEditMode, printAliasOverrides, frozenCopy, assets]);
+  }, [localAssets, useGroupedLayout, isEditMode, printAliasOverrides, frozenCopy, assets]);
+  const paperColumns = useGroupedLayout ? visibleColumns.filter(column => column !== 'Rate') : visibleColumns;
 
   if (!sourcesReady) return <div role="alert" className="rounded-xl border border-amber-500 bg-amber-50 p-4 text-slate-900">
     <p>Loading event rental sources. The challan will appear when its sources are confirmed.</p>
@@ -579,7 +571,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
               onClick={() => setIsGrouped(!isGrouped)}
               className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isGrouped ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
-              title="Group matching names with the same owner and unit rate"
+              title="Group matching names within each owner's section"
             >
               <i aria-hidden="true" className={`fa-solid ${isGrouped ? 'fa-layer-group' : 'fa-list'} mr-2`}></i>
               {isGrouped ? 'Ungroup Items' : 'Group by Model'}
@@ -725,7 +717,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
             companySettings={companySettings}
             copyLabel={copy.label}
             bw={false}
-            visibleColumns={isEditMode ? [...visibleColumns, 'Actions' as ColumnKey] : visibleColumns}
+            visibleColumns={isEditMode ? [...paperColumns, 'Actions' as ColumnKey] : paperColumns}
             isEditMode={isEditMode && index === 0} // ONLY the first copy is editable, others are live previews
             isSaving={isSaving || saveUncertain}
             onLocalUpdate={handleLocalUpdate}
@@ -748,7 +740,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 };
 
 interface ChallanTemplateProps extends Omit<ChallanViewProps, 'assets'> {
-  assets: Asset[];
+  assets: ChallanDisplayRow[];
   copyLabel: string;
   bw: boolean;
   visibleColumns: ColumnKey[];
@@ -791,9 +783,9 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
 
   const totalValue = totalOverride !== null
     ? totalOverride
-    : assets.reduce((sum, a) => sum + (getDepreciatedPrice(a) * (a.quantity ?? 1)), 0) + subrentalTotal;
+    : (assets.reduce((sum, row) => sum + challanLineTotalCents(row), 0) / 100) + subrentalTotal;
 
-  const renderCell = (asset: Asset, col: ColumnKey, index: number) => {
+  const renderCell = (asset: ChallanDisplayRow, col: ColumnKey, index: number) => {
     if (isEditMode) {
       switch (col) {
         case 'Asset':
@@ -931,7 +923,7 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
       case 'IMEI': return `${asset.imeiNumber1 || '—'} / ${asset.imeiNumber2 || '—'}`;
       case 'Rate': return `₹${Number(getDepreciatedPrice(asset).toFixed(2)).toLocaleString()}`;
       case 'Qty': return asset.quantity ?? 1;
-      case 'Total': return `₹${Number((getDepreciatedPrice(asset) * (asset.quantity ?? 1)).toFixed(2)).toLocaleString()}`;
+      case 'Total': return `₹${(challanLineTotalCents(asset) / 100).toLocaleString()}`;
       default: return null;
     }
   };

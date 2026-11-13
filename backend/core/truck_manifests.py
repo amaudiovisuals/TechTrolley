@@ -127,6 +127,8 @@ def write_truck(document, entries, actor, reason, issue_date=None):
     if not was_issued and not challans_locked(document.conference):
         master = document.conference.truck_manifest.master
         document.header = capture_saved_header(document.conference, document.truck, master.header.get('owner_sections_version'))
+        if document.header.get('owner_sections_version') == 1:
+            document.header['alias_grouping_version'] = 1
         if master.header.get('company'):
             document.header['company'] = dict(master.header['company'])
     if issue_date:

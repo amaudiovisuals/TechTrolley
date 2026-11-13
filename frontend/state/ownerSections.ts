@@ -1,15 +1,25 @@
 import type { Asset, Booking } from '../types';
 import { assetLine, documentUnitValue, lineAsset, masterQuantityPreview } from './challanDocuments';
-export interface OwnerSection { key: string; title: string; rows: Asset[]; total: number; }
-export function ownerSections(rows: Asset[], mainName='Main company'): OwnerSection[] {
-  const groups=new Map<string,OwnerSection>();
-  for(const row of rows){
+export type ChallanDisplayRow = Asset & { groupedTotalCents?: number; printName?: string };
+export const challanLineTotalCents = (row: ChallanDisplayRow) =>
+  row.groupedTotalCents ?? Math.round(documentUnitValue(row) * 100) * Number(row.quantity ?? 1);
+
+function ownerSection(row: Asset, mainName: string) {
     const line=row.challanLine, supplier=line?.source_kind==='supplier'||!line&&Boolean(row.subrental_company);
     const manual=line?.source_kind==='manual'||!line&&String(row.id).startsWith('new-');
     const name=line?.snapshot.supplier_name||row.subrental_company_name||`Supplier ${line?.supplier_id||row.subrental_company}`;
     const key=supplier?`supplier:${line?.supplier_id||row.subrental_company}:${name}`:manual?'manual':'owned';
-    if(!groups.has(key))groups.set(key,{key,title:supplier?`Rented from ${name}`:manual?'Manual additions':`Owned stock — ${mainName}`,rows:[],total:0});
-    const group=groups.get(key)!;group.rows.push(row);group.total=Math.round(group.total*100+Math.round(documentUnitValue(row)*100)*Number(row.quantity))/100;
+    return { key, title: supplier ? `Rented from ${name}` : manual ? 'Manual additions' : `Owned stock — ${mainName}` };
+}
+export const challanOwnerKey = (row: Asset) => ownerSection(row, '').key;
+
+export interface OwnerSection<Row extends Asset = Asset> { key: string; title: string; rows: Row[]; total: number; }
+export function ownerSections<Row extends ChallanDisplayRow>(rows: Row[], mainName='Main company'): OwnerSection<Row>[] {
+  const groups=new Map<string,OwnerSection<Row>>();
+  for(const row of rows){
+    const section=ownerSection(row,mainName);
+    if(!groups.has(section.key))groups.set(section.key,{...section,rows:[],total:0});
+    const group=groups.get(section.key)!;group.rows.push(row);group.total=(Math.round(group.total*100)+challanLineTotalCents(row))/100;
   }
   return [...groups.values()].sort((a,b)=>a.key==='owned'?-1:b.key==='owned'?1:a.key==='manual'?1:b.key==='manual'?-1:0);
 }
