@@ -21,6 +21,7 @@ const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => 
 // are no scripts, remote resources, live lookups or local draft dependencies.
 export function deliveryPaperHtml(paper: Paper, delivery: Delivery): string {
   const party = (p: Party) => `<strong>${escape(p.name)}</strong><div>${escape(p.address)}</div>${p.gst_number ? `<div>GST: ${escape(p.gst_number)}</div>` : ''}${p.phone ? `<div>${escape(p.phone)}</div>` : ''}`;
+  const transferOrigins = (paper.dispatch_origins || []).filter(origin => origin.kind === 'venue');
   const sections = new Map<string, Row[]>();
   for (const row of paper.rows) {
     const section = paper.direction === 'supplier' ? 'Equipment' : row.owner_id ? `Subrental: ${row.owner?.name || ''}` : `${paper.issuer.name} — Owned inventory / manual additions`;
@@ -42,7 +43,7 @@ export function deliveryPaperHtml(paper: Paper, delivery: Delivery): string {
     <h1>DELIVERY CHALLAN</h1><div class="meta"><strong>${escape(paper.number)}</strong><span>Date: ${escape(paper.delivery_date)}</span></div>
     <div>Delivery: ${escape(paper.reference)}</div><div>Program: ${escape(paper.program.name)}${paper.program.start_date || paper.program.end_date ? ` (${escape(paper.program.start_date)} to ${escape(paper.program.end_date)})` : ''}</div>
     <div class="parties"><div><h2>From</h2>${party(paper.issuer)}</div><div><h2>To / Service receiver</h2>${party(paper.recipient)}</div></div>
-    ${paper.dispatch_origins?.length ? `<div style="white-space:pre-wrap;overflow-wrap:anywhere"><h2>Dispatched from</h2>${paper.dispatch_origins.map(origin => `<div><strong>${escape(origin.name)}</strong><div>${escape(origin.address || 'Address not recorded')}</div>${origin.asset_quantities ? `<div>Equipment: ${paper.rows.filter(row=>origin.asset_ids.includes(row.asset_id!)).map(row=>`${escape(row.sku || row.name)} × ${origin.asset_quantities![String(row.asset_id)]}`).join(', ')}</div>` : ''}</div>`).join('')}</div>` : ''}
+    ${transferOrigins.length ? `<div style="max-width:50%;font-size:10px;line-height:1.3;white-space:pre-wrap;overflow-wrap:anywhere"><strong>Dispatched from</strong>${transferOrigins.map(origin => `<div><strong>${escape(origin.name)}</strong><div>${escape(origin.address || 'Address not recorded')}</div>${origin.asset_quantities ? `<div>Equipment: ${paper.rows.filter(row=>origin.asset_ids.includes(row.asset_id!)).map(row=>`${escape(row.sku || row.name)} × ${origin.asset_quantities![String(row.asset_id)]}`).join(', ')}</div>` : ''}</div>`).join('')}</div>` : ''}
     <div>Place of supply / delivery address: ${escape(paper.destination)}</div><div class="meta"><span>Vehicle: ${escape(paper.vehicle_number)}</span><span>Driver phone: ${escape(paper.driver_phone)}</span></div>
     <table><thead><tr><th>No.</th><th>Equipment</th><th>SKU</th><th>Serial number</th><th>Qty</th></tr></thead><tbody>${rows}</tbody></table>
     <p>Total quantity: ${paper.rows.reduce((sum, row) => sum + row.quantity, 0)}</p><p>Equipment supplied on rental / returnable basis. This document is not a tax invoice.</p>

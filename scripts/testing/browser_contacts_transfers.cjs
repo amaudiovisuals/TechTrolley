@@ -65,6 +65,11 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    const state=await inspect();assert.equal(state.source_assets.includes(state.moved_id),false);assert.equal(state.target_assets.includes(state.moved_id),true);
   });
   await page.reload();await openChallan('Source venue program');
+  await check('Normal outward papers default to four columns and omit warehouse origin',async()=>{
+   const headers=await paper().locator('thead th').allTextContents();
+   assert.deepEqual(headers.map(s=>s.trim().toUpperCase()),['ALIAS NAME','TYPE','QUANTITY','TOTAL']);
+   assert.equal(await paper().getByRole('region',{name:'Dispatched from'}).count(),0);
+  });
   await check('Source main and truck return previews and standalone print exclude the transferred asset while original dispatch keeps it',async()=>{
    await paper().getByText('Transferred speaker',{exact:true}).waitFor();await page.getByRole('button',{name:/Return Challan \(/}).click();
    await paper().getByText('Remaining mixer',{exact:true}).waitFor();assert.equal(await paper().getByText('Transferred speaker',{exact:true}).count(),0);
@@ -78,8 +83,12 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
   await page.getByRole('button',{name:/Back to List/}).click();await page.getByRole('row').filter({hasText:'Target venue program'}).getByRole('button',{name:'View',exact:true}).click();
   await check('Destination challan shows the complete source venue under Dispatched from on desktop and phone',async()=>{
    const origins=paper().getByRole('region',{name:'Dispatched from'});await origins.waitFor();assert.match(await origins.innerText(),/Source venue program/);
-   assert((await origins.innerText()).includes((await inspect()).source_address));await paper().getByText('Transferred speaker',{exact:true}).waitFor();
+   assert((await origins.innerText()).includes((await inspect()).source_address));
+   assert.equal(await origins.evaluate(el=>getComputedStyle(el).fontSize),'8px');
+   assert.equal(await origins.locator('..').getByText('Service Receiver',{exact:true}).count(),1);
+   await paper().getByText('Transferred speaker',{exact:true}).waitFor();
    await page.setViewportSize({width:390,height:844});assert.equal(await origins.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+   await paper().screenshot({path:'/tmp/tt-compact-challan-phone.png'});
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_App_and_Django:true,disposable_database:true,production_changed:false},null,2));
  }catch(e){console.error(log.slice(-2500));if(page)console.error((await page.locator('body').innerText()).slice(-3500));throw e;}

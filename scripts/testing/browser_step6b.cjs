@@ -23,7 +23,10 @@ const { chromium, launchOptions } = require('./browser_runtime.cjs');
    if(failOwners&&url.pathname==='/api/inventory-ownership/')return route.fulfill({status:503,contentType:'application/json',body:'{"error":"Synthetic ownership unavailable"}',headers});
    try{const pending=transport.then(()=>route.fetch({url:`http://127.0.0.1:4336${url.pathname}${url.search}`}));transport=pending.then(()=>{},()=>{});const response=await pending;return route.fulfill({response,headers:{...response.headers(),...headers}});}catch(e){if(!closing)errors.push(e.message);return route.abort().catch(()=>{});}
   });
-  await context.addInitScript(()=>{window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-token');localStorage.setItem('user',JSON.stringify({user_id:1,role:'admin',is_staff:true,email:'sources@example.test'}));});
+  await context.addInitScript(()=>{
+    // These editing scenarios explicitly enable the detailed optional columns.
+    localStorage.setItem('challan_visible_columns_v2',JSON.stringify(['Seq','Asset','Type','Identifiers','Rate','Qty','Total']));
+window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-token');localStorage.setItem('user',JSON.stringify({user_id:1,role:'admin',is_staff:true,email:'sources@example.test'}));});
   const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4336/_fixture/inspect/')).json();
   const open=async(name='Synthetic source event')=>{await page.getByRole('button',{name:'Challans',exact:true}).first().click();await page.getByRole('row').filter({hasText:name}).getByRole('button',{name:'View',exact:true}).click();};

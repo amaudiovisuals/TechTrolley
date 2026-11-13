@@ -228,10 +228,10 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
 
   const [visibleColumns, setVisibleColumns] = React.useState<ColumnKey[]>(() => {
     try {
-      const stored = localStorage.getItem('challan_visible_columns');
+      const stored = localStorage.getItem('challan_visible_columns_v2');
       if (stored) return JSON.parse(stored);
     } catch (e) { }
-    return ['Seq', 'Asset', 'Type', 'Identifiers', 'Rate', 'Qty', 'Total'];
+    return ['Asset', 'Type', 'Qty', 'Total'];
   });
 
   const draftKey = challanDraftKey(window.location.origin, draftAccountId || 'unknown', String(booking.id), localStorageSuffix || 'master');
@@ -274,7 +274,7 @@ export const ChallanView: React.FC<ChallanViewProps> = ({
   const resetPrintAliases = () => setPrintAliasOverrides({});
 
   React.useEffect(() => {
-    localStorage.setItem('challan_visible_columns', JSON.stringify(visibleColumns));
+    localStorage.setItem('challan_visible_columns_v2', JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
   const savedAssetIdsRef = React.useRef<Set<string>>(new Set());
@@ -800,6 +800,8 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
   const venueHd = bw ? '#111111' : '#0369a1';
   const venueTxt = bw ? '#111111' : '#0c4a6e';
   const hdrBg = '#ffffff'; // explicitly white for headings
+  const allOrigins = paperOrigins(booking, assets);
+  const transferOrigins = allOrigins.filter(origin => origin.kind === 'venue');
 
   const getDepreciatedPrice = documentUnitValue;
   const sections = ownerSectionsEnabled ? ownerSections(assets, companySettings?.name || 'Main company') : [{ key: 'flat', title: '', rows: assets, total: 0 }];
@@ -1013,16 +1015,16 @@ const ChallanTemplate: React.FC<ChallanTemplateProps> = ({
         </div>
       </div>
 
-      {paperOrigins(booking, assets).length > 0 && <section aria-label="Dispatched from" className="mb-3 rounded border border-gray-300 p-2 text-gray-900">
-        <h4 className="font-bold uppercase">Dispatched from</h4>
-        {paperOrigins(booking, assets).map((origin, index) => <div key={index} className="mt-1">
-          <p className="font-bold">{origin.kind === 'warehouse' ? `Godown — ${origin.name}` : origin.name}</p>
-          <p className="whitespace-pre-wrap">{origin.address || 'Address not recorded'}</p>
-          {(paperOrigins(booking, assets).length > 1 || origin.asset_quantities) && <p>Equipment: {assets.filter(asset => origin.asset_ids.includes(Number(asset.challanLine?.asset_id ?? asset.id))).map(asset => `${asset.sku || asset.aliasName}${origin.asset_quantities ? ` × ${origin.asset_quantities[String(asset.challanLine?.asset_id ?? asset.id)]}` : ''}`).join(', ')}</p>}
-        </div>)}
-      </section>}
       <div className="challan-parties grid grid-cols-2 gap-2 mb-2">
         <div>
+          {transferOrigins.length > 0 && <section aria-label="Dispatched from" className="mb-2 text-[8px] leading-tight text-gray-900 [overflow-wrap:anywhere]">
+            <h4 className="text-[7px] font-black uppercase tracking-[0.3em] mb-0.5">Dispatched from</h4>
+            {transferOrigins.map((origin, index) => <div key={index} className="mt-1">
+              <p className="font-bold">{origin.name}</p>
+              <p className="whitespace-pre-wrap">{origin.address || 'Address not recorded'}</p>
+              {allOrigins.length > 1 && <p>Transferred equipment: {assets.filter(asset => origin.asset_ids.includes(Number(asset.challanLine?.asset_id ?? asset.id))).map(asset => `${asset.aliasName || asset.sku}${origin.asset_quantities ? ` × ${origin.asset_quantities[String(asset.challanLine?.asset_id ?? asset.id)]}` : ''}`).join(', ')}</p>}
+            </div>)}
+          </section>}
           <h4 className="text-[7px] font-black text-gray-900 uppercase tracking-[0.3em] mb-0.5">Service Receiver</h4>
           <div className="mt-1 space-y-1">
             {booking.associationName && !booking.billingAddress?.trim().toLowerCase().startsWith(booking.associationName.trim().toLowerCase()) && <p className="text-[10px] text-gray-900 font-black uppercase">{booking.associationName}</p>}
