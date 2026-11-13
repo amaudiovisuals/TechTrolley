@@ -17,7 +17,8 @@ from .quantity_commands import execute_quantity_command
 from .truck_manifests import execute_manifest_command
 from .models import (Asset, Conference, QuantityAllocation, ConsumableAllocation, SubrentalCompany,
     SubrentalTicket, SubrentalTicketItem, ChallanDocument, ChallanLine, ChallanRevision,
-    TruckChallan, TruckManifest, TruckManifestEntry, MovementReceipt, CompanySettings)
+    TruckChallan, TruckManifest, TruckManifestEntry, MovementReceipt, CompanySettings,
+    ChallanNumberReservation, ProgramDelivery)
 
 
 class ManifestTests(TestCase):
@@ -65,6 +66,47 @@ class ManifestTests(TestCase):
         first=self.event.challan_documents.get(truck=self.trucks[0]);self.assertEqual(first.lines.count(),5)
         self.assertEqual(self.event.challan_documents.get(truck=self.trucks[1]).lines.count(),0)
         self.assertEqual(self.event.challan_documents.get(scope='master').revision,1)
+
+    def test_cancel_draft_split_restores_master_and_keeps_cancelled_history(self):
+        self.start()
+        self.move()
+        number = self.trucks[1].challan_number
+        stock = self.stock()
+        master = document_data(self.event.challan_documents.get(scope='master'))
+        memberships = {name: set(getattr(self.event, name).values_list('pk', flat=True))
+                       for name in ('assets', 'staged_assets', 'crosscheck_assets', 'challan_assets')}
+        command = self.command('cancel', reason='Cancelled a test split')
+        result = execute_manifest_command(self.user, self.event.pk, command)
+        self.assertTrue(result['cancelled_draft_split'])
+        self.assertEqual(result['document'], master)
+        self.assertEqual(self.stock(), stock)
+        self.assertEqual({name: set(getattr(self.event, name).values_list('pk', flat=True))
+                          for name in memberships}, memberships)
+        self.assertFalse(self.event.truck_challans.exists())
+        self.assertFalse(TruckManifest.objects.filter(conference=self.event).exists())
+        self.assertIsNone(ChallanNumberReservation.objects.get(number=number).conference_id)
+        saved = MovementReceipt.objects.get(request_id=command['request_id']).result['cancelled_draft_archive']
+        self.assertEqual(len(saved['documents']), 2)
+        self.assertEqual(len(saved['revisions']), 4)
+        retry = execute_manifest_command(self.user, self.event.pk, command)
+        self.assertTrue(retry['replayed'])
+        self.assertNotIn('cancelled_draft_archive', retry)
+        self.start()
+        self.assertNotEqual(self.trucks[1].challan_number, number)
+
+    def test_cancel_refuses_issued_truck_or_delivery(self):
+        self.start()
+        ProgramDelivery.objects.create(conference=self.event, request_key=uuid.uuid4(), request_hash='delivery',
+            reference='Truck delivery', snapshot={'customer_document': {'truck_id': self.trucks[0].pk}})
+        with self.assertRaises(CommandError) as error:
+            self.run_command('cancel')
+        self.assertEqual(error.exception.code, 'issued_truck_split_cannot_cancel')
+        ProgramDelivery.objects.all().delete()
+        self.run_command('issue', truck_id=self.trucks[0].pk, document_date='2026-10-13')
+        with self.assertRaises(CommandError) as error:
+            self.run_command('cancel')
+        self.assertEqual(error.exception.code, 'issued_truck_split_cannot_cancel')
+        self.assertEqual(self.event.truck_challans.count(), 2)
 
     def test_partial_bulk_consumable_supplier_and_manual_transfer_conserves_each_source(self):
         self.start();before=self.stock()

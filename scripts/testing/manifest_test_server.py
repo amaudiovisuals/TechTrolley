@@ -60,11 +60,12 @@ with tempfile.TemporaryDirectory(prefix='tt-document-sources-') as media:
         consumable_data={str(consume.pk): {'requested': 8, 'status': 'settled'}}, approximate_value=None)
 
     def inspect(request):
-        document = ChallanDocument.objects.filter(conference=event, scope='master').first()
+        current_event = Conference.objects.get(pk=event.pk)
+        document = ChallanDocument.objects.filter(conference=current_event, scope='master').first()
         return JsonResponse({'stock': Asset.objects.get(pk=bulk.pk).quantity, 'consumable_stock': Asset.objects.get(pk=consume.pk).quantity,
             'documents': ChallanDocument.objects.count(), 'revisions': ChallanRevision.objects.count(),
             'consumed': ConsumableAllocation.objects.get(conference=event).consumed,
-            'document': document_data(document) if document else None, 'all_documents': [document_data(doc) for doc in event.challan_documents.order_by('scope')], 'manifest_entries': list(event.truck_manifest.entries.values('master_line_id', 'truck_id', 'quantity')) if hasattr(event, 'truck_manifest') else []})
+            'document': document_data(document) if document else None, 'all_documents': [document_data(doc) for doc in current_event.challan_documents.order_by('scope')], 'manifest_entries': list(current_event.truck_manifest.entries.values('master_line_id', 'truck_id', 'quantity')) if hasattr(current_event, 'truck_manifest') else []})
 
     def change(request):
         if request.method != 'POST': return JsonResponse({'error': 'POST required'}, status=405)

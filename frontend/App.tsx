@@ -2472,12 +2472,15 @@ const App: React.FC = () => {
       if (outbox.pending().some(record => record.payload.request_id !== fields.request_id)) throw Error('Confirm the pending movement queue before changing trucks.');
       setPendingMovementCount(1);
       const result = await outbox.enqueueManifest(String(eventId), prepared || manifestCommand(current, action, fields));
-      showScanToast('Truck manifest confirmed.', 'success'); return result;
+      showScanToast(action === 'cancel' ? 'Draft split removed. The master challan is ready.' : 'Truck manifest confirmed.', 'success'); return result;
     } catch (error) {
       if (error instanceof RejectedMovement) {
         (error as Error & { definitive?: boolean }).definitive = true;
         if (error.message === 'legacy_quantity_requires_reconciliation') {
           error.message = 'A bulk item has no recorded quantity for this program. Verify its actual quantity before splitting the challan.';
+        }
+        if (error.message === 'issued_truck_split_cannot_cancel') {
+          error.message = 'This split includes issued truck or delivery paperwork. Open the master to leave the truck view.';
         }
       }
       throw error;

@@ -41,16 +41,37 @@ const checks=[];async function check(name,run){await run();checks.push(name);}
    const saved=await inspect();assert.equal(saved.stock,100);assert.equal(saved.consumable_stock,5);assert.equal(saved.document.lines.length,4);
    for(const line of saved.document.lines)assert.equal(saved.manifest_entries.filter(entry=>entry.master_line_id===line.id).reduce((sum,entry)=>sum+entry.quantity,0),line.quantity);
   });
+  await check('Cancel draft split returns from the truck view to the original master and allows a fresh split',async()=>{
+   const before=await inspect();
+   await page.getByRole('button',{name:'View Truck 2 challan',exact:true}).click();
+   await page.getByRole('button',{name:'Cancel draft split',exact:true}).click();
+   await page.getByRole('button',{name:'Keep split',exact:true}).click();
+   assert.equal((await inspect()).all_documents.length,3);
+   await page.getByRole('button',{name:'Cancel draft split',exact:true}).click();
+   await clickCommand('Remove draft trucks','cancel');
+   await page.getByRole('button',{name:'+ Add Truck 2 (Split Challans)',exact:true}).waitFor();
+   const cancelled=await inspect();
+   assert.equal(cancelled.all_documents.length,1);
+   assert.deepEqual(cancelled.document,before.document);
+   assert.equal(cancelled.stock,before.stock);
+   await clickCommand('+ Add Truck 2 (Split Challans)','start');
+   await page.getByLabel('Manifest from').selectOption({label:'Truck 1'});
+   await page.getByLabel('Manifest to').selectOption({label:'Truck 2'});
+   for(const[name,quantity]of[['Bulk cable',2],['Event tape',3],['Rental speaker',1],['Manual cable',2]])await page.getByLabel(`Move ${name}`,{exact:true}).fill(String(quantity));
+   await page.getByLabel('Vehicle Truck 1',{exact:true}).fill('UNSAVED VEHICLE');
+   await clickCommand('Move selected manifest quantities','move');
+  });
   await check('Vehicle details issue into a real truck copy and standalone print uses allocated quantities',async()=>{
    await page.getByLabel('Vehicle Truck 1',{exact:true}).fill('SYNTHETIC-TRUCK');await clickCommand('Save Truck 1 details','metadata',409);await page.getByRole('button',{name:'Keep reviewed Truck 1 details',exact:true}).click();await clickCommand('Save Truck 1 details','metadata');await page.getByText('Truck manifest confirmed.',{exact:true}).waitFor();
    await page.getByLabel('Truck document date').fill('2026-10-13');await clickCommand('Issue Truck 1 challan','issue');await page.getByText(/Truck 1 issued/).waitFor();
-   const saved=await inspect(),doc=saved.all_documents.find(doc=>doc.truck_id===1);assert.equal(doc.header.vehicle_number,'SYNTHETIC-TRUCK');assert.equal(doc.lines.find(line=>line.snapshot.alias_name==='Bulk cable').quantity,4);
+   const saved=await inspect(),doc=saved.all_documents.find(doc=>doc.truck_id&&doc.state==='issued');assert.equal(doc.header.vehicle_number,'SYNTHETIC-TRUCK');assert.equal(doc.lines.find(line=>line.snapshot.alias_name==='Bulk cable').quantity,4);
+   assert.equal(await page.getByRole('button',{name:'Cancel draft split',exact:true}).count(),0);
    await page.getByRole('button',{name:'View Truck 1 challan',exact:true}).click();const printed=context.waitForEvent('page');await page.getByRole('button',{name:'Print Truck 1',exact:true}).click();const copy=await printed;copy.on('pageerror',error=>errors.push(error.message));await copy.waitForLoadState();await copy.getByText('Manual cable',{exact:true}).first().waitFor();assert.equal(await copy.getByText('Manual cable',{exact:true}).count(),3);await copy.close();
   });
   await check('Issued transfer fails without a reason, then records the correction without changing stock',async()=>{
    await page.getByLabel('Move Bulk cable',{exact:true}).fill('1');await clickCommand('Move selected manifest quantities','move',409);await page.getByRole('alert').filter({hasText:'issued_manifest_requires_correction_reason'}).waitFor();
    const before=await inspect();await page.getByLabel('Manifest correction reason').fill('Repacked one cable');await clickCommand('Move selected manifest quantities','move');await page.getByText('Truck manifest confirmed.',{exact:true}).waitFor();
-   const after=await inspect();assert.equal(after.stock,100);assert.equal(after.all_documents.find(doc=>doc.truck_id===1).lines.find(line=>line.snapshot.alias_name==='Bulk cable').quantity,3);assert.equal(after.all_documents.find(doc=>doc.truck_id===1).number,before.all_documents.find(doc=>doc.truck_id===1).number);
+   const after=await inspect(), truck=after.all_documents.find(doc=>doc.truck_id&&doc.state==='issued');assert.equal(after.stock,100);assert.equal(truck.lines.find(line=>line.snapshot.alias_name==='Bulk cable').quantity,3);assert.equal(truck.number,before.all_documents.find(doc=>doc.truck_id===truck.truck_id).number);
   });
   await check('Master reduction below truck quantities is rejected without freezing edits; a corrected master updates both copies',async()=>{
    await page.getByRole('button',{name:'View master challan',exact:true}).click();await page.getByRole('button',{name:'Edit Mode',exact:true}).click();await page.getByLabel('Reason for correcting this issued challan',{exact:true}).fill('Reviewed printed alias');
@@ -66,7 +87,7 @@ const checks=[];async function check(name,run){await run();checks.push(name);}
    await page.getByRole('button',{name:'Save Changes',exact:true}).click();await page.getByText('Challan saved.',{exact:true}).waitFor();assert.deepEqual(writes.at(-1),original);const after=await inspect();assert.equal(after.revisions,committed.revisions);assert.equal(after.stock,100);assert.equal(after.document.lines.find(line=>line.snapshot.alias_name==='Manual after retry').quantity,4);
   });
   await check('Deallocation uses Unassigned, preserves the master/manual source and survives reload',async()=>{
-   await page.getByLabel('Manifest from').selectOption('1');await page.getByLabel('Manifest to').selectOption('');await page.getByLabel('Move Manual after retry',{exact:true}).fill('1');await page.getByLabel('Manifest correction reason').fill('Held one manual item');await clickCommand('Move selected manifest quantities','move');await page.getByText('Truck manifest confirmed.',{exact:true}).waitFor();
+   await page.getByLabel('Manifest from').selectOption({label:'Truck 1'});await page.getByLabel('Manifest to').selectOption('');await page.getByLabel('Move Manual after retry',{exact:true}).fill('1');await page.getByLabel('Manifest correction reason').fill('Held one manual item');await clickCommand('Move selected manifest quantities','move');await page.getByText('Truck manifest confirmed.',{exact:true}).waitFor();
    const saved=await inspect(),line=saved.document.lines.find(line=>line.snapshot.alias_name==='Manual after retry');assert.equal(saved.manifest_entries.filter(entry=>entry.master_line_id===line.id).reduce((sum,entry)=>sum+entry.quantity,0),3);assert.equal(line.quantity,4);await page.reload();await open();await page.getByText('Manual after retry',{exact:true}).first().waitFor();assert.equal((await inspect()).stock,100);
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({checks:checks.length,names:checks,environment:'Actual App/editor/truck panel/standalone print; migrated disposable SQLite/Django HTTP; fresh Chrome context'},null,2));
