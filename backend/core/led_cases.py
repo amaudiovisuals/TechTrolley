@@ -14,6 +14,7 @@ from rest_framework.response import Response
 
 from .asset_commands import CommandError
 from .inventory_ownership import stock_identity_tokens
+from .inventory_registration import identity_token, lock_inventory_identifiers, occupied_identifiers
 from .models import Asset, LedCaseConversion, LedCasePanel
 from .permissions import ADMIN_ROLES, WAREHOUSE_ROLES, get_business_role
 from .reconciliation_commands import canonical, database_identity, digest
@@ -78,8 +79,9 @@ def prepare(asset):
     if asset.subrental_company_id and asset.subrental_company.inventory_mode != 'shared_warehouse':
         blocked.append('supplier_must_be_shared_warehouse')
     tokens = stock_identity_tokens(asset)
+    occupied = occupied_identifiers(exclude_id=asset.pk)
     for token in tokens | {panel_sku(asset.pk, slot) for slot in range(1, 7)}:
-        if Asset.objects.exclude(pk=asset.pk).filter(Q(sku__iexact=token) | Q(qr_code__iexact=token) | Q(barcode__iexact=token) | Q(serial_number__iexact=token)).exists():
+        if identity_token(token) in occupied:
             blocked.append('duplicate_box_or_generated_panel_identifier'); break
     cost = asset.item_price or Decimal('0')
     if cost < 0:
@@ -127,6 +129,7 @@ def convert(user, source_id, payload):
     if not isinstance(payload['reason'], str) or not 1 <= len(payload['reason'].strip()) <= 1000:
         raise CommandError('conversion_reason_required', 400)
     request_hash = digest({'source_id': source_id, **payload})
+    lock_inventory_identifiers()
     # Lock the original asset first, consistent with warehouse movement commands.
     asset = get_object_or_404(Asset.objects.select_for_update(), pk=source_id)
     previous = LedCaseConversion.objects.filter(request_id=request_id).first()

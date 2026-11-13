@@ -7,6 +7,7 @@ from django.db import OperationalError, transaction
 from rest_framework import serializers
 
 from .models import Asset, Employee, Conference, CompanySettings, SubrentalCompany, SubrentalTicket, SubrentalTicketItem, TruckChallan
+from .inventory_registration import unit_quantity_required
 
 class SubrentalCompanySerializer(serializers.ModelSerializer):
     def validate(self, data):
@@ -166,7 +167,8 @@ class AssetSerializer(serializers.ModelSerializer):
         return {'case_asset_id': row.case.source_asset_id, 'box_code': row.case.source_asset.sku, 'slot': row.slot}
 
     def validate(self, data):
-        if 'stock_kind' in self.initial_data and self.initial_data['stock_kind'] != (self.instance.stock_kind if self.instance else 'equipment'):
+        raw = getattr(self, 'initial_data', {})
+        if isinstance(raw, dict) and 'stock_kind' in raw and raw['stock_kind'] != (self.instance.stock_kind if self.instance else 'equipment'):
             raise serializers.ValidationError({'stock_kind': 'Use the reviewed LED box conversion.'})
         if self.instance and self.instance.stock_kind == 'led_case':
             raise serializers.ValidationError('The converted box is a protected historical/container record. Edit its panels instead.')
@@ -178,6 +180,19 @@ class AssetSerializer(serializers.ModelSerializer):
         if parent and parent.stock_kind != 'equipment':
             raise serializers.ValidationError({'parent_asset': 'Converted LED cases/panels are not a kit parent.'})
         owner = data.get('subrental_company', self.instance.subrental_company if self.instance else None)
+        category = data.get('type', self.instance.type if self.instance else 'Other')
+        quantity = data.get('quantity', self.instance.quantity if self.instance else 1)
+        if unit_quantity_required(category, owner):
+            if not self.instance and not data.get('sku'):
+                raise serializers.ValidationError({'sku': 'Enter a unique SKU to register this piece of equipment.'})
+            if not self.instance and quantity != 1:
+                raise serializers.ValidationError({'quantity': 'Register each piece separately or use batch registration.'})
+            if self.instance and quantity != self.instance.quantity and (quantity != 1 or self.instance.quantity != 1):
+                raise serializers.ValidationError({'quantity': 'Existing equipment quantities require a reviewed inventory correction.'})
+            if self.instance and quantity != 1 and (
+                self.instance.type == 'Consumables' or self.instance.is_temporary and data.get('is_temporary') is False
+            ):
+                raise serializers.ValidationError({'quantity': 'Review these quantities before adding this record to permanent equipment.'})
         if parent and (not self.instance or 'parent_asset' in data or 'subrental_company' in data) and parent.subrental_company_id != (owner.pk if owner else None):
             raise serializers.ValidationError({'parent_asset': 'A kit and its components must have the same inventory owner. Use a reviewed complete-kit ownership change.'})
         if parent and self.instance and parent.pk == self.instance.pk:
@@ -254,6 +269,8 @@ class AssetSerializer(serializers.ModelSerializer):
         qs = Asset.objects.filter(sku__iexact=value)
         # On update, exclude the current instance from the clash check
         if self.instance is not None:
+            if str(self.instance.sku or '').casefold() == str(value).casefold():
+                return value
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
             is_temp = False

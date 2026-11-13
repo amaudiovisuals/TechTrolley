@@ -1,5 +1,4 @@
 """Create-only inventory imports. A spreadsheet must never transfer existing stock."""
-from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -9,6 +8,7 @@ from django.db import transaction
 from openpyxl import load_workbook
 
 from .models import Asset, SubrentalCompany
+from .inventory_registration import identity_tokens, lock_inventory_identifiers, occupied_identifiers, unit_quantity_required
 
 
 class InventoryImportError(ValueError):
@@ -106,6 +106,8 @@ def asset_from_row(row, company):
     categories = {key.lower(): key for key, _ in Asset.CATEGORY_CHOICES}
     if category.lower() not in categories:
         raise InventoryImportError(f'Unknown inventory Type: {category}. Use an existing inventory category.')
+    if q != 1 and unit_quantity_required(categories[category.lower()], company):
+        raise InventoryImportError('Equipment needs one row per item with a distinct SKU and QR. Use batch registration to create multiple items.')
     raw_depreciation = get('depreciation percentage', 'depreciation')
     if isinstance(raw_depreciation, str) and raw_depreciation.strip().endswith('%'):
         raw_depreciation = raw_depreciation.strip()[:-1]
@@ -132,11 +134,7 @@ def asset_from_row(row, company):
 
 @transaction.atomic
 def import_assets(upload, company_id):
-    from django.db import connection
-    # Serialize imports, including imports into different owners. No schema change.
-    if connection.vendor == 'postgresql':
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT pg_advisory_xact_lock(%s)', [730218746])
+    lock_inventory_identifiers()
     company = None
     if company_id not in (None, '', 'null'):
         if not str(company_id).isdigit():
@@ -147,16 +145,12 @@ def import_assets(upload, company_id):
     rows = workbook_rows(upload)
     if not rows:
         raise InventoryImportError('The workbook contains no inventory rows.')
-    identifiers = defaultdict(set)
-    for existing in Asset.objects.values_list('id', 'sku', 'serial_number', 'barcode', 'qr_code'):
-        for value in existing:
-            if text(value):
-                identifiers[text(value).casefold()].add(existing[0])
+    identifiers = occupied_identifiers()
     prepared, errors, seen = [], [], {}
     for number, row in rows:
         try:
             asset = asset_from_row(row, company)
-            values = {text(value).casefold() for value in (asset.sku, asset.serial_number, asset.barcode, asset.qr_code) if text(value)}
+            values = identity_tokens(vars(asset))
             for value in values:
                 if value in identifiers:
                     raise InventoryImportError('An identifier already belongs to existing inventory. Existing stock was not changed; use the reviewed ownership workflow to move it.')

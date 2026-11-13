@@ -7,6 +7,7 @@ interface QRLabelModalProps {
   assetId?: string;
   sku: string;
   assetName: string;
+  batchSkus?: string[];
   assetType?: string;   // J-105: drives conditional print settings UI
   onClose: () => void;
   onPrint?: (assetId: string, sku: string) => void;
@@ -14,8 +15,10 @@ interface QRLabelModalProps {
   subrentalCompanies?: SubrentalCompany[]; // J-108: subrental company name options
 }
 
-export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, onClose, onPrint, companySettings, subrentalCompanies = [] }) => {
+export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetName, assetType, batchSkus, onClose, onPrint, companySettings, subrentalCompanies = [] }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [printing, setPrinting] = useState(false);
+  const printSkus = batchSkus?.length ? batchSkus : [sku];
 
   // J-105: Print settings live here, not in the form
   const isCable = assetType === 'Cable';
@@ -64,8 +67,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
     return '14pt';
   };
 
-  const handlePrint = async () => {
-    try {
+  const buildLabel = async (sku: string) => {
       // 1. Generate QR data URL
       const qrDataUrl = await QRCode.toDataURL(sku, {
         width: 250,
@@ -164,7 +166,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
           <td class="txt-td">
             <div class="company">${printText(selectedCompanyName)}</div>
             <div class="phone">${printText(companySettings?.phone || '9845204137')}</div>
-            <div class="sku">${printText(sku)}</div>
+            <div class="sku" style="font-size:${getSkuFontSize(sku, true)}">${printText(sku)}</div>
           </td>
         `;
         bodyHtml = `
@@ -215,7 +217,7 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
               <td class="txt-td">
                 <div class="company">${printText(selectedCompanyName)}</div>
                 <div class="phone">${printText(companySettings?.phone || '9845204137')}</div>
-                <div class="sku">${printText(sku)}</div>
+                <div class="sku" style="font-size:${getSkuFontSize(sku, false)}">${printText(sku)}</div>
               </td>
             </tr>
           </table>
@@ -223,19 +225,28 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
       }
 
 
-      // 3. Open print window
-      const printWindow = window.open('', '_blank', 'width=800,height=400');
-      if (!printWindow) return;
+      return { bodyHtml, pageStyle };
+  };
 
+  const handlePrint = async () => {
+    const printWindow = window.open('', '_blank', 'width=800,height=400');
+    if (!printWindow) { alert('Allow pop-ups for TechTrolley to print the QR labels.'); return; }
+    setPrinting(true);
+    try {
+      const labels = await Promise.all(printSkus.map(buildLabel));
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
           <head>
-            <title>&nbsp;</title>
-            <style>${pageStyle}</style>
+            <title>QR labels</title>
+            <style>
+              ${labels[0].pageStyle}
+              body { height: auto; overflow: visible; }
+              .qr-label + .qr-label { break-before: page; }
+            </style>
           </head>
           <body>
-            ${bodyHtml}
+            ${labels.map(label => `<div class="qr-label">${label.bodyHtml}</div>`).join('')}
             <script>
               window.onload = () => {
                 setTimeout(() => { window.print(); window.close(); }, 750);
@@ -246,19 +257,19 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
       `);
       printWindow.document.close();
 
-      // 4. Mark as assigned in backend if onPrint provided
-      if (assetId && onPrint) {
-        onPrint(assetId, sku);
-      }
+      if (assetId && onPrint) onPrint(assetId, sku);
     } catch (err) {
+      printWindow.close();
       console.error('Print error:', err);
-      alert("Failed to prepare label for printing.");
+      alert('Failed to prepare labels for printing.');
+    } finally {
+      setPrinting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl p-8 w-full max-w-sm flex flex-col items-center gap-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3">
+      <div role="dialog" aria-modal="true" aria-label="QR labels" className="bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl p-6 w-full max-w-sm max-h-[95dvh] overflow-y-auto flex flex-col items-center gap-4">
         {/* Header */}
         <div className="flex justify-between items-center w-full">
           <div>
@@ -282,6 +293,9 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         <div className="text-center w-full overflow-hidden px-1">
           <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">SKU / QR Value</p>
           <p className="text-xl font-black text-sky-400 font-mono leading-tight break-all whitespace-normal w-full">{sku}</p>
+          {printSkus.length > 1 && <ul aria-label="Registered SKUs" className="mt-2 max-h-24 overflow-auto text-sm text-slate-200">
+            {printSkus.map(tag => <li key={tag}>{tag}</li>)}
+          </ul>}
         </div>
 
         {/* J-108: Company Name Selector */}
@@ -352,9 +366,10 @@ export const QRLabelModal: React.FC<QRLabelModalProps> = ({ assetId, sku, assetN
         <div className="flex gap-3 w-full">
           <button
             onClick={handlePrint}
+            disabled={printing}
             className="flex-1 py-4 bg-sky-500 text-white rounded-2xl font-black uppercase text-xs hover:bg-sky-400 transition flex items-center justify-center gap-2"
           >
-            <i aria-hidden="true" className="fa-solid fa-print" /> Print QR Label
+            <i aria-hidden="true" className="fa-solid fa-print" /> {printing ? 'Preparing…' : printSkus.length > 1 ? `Print ${printSkus.length} QR labels` : 'Print QR Label'}
           </button>
           <button
             onClick={onClose}

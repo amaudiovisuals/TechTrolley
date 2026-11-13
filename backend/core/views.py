@@ -8,6 +8,10 @@ from django.http import HttpResponse
 from django.db.models import Q
 from django.db import transaction, DatabaseError
 from .models import Asset, Conference, DeliveryChallan, Employee, CompanySettings
+from .inventory_registration import (
+    IDENTITY_FIELDS, allocate_batch_skus, batch_payload, identity_tokens,
+    lock_inventory_identifiers, occupied_identifiers, register_batch,
+)
 from django.core.files.uploadedfile import UploadedFile
 from .forms import AssetForm, ConferenceForm
 from reportlab.pdfgen import canvas
@@ -188,11 +192,15 @@ def asset_list(request):
         serializer = AssetSerializer(paginated_assets, many=True)
         return paginator.get_paginated_response(serializer.data)
     elif request.method == 'POST':
+        lock_inventory_identifiers()
         is_many = isinstance(request.data, list)
+        is_batch = isinstance(request.data, dict) and 'asset' in request.data
+        if is_batch:
+            batch_payload(request.data)
         # Ownership reviews lock kit assets before owner companies. Registration
         # uses the same order, including bulk imports, so it cannot slip a new
         # member into a classification/kit review while that review commits.
-        rows = request.data if is_many else [request.data]
+        rows = request.data if is_many else [request.data['asset'] if is_batch else request.data]
         parents, owners = set(), set()
         for row in rows:
             if not isinstance(row, dict):
@@ -204,17 +212,35 @@ def asset_list(request):
         list(Asset.objects.select_for_update().filter(pk__in=parents).order_by('pk'))
         from .models import SubrentalCompany
         list(SubrentalCompany.objects.select_for_update().filter(pk__in=owners).order_by('pk'))
+        if is_batch:
+            return Response(register_batch(request.user, request.data), status=201)
         serializer = AssetSerializer(data=request.data, many=is_many)
         if serializer.is_valid():
+            occupied = occupied_identifiers()
+            for index, data in enumerate(serializer.validated_data if is_many else [serializer.validated_data], 1):
+                tokens = identity_tokens(data)
+                if tokens & occupied:
+                    return Response({'sku': f'Item {index} uses a SKU, serial number, barcode or QR that already identifies another asset.'}, status=400)
+                occupied.update(tokens)
             serializer.save()
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([WarehouseWriteAuthenticatedRead])
+def equipment_batch_preview(request):
+    sku = batch_payload(request.data, preview=True)
+    return Response({'skus': allocate_batch_skus(sku, request.data['count'], occupied_identifiers())})
+
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([AssetWritePermission])
 @transaction.atomic
 def asset_detail(request, pk):
     if request.method != 'GET':
+        if request.method in ('PUT', 'PATCH') and any(field in request.data for field in IDENTITY_FIELDS):
+            lock_inventory_identifiers()
         parent = Asset.objects.filter(pk=pk).values_list('parent_asset_id', flat=True).first()
         ids = {pk} | ({parent} if parent else set())
         proposed_parent = request.data.get('parent_asset') if isinstance(request.data, dict) else None
@@ -246,6 +272,11 @@ def asset_detail(request, pk):
         serializer = AssetSerializer(asset, data=request.data, partial=partial)
 
         if serializer.is_valid():
+            prior = {field: getattr(asset, field) for field in IDENTITY_FIELDS}
+            proposed = {**prior, **{field: serializer.validated_data[field] for field in IDENTITY_FIELDS if field in serializer.validated_data}}
+            new_tokens = identity_tokens(proposed) - identity_tokens(prior)
+            if new_tokens and new_tokens & occupied_identifiers(exclude_id=asset.pk):
+                return Response({'sku': 'This SKU, serial number, barcode or QR already identifies another asset.'}, status=400)
             serializer.save()
             
             # Contextual Logging for Conferences
@@ -625,7 +656,7 @@ def download_asset_template(request):
     data = [
         [
             'SKU-EXAMPLE', 'Demo Asset', '00:1A:2B:3C:4D:5E', '123456789012345', '987654321098765', 
-            'SN-EXAMPLE-1', 'Example description for upload', 'Yes', 'IT & Networking', 10, '2024-01-15', 
+            'SN-EXAMPLE-1', 'Example description for upload', 'Yes', 'IT & Networking', 1, '2024-01-15',
             75000, '10%', '2024-01-15', '2026-01-15', 'Code128', '1234567890', 'http://example.com/asset/1'
         ]
     ]
@@ -680,7 +711,7 @@ def export_inventory(request):
             'Is Barcode added': 'Yes' if a.is_barcode_added else 'No',
             'Type': a.type or "",
             'Status': a.status or "Available",
-            'Quantity': 1, # When exploding, each row represents 1 physical unit
+            'Quantity': a.quantity,
             'Purchased Date': a.purchased_date.strftime('%Y-%m-%d') if a.purchased_date else "",
             'Item Price': float(a.item_price) if a.item_price else 0,
             'Depreciation Percentage': float(a.depreciation_percentage) if a.depreciation_percentage else 0,
@@ -691,10 +722,7 @@ def export_inventory(request):
             'QR Code': a.qr_code or a.sku or ""
         }
         
-        # Explode row based on quantity so that each physical unit has its own row in the Excel
-        qty = int(a.quantity or 1)
-        for _ in range(qty):
-            data.append(row)
+        data.append(row)
 
     df = pd.DataFrame(data)
     

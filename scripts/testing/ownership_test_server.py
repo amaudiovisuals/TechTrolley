@@ -88,6 +88,7 @@ with tempfile.TemporaryDirectory(prefix='tt-document-sources-') as media:
     old_event = Conference.objects.create(name='Old flat document', challan_number='OLD-FLAT', approximate_value=None)
     old_doc = ChallanDocument.objects.create(conference=old_event, scope='master', number='OLD-FLAT', total_override=0, header=capture_header(old_event, owner_sections_version=None))
     ChallanLine.objects.create(document=old_doc, asset=owned, source_kind='owned', snapshot={'alias_name': 'Old flat row'}, quantity=1, unit_value=20, position=0)
+    Conference.objects.create(name='Registration test program', start_date=date.today(), end_date=date.today())
 
     def inspect(request):
         document = ChallanDocument.objects.filter(conference=event, scope='master').first()
@@ -98,6 +99,7 @@ with tempfile.TemporaryDirectory(prefix='tt-document-sources-') as media:
 
     def change(request):
         if request.method != 'POST': return JsonResponse({'error': 'POST required'}, status=405)
+        Asset.objects.get_or_create(sku='BATCH_002', defaults={'alias_name': 'Occupied SKU', 'is_temporary': True})
         Asset.objects.filter(pk=bulk.pk).update(quantity=90, alias_name='Renamed bulk stock')
         Asset.objects.filter(pk=consume.pk).update(quantity=0, alias_name='Renamed tape stock', item_price=99)
         supplier.name = 'Renamed external supplier'; supplier.save()

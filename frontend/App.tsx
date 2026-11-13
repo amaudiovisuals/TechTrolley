@@ -638,6 +638,11 @@ const App: React.FC = () => {
   const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
   const [invoicingId, setInvoicingId] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<any>({});
+  const [assetSaving, setAssetSaving] = useState(false);
+  const assetSaveInFlight = useRef(false);
+  const batchRegistration = useRef<{ details: string; requestId: string } | null>(null);
+  const [batchPreview, setBatchPreview] = useState<{ key: string; skus: string[] } | null>(null);
+  const [batchPreviewBusy, setBatchPreviewBusy] = useState(false);
 
   // Pending assignment state for sub-assets
   const [pendingParentAsset, setPendingParentAsset] = useState<Asset | null>(null);
@@ -1303,34 +1308,6 @@ const App: React.FC = () => {
   const [inventoryPage, setInventoryPage] = useState(1);
   const itemsPerPage = 20; 
 
-  // Smart SKU batch sequencing algorithm
-  const generateBatchSkus = (baseSku: string, count: number): string[] => {
-    const trimmed = baseSku.trim();
-    if (count <= 1 || !trimmed) return [trimmed];
-
-    const skus: string[] = [];
-    const match = trimmed.match(/^(.*?)([-_])(\d+)$/);
-
-    if (match) {
-      const prefix = match[1];
-      const sep = match[2];
-      const numStr = match[3];
-      const startNum = parseInt(numStr, 10);
-      const padLen = numStr.length;
-
-      for (let i = 0; i < count; i++) {
-        const currentNum = (startNum + i).toString().padStart(padLen, '0');
-        skus.push(`${prefix}${sep}${currentNum}`);
-      }
-    } else {
-      for (let i = 0; i < count; i++) {
-        skus.push(`${trimmed}-${i + 1}`);
-      }
-    }
-
-    return skus;
-  }; 
-
   // Mapping Helper
   const getUICategory = (type: string): UICategory => {
     return CATEGORY_MAP[type] || UICategory.OTHER;
@@ -1522,6 +1499,8 @@ const App: React.FC = () => {
     (inventoryPage - 1) * itemsPerPage,
     inventoryPage * itemsPerPage
   );
+  const showInventoryQuantity = inventoryCategoryFilter === 'Consumables' ||
+    paginatedInventoryAssets.some(asset => asset.type === AssetCategory.CONSUMABLES || asset.quantity !== 1);
 
   const [challanSearchQuery, setChallanSearchQuery] = useState('');
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -1533,7 +1512,7 @@ const App: React.FC = () => {
   const [scanToast, setScanToast] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
 
   // QR Label modal state
-  const [qrTarget, setQrTarget] = useState<{ id?: string; sku: string; name: string; assetType?: string } | null>(null);
+  const [qrTarget, setQrTarget] = useState<{ id?: string; sku: string; name: string; assetType?: string; batchSkus?: string[] } | null>(null);
 
   // Unrecognized Scan Linking state
   const [unrecognizedScan, setUnrecognizedScan] = useState<string | null>(null);
@@ -3124,22 +3103,40 @@ const App: React.FC = () => {
 
   // --- ASSET API ACTIONS ---
 
+  const previewRegistrationSkus = async (sku: string, count: number) => {
+    setBatchPreviewBusy(true);
+    try {
+      const response = await apiFetch(`${API_BASE}/api/assets/batch-preview/`, {
+        method: 'POST', body: JSON.stringify({ sku, count }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.sku?.[0] || result.count?.[0] || 'Could not preview the batch.');
+      setBatchPreview({ key: JSON.stringify([sku, count]), skus: result.skus });
+    } catch (error) {
+      showScanToast((error as Error).message, 'error');
+    } finally {
+      setBatchPreviewBusy(false);
+    }
+  };
+
   const handleSaveAsset = (e: React.FormEvent) => {
     e.preventDefault();
+    if (assetSaveInFlight.current) return;
     setFormErrors({});
 
     const isNew = !editingAsset;
     const isConsumable = assetFormData.type === AssetCategory.CONSUMABLES;
     const isSubrental = !!assetFormData.subrental_company;
 
-    // Auto-generate SKU/Serial for consumables or subrentals if blank
-    const finalSku = ( (isConsumable || isSubrental) && !assetFormData.sku)
+    // Stock and supplier forms can suggest a tag when the user leaves it blank.
+    const count = !isConsumable && isNew ? assetFormData.quantity ?? 1 : 1;
+    const finalSku = ((isConsumable || isSubrental) && count === 1 && !assetFormData.sku?.trim())
       ? `${isSubrental ? 'SR' : 'CONS'}-${(assetFormData.aliasName || 'ITEM').toUpperCase().replace(/\s+/g, '-')}-${Date.now().toString().slice(-4)}`
-      : assetFormData.sku;
+      : assetFormData.sku?.trim();
 
-    const finalSerial = ( (isConsumable || isSubrental) && !assetFormData.serialNumber)
+    const finalSerial = isConsumable && !assetFormData.serialNumber
       ? finalSku
-      : assetFormData.serialNumber;
+      : assetFormData.serialNumber || '';
 
     const basePayload = {
       sku: finalSku,
@@ -3162,36 +3159,18 @@ const App: React.FC = () => {
       barcode_type: assetFormData.barcodeType || 'CODE128',
       qr_code: assetFormData.qrCode || finalSku,
       flag: assetFormData.flag || '',
-      quantity: assetFormData.quantity ?? 1,
+      quantity: isConsumable ? assetFormData.quantity ?? 1 : editingAsset?.quantity ?? 1,
       assigned_to: assetFormData.assigned_to,
       subrental_company: assetFormData.subrental_company
     };
 
-    const count = (!isConsumable && isNew && (assetFormData.quantity ?? 1) > 1)
-      ? Number(assetFormData.quantity)
-      : 1;
-
-    let payload: any;
+    let payload: Record<string, unknown> = basePayload;
     if (count > 1) {
-      const batchSkus = generateBatchSkus(finalSku, count);
-      const existingInPool = allAssetsRef.current.map(a => a.sku?.toLowerCase());
-      const conflict = batchSkus.find(s => existingInPool.includes(s.toLowerCase()));
-      if (conflict) {
-        alert(`Cannot create batch: SKU "${conflict}" already exists in inventory! Please choose a different starting number or prefix.`);
-        return;
+      const details = JSON.stringify({ asset: basePayload, count });
+      if (batchRegistration.current?.details !== details) {
+        batchRegistration.current = { details, requestId: crypto.randomUUID() };
       }
-      payload = batchSkus.map(sku => ({
-        ...basePayload,
-        sku: sku,
-        serial_number: assetFormData.serialNumber ? `${assetFormData.serialNumber}-${sku}` : sku,
-        barcode: sku,
-        qr_code: sku,
-        quantity: 1
-      }));
-    } else {
-      payload = isConsumable 
-        ? { ...basePayload, quantity: assetFormData.quantity ?? 1 }
-        : basePayload;
+      payload = { asset: basePayload, count, request_id: batchRegistration.current.requestId };
     }
 
     const url = editingAsset
@@ -3200,6 +3179,8 @@ const App: React.FC = () => {
 
     const method = editingAsset ? 'PUT' : 'POST';
 
+    assetSaveInFlight.current = true;
+    setAssetSaving(true);
     apiFetch(url, {
       method: method,
       body: JSON.stringify(payload)
@@ -3254,9 +3235,17 @@ const App: React.FC = () => {
           // Background refetch keeps pagination counts accurate
           fetchAssets();
           handleViewChange('Assets', 'List');
-          if ( (isNew || assetFormData.generateQR) && finalSku) {
-            setQrTarget({ sku: finalSku as string, name: assetFormData.aliasName || finalSku as string, assetType: assetFormData.type });
+          const firstSaved = mappedAssets[0];
+          if ((isNew || assetFormData.generateQR) && firstSaved?.sku) {
+            setQrTarget({
+              sku: firstSaved.sku,
+              name: firstSaved.aliasName || firstSaved.sku,
+              assetType: firstSaved.type,
+              batchSkus: count > 1 ? mappedAssets.map(item => item.sku) : undefined,
+            });
           }
+          batchRegistration.current = null;
+          setBatchPreview(null);
           setEditingAsset(null);
           setAssetFormData({ sku: '', aliasName: '', macAddress: '', imeiNumber1: '', imeiNumber2: '', serialNumber: '', description: '', isBarcodeAdded: false, type: AssetCategory.OTHER, purchasedDate: '', itemPrice: 0, depreciationPercentage: 15, availableFrom: '', availableTill: '', status: AssetStatus.AVAILABLE, flag: AssetFlag.NONE, condition: 'Good', barcode: '', barcodeType: '', qrCode: '', quantity: 1, assigned_to: undefined, subrental_company: undefined, generateQR: false });
           
@@ -3267,10 +3256,14 @@ const App: React.FC = () => {
           }
         } else {
           const errorData = await res.json();
-          setFormErrors(errorData);
+          setFormErrors(Array.isArray(errorData) ? errorData.find(row => Object.keys(row).length) || {} : errorData);
         }
       })
-      .catch(() => alert('Failed to connect to server.'));
+      .catch(() => showScanToast('Could not confirm registration. Retry with the same details.', 'error'))
+      .finally(() => {
+        assetSaveInFlight.current = false;
+        setAssetSaving(false);
+      });
   };
 
 
@@ -4955,7 +4948,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex justify-between items-center text-[10px]">
-                  <p className="text-slate-500 font-bold uppercase">{asset.type}</p>
+                  <p className="text-slate-500 font-bold uppercase">{asset.type}{asset.type !== AssetCategory.CONSUMABLES && asset.quantity !== 1 && <span className="ml-2 normal-case">Recorded qty {asset.quantity}</span>}</p>
                   {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
                     asset.status === AssetStatus.AVAILABLE ? (
                       <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -5036,7 +5029,7 @@ const App: React.FC = () => {
                 <th className="px-6 py-6">Serial Number</th>
                 <th className="px-6 py-6">Description</th>
                 <th className="px-6 py-6">Type</th>
-                <th className="px-6 py-6 text-center">Qty</th>
+                {showInventoryQuantity && <th className="px-6 py-6 text-center">Recorded qty</th>}
                 <th className="px-6 py-6 text-center">Status</th>
                 <th className="px-6 py-6 text-right">Actions</th>
               </tr>
@@ -5076,8 +5069,8 @@ const App: React.FC = () => {
                     <td className="px-6 py-6">
                       <p className="text-[10px] text-slate-500 font-black uppercase">{asset.type}</p>
                     </td>
-                    <td className="px-6 py-6 text-center">
-                      {(asset.type === AssetCategory.CONSUMABLES || inventoryCategoryFilter === 'Consumables') ? (
+                    {showInventoryQuantity && <td className="px-6 py-6 text-center">
+                      {asset.type === AssetCategory.CONSUMABLES ? (
                         asset.status === AssetStatus.AVAILABLE && user?.role !== 'accounts' ? (
                           <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -5116,9 +5109,9 @@ const App: React.FC = () => {
                           </div>
                         )
                       ) : (
-                        <p className="text-xs font-black text-white">{asset.quantity ?? 1}</p>
+                        <p className="text-xs font-black text-white">{asset.quantity !== 1 ? asset.quantity : ''}</p>
                       )}
-                    </td>
+                    </td>}
                     <td className="px-6 py-6 text-center">
                       <div className="flex flex-col items-center gap-1.5">
                         <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' :
@@ -5161,7 +5154,7 @@ const App: React.FC = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="px-6 py-20 text-center">
+                  <td colSpan={showInventoryQuantity ? 8 : 7} className="px-6 py-20 text-center">
                     <ScanPrompt title="No Results Found" subtitle="Try a different SKU or category" />
                   </td>
                 </tr>
@@ -5711,7 +5704,14 @@ const App: React.FC = () => {
     );
   };
 
-  const renderSubrentalInventory = () => (
+  const renderSubrentalInventory = () => {
+    const query = subrentalSearchQuery.toLowerCase();
+    const filtered = subrentalAssets.filter(asset =>
+      [asset.sku, asset.aliasName, asset.serialNumber].some(value => (value || '').toLowerCase().includes(query))
+    );
+    const externalCatalogue = selectedSubrentalCompany?.inventory_mode === 'external_supplier';
+    const showQuantity = externalCatalogue || filtered.some(asset => asset.type === AssetCategory.CONSUMABLES || asset.quantity !== 1);
+    return (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
       <button onClick={() => fetchSubrentalAssets(String(selectedSubrentalCompany!.id))}>Reload supplier inventory</button>
       {subrentalInventoryStatus.status === 'error' && <p role="alert">{subrentalInventoryStatus.error}<button onClick={() => fetchSubrentalAssets(String(selectedSubrentalCompany!.id))}>Retry supplier inventory</button></p>}
@@ -5822,19 +5822,13 @@ const App: React.FC = () => {
                 <th className="px-6 py-6">Alias Name</th>
                 <th className="px-6 py-6">Serial Number</th>
                 <th className="px-6 py-6">Type</th>
-                <th className="px-6 py-6 text-center">Qty</th>
+                {showQuantity && <th className="px-6 py-6 text-center">{externalCatalogue ? 'Catalogue capacity' : 'Recorded qty'}</th>}
                 <th className="px-6 py-6 text-center">Status</th>
                 <th className="px-6 py-6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/20">
               {(() => {
-                const filtered = subrentalAssets.filter(asset => {
-                  const q = subrentalSearchQuery.toLowerCase();
-                  return (asset.sku || '').toLowerCase().includes(q) ||
-                         (asset.aliasName || '').toLowerCase().includes(q) ||
-                         (asset.serialNumber || '').toLowerCase().includes(q);
-                });
                 if (filtered.length > 0) {
                   return filtered.map((asset) => (
                     <tr key={asset.id} className="hover:bg-slate-800/10 transition group">
@@ -5850,9 +5844,9 @@ const App: React.FC = () => {
                       <td className="px-6 py-6">
                         <p className="text-[10px] text-slate-500 font-black uppercase">{asset.type}</p>
                       </td>
-                      <td className="px-6 py-6 text-center">
-                        <p className="text-xs font-black text-white">{asset.quantity}</p>
-                      </td>
+                      {showQuantity && <td className="px-6 py-6 text-center">
+                        <p className="text-xs font-black text-white">{externalCatalogue || asset.type === AssetCategory.CONSUMABLES || asset.quantity !== 1 ? asset.quantity : ''}</p>
+                      </td>}
                       <td className="px-6 py-6 text-center">
                         <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${
                           asset.status === AssetStatus.AVAILABLE ? 'bg-emerald-500/10 text-emerald-400' : 'bg-orange-500/10 text-orange-400'
@@ -5876,7 +5870,7 @@ const App: React.FC = () => {
                 }
                 return (
                   <tr>
-                    <td colSpan={7} className="px-6 py-20 text-center">
+                    <td colSpan={showQuantity ? 7 : 6} className="px-6 py-20 text-center">
                       <p className="text-xs font-black text-slate-600 uppercase tracking-widest">
                         {subrentalSearchQuery ? 'No results matching search' : 'Inventory is empty'}
                       </p>
@@ -5889,7 +5883,8 @@ const App: React.FC = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderEmployees = () => (
     <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
@@ -6841,7 +6836,10 @@ const App: React.FC = () => {
             // with a stale suggestion. Once allAssetsRef is loaded, this is always false.
             const skuCalculating = assets.length > 0 && allAssetsRef.current.length === 0;
 
-            const skuExists = !!(assetFormData.sku && skuPool.some(
+            const batchCount = !isEditing && assetFormData.type !== AssetCategory.CONSUMABLES ? assetFormData.quantity ?? 1 : 1;
+            const batchSku = assetFormData.sku?.trim() || '';
+            const shownBatch = batchPreview?.key === JSON.stringify([batchSku, batchCount]) ? batchPreview.skus : null;
+            const skuExists = !!(batchCount === 1 && assetFormData.sku && skuPool.some(
               a => a.sku?.toLowerCase() === assetFormData.sku.toLowerCase() &&
                    (!isEditing || a.id !== editingAsset.id)
             ));
@@ -6935,8 +6933,8 @@ const App: React.FC = () => {
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                       <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
-                        <input value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required={!assetFormData.subrental_company} />
+                        <label htmlFor="equipment-sku" className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">SKU / Tag</label>
+                        <input id="equipment-sku" value={assetFormData.sku} onChange={e => setAssetFormData({ ...assetFormData, sku: e.target.value })} className="form-input-night" required={batchCount > 1 || !assetFormData.subrental_company} />
                         {skuExists && <p className="text-red-500 font-bold text-xs mt-1 uppercase tracking-widest animate-pulse">Warning: This SKU already exists!</p>}
                         {skuCalculating && !skuExists && (
                           <p className="text-amber-400 font-bold text-[10px] mt-1 uppercase tracking-widest flex items-center gap-1">
@@ -6961,8 +6959,8 @@ const App: React.FC = () => {
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
-                        <input list="alias-dictionary-list" autoComplete="off" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" />
+                        <label htmlFor="equipment-alias" className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Alias Name</label>
+                        <input id="equipment-alias" list="alias-dictionary-list" autoComplete="off" value={assetFormData.aliasName} onChange={handleAliasChange} className="form-input-night" />
                       </div>
                     </div>
 
@@ -7023,21 +7021,32 @@ const App: React.FC = () => {
                         <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">Depreciation %</label>
                         <input type="number" value={assetFormData.depreciationPercentage} onChange={e => setAssetFormData({ ...assetFormData, depreciationPercentage: parseFloat(e.target.value) })} className="form-input-night" />
                       </div>
-                      <div>
-                        <label className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">
-                          Quantity {!isEditing && (assetFormData.quantity ?? 1) > 1 ? `(Creates ${assetFormData.quantity} items)` : ''}
+                      {!isEditing && <div>
+                        <label htmlFor="equipment-register-count" className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2 block">
+                          Number of items to register
                         </label>
                         <input
-                          type="number"
-                          min="1"
-                          disabled={isEditing}
-                          value={assetFormData.quantity ?? 1}
+                          id="equipment-register-count"
+                          type="number" min="1" max="500"
+                          value={batchCount}
                           onChange={e => setAssetFormData({ ...assetFormData, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-                          className={`form-input-night ${isEditing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          title={isEditing ? 'Editing existing single asset' : 'Number of separate items to create in inventory'}
+                          className="form-input-night"
                         />
-                      </div>
+                      </div>}
+                      {isEditing && (editingAsset.quantity ?? 1) > 1 && <p className="text-sm text-slate-500 self-center">Recorded quantity: {editingAsset.quantity}</p>}
                     </div>
+
+                    {batchCount > 1 && <div className="rounded-xl border border-slate-500/40 p-4">
+                      <p className="text-sm">Each item gets its own SKU and QR. Any serial, MAC address or IMEI entered applies to the first item.</p>
+                      <button type="button" disabled={!batchSku || batchCount > 500 || batchPreviewBusy || assetSaving}
+                        onClick={() => void previewRegistrationSkus(batchSku, batchCount)}
+                        className="mt-2 rounded-lg border border-sky-500 px-3 py-2 text-sm font-bold text-sky-600 disabled:opacity-50">
+                        {batchPreviewBusy ? 'Checking SKUs…' : 'Preview SKUs'}
+                      </button>
+                      {shownBatch && <ul className="mt-2 flex max-h-36 flex-wrap gap-2 overflow-auto text-sm" aria-label="Proposed SKUs">
+                        {shownBatch.map(sku => <li key={sku} className="rounded border border-slate-400/40 px-2 py-1">{sku}</li>)}
+                      </ul>}
+                    </div>}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                       <div>
@@ -7054,18 +7063,21 @@ const App: React.FC = () => {
                   </>
                 )}
 
+                {(formErrors.quantity || formErrors.count || formErrors.asset || formErrors.request_id || formErrors.detail) && <p role="alert" className="text-sm text-red-500">
+                  {formErrors.quantity || formErrors.count || formErrors.asset || formErrors.request_id || formErrors.detail}
+                </p>}
                 <div className="flex gap-4 pt-4">
-                  <button type="button" onClick={() => handleViewChange('Assets', 'List')} className="flex-1 py-6 bg-slate-800 text-white rounded-2xl font-black uppercase hover:bg-slate-700 transition">Cancel</button>
+                  <button type="button" disabled={assetSaving} onClick={() => handleViewChange('Assets', 'List')} className="flex-1 py-6 bg-slate-800 text-white rounded-2xl font-black uppercase hover:bg-slate-700 transition">Cancel</button>
                   <button
                     type="submit"
-                    disabled={skuExists || skuCalculating}
+                    disabled={skuExists || skuCalculating || assetSaving}
                     className={`flex-1 py-6 rounded-2xl font-black uppercase transition ${
                       skuExists ? 'bg-red-900/40 text-red-400 cursor-not-allowed' :
                       skuCalculating ? 'bg-slate-800 text-slate-500 cursor-wait' :
                       'bg-sky-500 text-white hover:bg-sky-400'
                     }`}
                   >
-                    {skuCalculating ? 'Verifying SKU…' : 'Save Record'}
+                    {assetSaving ? 'Saving…' : skuCalculating ? 'Verifying SKU…' : batchCount > 1 ? `Register ${batchCount} items` : 'Save Record'}
                   </button>
                 </div>
               </form>
@@ -9790,6 +9802,7 @@ const App: React.FC = () => {
           sku={qrTarget.sku}
           assetName={qrTarget.name}
           assetType={qrTarget.assetType}
+          batchSkus={qrTarget.batchSkus}
           onPrint={handlePrintAsset}
           onClose={() => setQrTarget(null)}
           companySettings={companySettings}
