@@ -387,6 +387,8 @@ def save_document(user, event_id, scope, payload, coordinated=False):
     # Capture headers at each draft save/issue; issued corrections retain original headers.
     if not (was_issued or late_correction):
         document.header = capture_saved_header(event, truck, 1 if new_document else document.header.get('owner_sections_version'))
+        if document.header.get('owner_sections_version') == 1:
+            document.header['alias_grouping_version'] = 1
     document.revision += 1
     document.save()
     replace_lines(document, command['lines'])

@@ -172,6 +172,7 @@ class SharedWarehouseTests(SnapshotTestCase):
         saved=self.paper(lines,first,state='issued',reason='Reviewed manual note correction');self.quantity('return',2);self.quantity('verify_return',2)
         self.assertEqual(saved['lines'][0]['snapshot']['supplier_name'],'AM Audiovisuals');self.assertEqual(saved['lines'][1]['quantity'],3)
         self.assertEqual(document_data(ChallanDocument.objects.get())['lines'],saved['lines']);self.assertEqual(saved['header']['owner_sections_version'],1)
+        self.assertEqual(saved['header']['alias_grouping_version'],1)
     def test_older_layout_is_preserved_during_draft_save_and_issue(self):
         self.event.challan_assets.add(self.owned);doc=ChallanDocument.objects.create(conference=self.event,scope='master',number='OLD-FLAT',header={'name':'Old event'})
         first=self.paper([self.line(self.owned)],document_data(doc));self.assertNotIn('owner_sections_version',first['header'])
@@ -182,6 +183,7 @@ class SharedWarehouseTests(SnapshotTestCase):
         result=self.manifest('start');master=ChallanDocument.objects.get(scope='master');trucks=list(self.event.truck_challans.order_by('truck_number'))
         for doc in self.event.challan_documents.exclude(scope='master'):
             self.assertEqual(doc.header['company']['name'],'AM Audiovisuals Pvt Ltd');self.assertEqual(doc.header['owner_sections_version'],1)
+            self.assertEqual(doc.header['alias_grouping_version'],1)
         line=master.lines.get(asset=self.bulk)
         self.manifest('move',from_truck_id=trucks[0].pk,to_truck_id=trucks[1].pk,items=[{'master_line_id':str(line.pk),'quantity':2}])
         quantities=list(ChallanLine.objects.filter(document__truck__in=trucks,asset=self.bulk).values_list('quantity',flat=True));self.assertEqual(sum(quantities),4)

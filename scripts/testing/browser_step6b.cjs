@@ -27,7 +27,13 @@ const { chromium, launchOptions } = require('./browser_runtime.cjs');
   const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4336/_fixture/inspect/')).json();
   const open=async(name='Synthetic source event')=>{await page.getByRole('button',{name:'Challans',exact:true}).first().click();await page.getByRole('row').filter({hasText:name}).getByRole('button',{name:'View',exact:true}).click();};
-  const quantity=async(target,name)=>(await target.getByRole('row').filter({hasText:name}).first().locator('td').nth(5).textContent()).trim();
+  const quantity=async(target,name)=>{
+   const table=target.getByRole('region',{name:'Challan equipment table'}).first();
+   const headers=await table.getByRole('columnheader').allTextContents();
+   const index=headers.findIndex(label=>label.trim().toUpperCase()==='QUANTITY');
+   assert(index>=0);
+   return (await table.getByRole('row').filter({hasText:name}).first().locator('td').nth(index).textContent()).trim();
+  };
   const download=async(button)=>{const pending=page.waitForEvent('download');await button.click();const file=await pending;return XLSX.readFile(await file.path());};
   await page.goto('http://127.0.0.1:4335/');
   await check('Dashboard counts shared warehouse, main stock and external catalogue separately',async()=>{const owners=page.getByRole('region',{name:'Inventory by owner'});await owners.getByText('AM Audiovisuals',{exact:true}).waitFor();await owners.getByText(/Main-owned: 1.*Other owners in shared godown: 2.*Shared godown total: 3.*External catalogue: 1/).waitFor();});
@@ -52,6 +58,30 @@ const { chromium, launchOptions } = require('./browser_runtime.cjs');
   await page.getByRole('button',{name:'Reports',exact:true}).first().click();
   await check('Reports ownership failures show an error, hide export and recover actual counts',async()=>{const owners=page.getByRole('region',{name:'Inventory by owner'});await owners.getByRole('button',{name:'Export ownership report'}).waitFor();failOwners=true;await owners.getByRole('button',{name:'Reload ownership report'}).click();await owners.getByRole('alert').waitFor();assert.equal(await owners.getByRole('button',{name:'Export ownership report'}).count(),0);failOwners=false;await owners.getByRole('button',{name:'Reload ownership report'}).click();await owners.getByRole('button',{name:'Export ownership report'}).waitFor();const workbook=await download(owners.getByRole('button',{name:'Export ownership report'}));const rows=XLSX.utils.sheet_to_json(workbook.Sheets['Inventory owners']);assert.equal(rows.find(r=>r.Owner==='Renamed AM owner')['Inventory records'],2);assert.equal(rows.find(r=>r.Owner==='Renamed AM owner')['Inventory classification'],'Shared godown stock');});
   await check('Real dispatch/return XLSX downloads distinguish paper quantities from stock masters and keep frozen prices/manual edits',async()=>{await page.getByRole('heading',{name:'Synthetic source event',exact:true}).click();const workbook=await download(page.getByRole('button',{name:'Export saved challan',exact:true}));const rows=XLSX.utils.sheet_to_json(workbook.Sheets['Saved challan lines']);assert.equal(rows.length,5);assert.equal(rows.find(r=>r['Alias Name']==='Manual owner row').Quantity,3);assert.equal(rows.find(r=>r['Alias Name']==='Shared cable').Quantity,6);assert.equal(rows.find(r=>r['Alias Name']==='Shared cable').Section,'Rented from AM Audiovisuals');assert.equal(rows.reduce((n,r)=>n+r['Line Total'],0),135.75);const returns=await download(page.getByRole('button',{name:'Export current return preview',exact:true}));const preview=XLSX.utils.sheet_to_json(returns.Sheets['Current return preview']);assert.deepEqual(preview.map(r=>r.Quantity),[4,1]);assert.deepEqual(preview.map(r=>r['Unit Value']),[12.5,2.5]);assert(!preview.some(r=>r['Ticket Item ID']));});
+  await check('Grouped challans sum individual values across rates and keep owners and identifiers distinct',async()=>{
+   await page.goto('http://127.0.0.1:4335/testing/challan.html');
+   await page.waitForFunction(()=>window.__fixture);
+   await page.evaluate(()=>{
+    const {first,poll}=window.__fixture;
+    poll([
+     {...first,id:'11',sku:'CABLE-11',serialNumber:'TEST-11',aliasName:'HDMI Fibre Long Cable',itemPrice:100,current_value:80.25},
+     {...first,id:'12',sku:'CABLE-12',serialNumber:'TEST-12',aliasName:'hdmi  fibre long cable ',quantity:2,itemPrice:200,current_value:125.15},
+     {...first,id:'13',sku:'CABLE-13',serialNumber:'TEST-13',aliasName:'HDMI Fibre Long Cable',itemPrice:300,current_value:210.11,subrental_company:7,subrental_company_name:'AM test owner'},
+    ],2);
+   });
+   const paper=page.getByRole('region',{name:'Challan equipment table'}).first();
+   const rows=paper.locator('tbody tr').filter({hasText:/hdmi\s+fibre long cable/i});
+   await rows.first().waitFor();
+   assert.equal(await rows.count(),2);
+   assert.equal(await quantity(page,'HDMI Fibre Long Cable'),'3');
+   assert.match(await rows.first().innerText(),/TEST-11, TEST-12/);
+   assert.match(await rows.first().innerText(),/₹330\.55/);
+   assert.match(await rows.last().innerText(),/₹210\.11/);
+   assert.equal(await paper.getByRole('columnheader',{name:'Unit Rate'}).count(),0);
+   await page.getByRole('button',{name:'Ungroup Items'}).click();
+   assert.equal(await rows.count(),3);
+   assert.equal(await paper.getByRole('columnheader',{name:'Unit Rate'}).count(),1);
+  });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_app:true,business_database:false,environment:'Disposable migrated in-memory SQLite/Django HTTP; fresh Chrome; real XLSX downloads; external traffic blocked'},null,2));
  }catch(e){console.error(log);throw e;}finally{closing=true;clearTimeout(timer);if(browser)await browser.close();if(server)await server.close();backend.kill('SIGTERM');}
 })().catch(e=>{console.error(e);process.exitCode=1;});
