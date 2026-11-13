@@ -32,6 +32,9 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
       return route.fulfill({ response, headers: { ...response.headers(), 'Access-Control-Allow-Origin': '*' } });
     });
     await context.addInitScript(() => {
+    // These editing scenarios explicitly enable the detailed optional columns.
+    localStorage.setItem('challan_visible_columns_v2',JSON.stringify(['Seq','Asset','Type','Identifiers','Rate','Qty','Total']));
+
       window.tailwind = { config: {} }; localStorage.setItem('token', 'synthetic-sources-token');
       localStorage.setItem('user', JSON.stringify({ user_id: 1, role: 'admin', is_staff: true, email: 'sources@example.test' }));
     });

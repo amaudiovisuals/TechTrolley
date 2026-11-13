@@ -19,7 +19,10 @@ const checks=[];async function check(name,run){await run();checks.push(name);}
    if(dropNext&&url.pathname.endsWith('/manifest-commands/')){dropNext=false;return route.abort();}
    return route.fulfill({response,headers:{...response.headers(),'Access-Control-Allow-Origin':'*'}});
   });
-  await context.addInitScript(()=>{window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-token');localStorage.setItem('user',JSON.stringify({user_id:1,role:'admin',is_staff:true,email:'sources@example.test'}));});
+  await context.addInitScript(()=>{
+    // These editing scenarios explicitly enable the detailed optional columns.
+    localStorage.setItem('challan_visible_columns_v2',JSON.stringify(['Seq','Asset','Type','Identifiers','Rate','Qty','Total']));
+window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-token');localStorage.setItem('user',JSON.stringify({user_id:1,role:'admin',is_staff:true,email:'sources@example.test'}));});
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4322/_fixture/inspect/')).json();
   const open=async()=>{await page.getByRole('button',{name:'Challans',exact:true}).first().click();await page.getByRole('row').filter({hasText:'Synthetic source event'}).getByRole('button',{name:'View',exact:true}).click();};

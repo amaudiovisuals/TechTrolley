@@ -59,7 +59,7 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
   await page.getByRole('button',{name:/Back to List/}).click();await page.getByRole('row').filter({hasText:'Quantity target B'}).getByRole('button',{name:'View',exact:true}).click();
   await check('Destination challan shows eight and the complete venue A dispatch address',async()=>{
    await assertPaperQuantity(8);const origins=paper().getByRole('region',{name:'Dispatched from'});assert((await origins.innerText()).includes((await inspect()).source_address));
-   assert.match(await origins.innerText(),/TRANSFER-CABLE × 8/);
+   assert.equal((await origins.innerText()).includes('Equipment:'),false); // Single origin is already identified by the table below.
    await page.setViewportSize({width:390,height:844});assert.equal(await origins.evaluate(el=>el.scrollWidth<=el.clientWidth),true);await page.setViewportSize({width:1400,height:1100});
   });
   await check('Customer and supplier papers both save eight units and freeze the venue origin',async()=>{
