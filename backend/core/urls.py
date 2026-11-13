@@ -27,6 +27,7 @@ from .challan_archive_files import archived_challan_logo, archived_challan_pdf
 from . import staff_commands, event_lifecycle, reconciliation_commands
 
 urlpatterns = [
+    path('assets/batch-preview/', views.equipment_batch_preview, name='equipment_batch_preview'),
     path('assets/<int:pk>/led-case-conversion/', led_cases.conversion_review, name='led_case_conversion'),
     path('saved-customers/', address_book.customers, name='saved_customers'),
     path('saved-customers/<int:pk>/', address_book.customer_detail, name='saved_customer'),
