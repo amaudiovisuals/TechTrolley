@@ -41,7 +41,7 @@ def quantity_capacity(asset, event):
     return asset.quantity
 
 
-def normalize(payload):
+def normalize(payload, *, batch_limit=500):
     allowed = {'request_id', 'action', 'items', 'expected_revision', 'physical_asset_ids'}
     if not isinstance(payload, dict) or set(payload) - allowed:
         raise CommandError('invalid_payload', 400)
@@ -50,7 +50,7 @@ def normalize(payload):
     except (ValueError, TypeError, AttributeError):
         raise CommandError('invalid_request_id', 400)
     action, items, revision = payload.get('action'), payload.get('items'), payload.get('expected_revision')
-    if action not in ACTIONS or not isinstance(items, list) or len(items) > 500:
+    if action not in ACTIONS or not isinstance(items, list) or len(items) > batch_limit:
         raise CommandError('invalid_action_or_batch', 400)
     if type(revision) is not int or revision < 0:
         raise CommandError('expected_revision_required', 428)
@@ -61,7 +61,7 @@ def normalize(payload):
             raise CommandError('invalid_quantity', 400)
     ids = [item['asset_id'] for item in items]
     physical = payload.get('physical_asset_ids', [])
-    if (not isinstance(physical, list) or len(physical) + len(items) > 500
+    if (not isinstance(physical, list) or len(physical) + len(items) > batch_limit
             or any(type(aid) is not int or aid <= 0 for aid in physical)
             or len(set(ids + physical)) != len(ids + physical) or not (ids or physical)
             or (physical and action != 'dispatch')):
@@ -100,10 +100,12 @@ def synchronize_memberships(event, asset, allocation):
 
 
 @transaction.atomic
-def execute_quantity_command(user, conference_id, payload):
-    command = normalize(payload)
+def execute_quantity_command(user, conference_id, payload, *, batch_limit=500, movement_source=None):
+    command = normalize(payload, batch_limit=batch_limit)
     fingerprint = hashlib.sha256(json.dumps({'operation': 'bulk_quantity', 'conference_id': conference_id,
                                             **command}, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if movement_source:
+        fingerprint = hashlib.sha256(f'{fingerprint}:{movement_source}'.encode()).hexdigest()
     previous = MovementReceipt.objects.filter(actor=user, request_id=command['request_id']).first()
     if previous:
         if previous.payload_hash != fingerprint:
@@ -182,9 +184,11 @@ def execute_quantity_command(user, conference_id, payload):
             Asset.objects.filter(pk=asset.pk).update(quantity_tracking=True)
         synchronize_memberships(event, asset, allocation)
         from .dispatch_origins import warehouse_origin
+        context = {'dispatch_origin': warehouse_origin()} if action == 'dispatch' else {}
+        if movement_source:
+            context['source'] = movement_source
         QuantityMovement.objects.create(allocation=allocation, receipt=receipt, action=action,
-                                        quantity=amount, before=before, after=allocation_data(allocation),
-                                        context={'dispatch_origin':warehouse_origin()} if action == 'dispatch' else {})
+                                        quantity=amount, before=before, after=allocation_data(allocation), context=context)
     if command['physical_asset_ids']:
         # Nested transaction: any physical conflict rolls back the bulk part too.
         execute_command(user, conference_id, {'request_id': str(uuid.uuid5(uuid.UUID(command['request_id']), 'physical-dispatch')),

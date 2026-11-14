@@ -51,6 +51,10 @@ export class MovementOutbox {
     return this.enqueueOperation({ eventId, endpoint: `/api/conferences/${eventId}/quantity-commands/`,
       payload: { ...payload, request_id: crypto.randomUUID() } as any }, records);
   }
+  async enqueueSkipPackup(eventId: string, payload: { expected_revision: number; review_hash: string; reason: string }) {
+    return this.enqueueOperation({ eventId, endpoint: `/api/conferences/${eventId}/skip-packup/`,
+      payload: { ...payload, request_id: crypto.randomUUID() } as any }, this.pending());
+  }
   async enqueueQuantityTransfer(eventId: string, payload: Record<string, any>) {
     return this.enqueueOperation({eventId, endpoint:`/api/conferences/${eventId}/quantity-transfers/`,
       payload:{...payload,request_id:crypto.randomUUID()} as any},this.pending());

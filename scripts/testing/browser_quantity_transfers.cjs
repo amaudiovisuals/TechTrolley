@@ -145,6 +145,33 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    await secondPaper.getByText('Vehicle: RETURN-TEST-2',{exact:true}).waitFor();
    assert.equal(await secondPaper.getByRole('cell',{name:'2',exact:true}).count(),1);
   });
+  await check('Admin Skip Packup reviews the full list under a search filter and moves it to Crosscheck',async()=>{
+   await open('Quantity target B');
+   await page.getByRole('button',{name:'Packup',exact:true}).click();
+   await page.locator('input[placeholder="Scan to remove/verify..."]:visible').first().fill('filter hides every row');
+   await page.getByRole('button',{name:'Skip Packup',exact:true}).click();
+   const dialog = page.getByRole('dialog',{name:'Skip Packup',exact:true});
+   await dialog.getByText('5 units across 1 equipment records').waitFor();
+   const move = dialog.getByRole('button',{name:'Move 5 units to Crosscheck',exact:true});
+   assert.equal(await move.isDisabled(),true);
+   await dialog.getByLabel('Reason for skipping Packup').fill('Venue team packed the remaining cables together');
+   const response = savedResponse('/skip-packup/');
+   await move.click();
+   assert.equal((await response).status(),200);
+   await dialog.waitFor({state:'hidden'});
+   const state = await inspect();
+   assert.equal(state.target.dispatched,0);
+   assert.equal(state.target.verified_total,1);
+   assert.equal(state.target.awaiting_verification,7);
+   assert.equal(state.packets[0].customer_document.rows[0].quantity,8);
+   const preview = await page.evaluate(async eventId => {
+    const response = await fetch('/api/conferences/' + eventId + '/return-deliveries/preview/', {
+     headers: {Authorization: 'Token ' + localStorage.getItem('token')},
+    });
+    return response.json();
+   },state.target_id);
+   assert.deepEqual(preview.source.rows.map(row=>row.quantity),[5]);
+  });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_App_and_Django:true,disposable_database:true,production_changed:false},null,2));
  }catch(e){console.error(log.slice(-2500));if(page)console.error((await page.locator('body').innerText()).slice(-3500));throw e;}
  finally{closing=true;clearTimeout(timer);if(browser)await browser.close();if(server)await server.close();backend.kill();}

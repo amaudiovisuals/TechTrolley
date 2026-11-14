@@ -183,6 +183,7 @@ import { Scanner } from './components/Scanner';
 import { ChallanView } from './components/ChallanView';
 import { ProgramDeliveries } from './components/ProgramDeliveries';
 import { ReturnDeliveries } from './components/ReturnDeliveries';
+import { SkipPackup } from './components/SkipPackup';
 import { ConsumablePanel } from './components/ConsumablePanel';
 import { TruckManifestPanel } from './components/TruckManifestPanel';
 import { Logo } from './components/Logo';
@@ -2400,7 +2401,7 @@ const App: React.FC = () => {
       const assertQueueSession = () => { if (!queueSession || queueSession !== localStorage.getItem('token')) throw new Error('Sign in again to retry your saved movements'); };
       outbox = new MovementOutbox(key, localStorage, async operation => {
         assertQueueSession();
-        if (operation.endpoint && !/^\/api\/truck-challans\/\d+\/transfer\/$/.test(operation.endpoint) && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-transfers/` && operation.endpoint !== `/api/conferences/${operation.eventId}/consumable-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/manifest-commands/`) throw new Error('Invalid saved movement route');
+        if (operation.endpoint && !/^\/api\/truck-challans\/\d+\/transfer\/$/.test(operation.endpoint) && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/quantity-transfers/` && operation.endpoint !== `/api/conferences/${operation.eventId}/consumable-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/manifest-commands/` && operation.endpoint !== `/api/conferences/${operation.eventId}/skip-packup/`) throw new Error('Invalid saved movement route');
         const endpoint = operation.endpoint || `/api/conferences/${operation.eventId}/asset-commands/`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15000);
@@ -2412,10 +2413,24 @@ const App: React.FC = () => {
         if (!response.ok) {
           const ErrorType = [400, 403, 404, 409, 428].includes(response.status) && result.error !== 'request_id_reused' ? RejectedMovement : Error;
           const sourceMessages: Record<string, string> = { external_rental_uses_supplier_balance: 'This is an external rental. Record its receipt or return in the supplier ticket.', supplier_inventory_classification_required: 'This supplier inventory needs shared-godown classification before new quantity movements.', supplier_ticket_quantity_requires_review: 'This stock also has supplier order history. Review those quantities before reserving it.' };
+          Object.assign(sourceMessages, {
+            skip_packup_review_changed: 'Packup changed. Refresh and review the current equipment list.',
+            skip_packup_review_blocked: 'Resolve the listed items before skipping Packup.',
+            skip_packup_admin_required: 'Only the Admin login can skip Packup.',
+            skip_packup_empty: 'There are no items in Packup.',
+            skip_packup_reason_required: 'Enter a reason for skipping Packup.',
+            skip_packup_audit_program: 'Skip Packup is unavailable for audit programs.',
+          });
           throw new ErrorType(`${sourceMessages[result.error] || result.error || 'Movement rejected'}${result.conflicts?.length ? ': ' + result.conflicts.map((item: any) => `${item.asset_id} ${item.reason}`).join(', ') : ''}`);
         }
         return result;
-      }, async result => { assertQueueSession(); if (result.operation === 'consumable') await publishConsumableReceipt(result, assertQueueSession); else applyMovementReceipt(result); });
+      }, async result => { assertQueueSession(); if (result.operation === 'consumable') await publishConsumableReceipt(result, assertQueueSession); else {
+        applyMovementReceipt(result);
+        if (result.operation === 'skip_packup' && String(conferenceFormDataRef.current.id) === String(result.conference?.id)) {
+          setQuickRemoveInput('');
+          setAssetTab('crosscheck');
+        }
+      } });
       movementOutboxesRef.current.set(key, outbox);
     }
     return outbox;
@@ -2561,6 +2576,27 @@ const App: React.FC = () => {
       showScanToast('Quantity movement saved.', 'success'); return true;
     } catch (error) {
       showScanToast(`Quantity not confirmed: ${(error as Error).message}`, 'error'); return false;
+    } finally {
+      quantityFlightRef.current = false; setQuantitySaving(false); setPendingMovementCount(outbox.pending().length);
+    }
+  };
+  const reviewSkipPackup = async (eventId: string) => {
+    const response = await apiFetch(`${API_BASE}/api/conferences/${eventId}/skip-packup/`);
+    const review = await response.json();
+    if (!response.ok) throw Error('Packup could not be reviewed. Reload the saved program and try again.');
+    return review;
+  };
+  const confirmSkipPackup = async (eventId: string, payload: { expected_revision: number; review_hash: string; reason: string }) => {
+    if (quantityFlightRef.current || String(conferenceFormDataRef.current.id) !== eventId) {
+      throw Error('Finish the current movement before skipping Packup.');
+    }
+    const outbox = getMovementOutbox();
+    if (outbox.pending().length) throw Error('Confirm the saved movement queue before skipping Packup.');
+    quantityFlightRef.current = true; setQuantitySaving(true);
+    try {
+      setPendingMovementCount(1);
+      const result = await outbox.enqueueSkipPackup(eventId, payload);
+      showScanToast(`${result.unit_count} units moved to Crosscheck. Verify them when received.`, 'success');
     } finally {
       quantityFlightRef.current = false; setQuantitySaving(false); setPendingMovementCount(outbox.pending().length);
     }
@@ -8345,6 +8381,13 @@ const App: React.FC = () => {
 
                         return (
                           <div className="space-y-3">
+                            {user?.role === 'admin' && conferenceFormData.id && !conferenceFormData.is_audit &&
+                              (conferenceFormData.assets || []).length > 0 && <SkipPackup
+                                key={String(conferenceFormData.id)}
+                                disabled={quantitySaving || pendingMovementCount > 0}
+                                getReview={() => reviewSkipPackup(String(conferenceFormData.id))}
+                                confirm={payload => confirmSkipPackup(String(conferenceFormData.id), payload)}
+                              />}
                             {/* Transfer Button header */}
                             {canTransfer && packupList.length > 0 && (
                               <div className="flex items-center justify-between px-1 mb-1">

@@ -4,7 +4,6 @@ import json
 import uuid
 
 from django.db import transaction
-from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,7 +22,7 @@ class CommandError(Exception):
         self.code, self.status, self.details = code, status, details or []
 
 
-def normalize_command(payload):
+def normalize_command(payload, *, batch_limit=500):
     if not isinstance(payload, dict) or set(payload) - {'request_id', 'action', 'asset_ids', 'target_conference_id', 'truck_id', 'source'}:
         raise CommandError('invalid_payload', 400)
     try:
@@ -32,7 +31,7 @@ def normalize_command(payload):
         raise CommandError('invalid_request_id', 400)
     action = payload.get('action')
     ids = payload.get('asset_ids')
-    if action not in ACTIONS or not isinstance(ids, list) or not 1 <= len(ids) <= 500:
+    if action not in ACTIONS or not isinstance(ids, list) or not 1 <= len(ids) <= batch_limit:
         raise CommandError('invalid_action_or_batch', 400)
     if any(type(value) is not int or value <= 0 for value in ids):
         raise CommandError('invalid_asset_ids', 400)
@@ -60,8 +59,8 @@ def canonical_conference(conference):
 
 
 @transaction.atomic
-def execute_command(user, conference_id, payload):
-    command = normalize_command(payload)
+def execute_command(user, conference_id, payload, *, batch_limit=500):
+    command = normalize_command(payload, batch_limit=batch_limit)
     role = get_business_role(user)
     action = command['action']
     envelope = {'conference_id': conference_id, **command}
@@ -115,18 +114,23 @@ def execute_command(user, conference_id, payload):
     active = set(event.assets.values_list('pk', flat=True))
     crosscheck = set(event.crosscheck_assets.values_list('pk', flat=True))
     staged = set(event.staged_assets.values_list('pk', flat=True))
-    blocking = Conference.objects.filter(is_audit=False).filter(Q(assets__in=ids) | Q(crosscheck_assets__in=ids)).distinct()
     conflicts = []
     from .quantity_commands import is_quantity_stock
     if action not in {'require', 'unrequire', 'audit_observe', 'audit_remove'}:
         if any(is_quantity_stock(a) for a in assets):
             raise CommandError('quantity_stock_requires_quantity_workflow', 400)
+        other_events = Conference.objects.filter(is_audit=False).exclude(pk=event.pk)
+        other_ids = set(other_events.filter(assets__in=ids).values_list('assets', flat=True))
+        other_ids.update(other_events.filter(crosscheck_assets__in=ids).values_list('crosscheck_assets', flat=True))
+        child_ids = {}
+        for parent_id, child_id in Asset.objects.filter(parent_asset_id__in=ids).values_list('parent_asset_id', 'pk'):
+            child_ids.setdefault(parent_id, set()).add(child_id)
+        selected_ids = set(ids)
         for asset in assets:
-            children = set(asset.sub_assets.values_list('pk', flat=True))
-            if not children <= set(ids) or (asset.parent_asset_id and asset.parent_asset_id not in ids):
+            children = child_ids.get(asset.pk, set())
+            if not children <= selected_ids or (asset.parent_asset_id and asset.parent_asset_id not in selected_ids):
                 conflicts.append({'asset_id': asset.pk, 'reason': 'component_set_required'})
-            other_holders = blocking.exclude(pk=event.pk).filter(Q(assets=asset) | Q(crosscheck_assets=asset))
-            if other_holders.exists():
+            if asset.pk in other_ids:
                 conflicts.append({'asset_id': asset.pk, 'reason': 'held_by_other_event'})
             if action in {'stage', 'dispatch', 'transfer'} and (asset.status in RESTRICTED or asset.flag or asset.condition == 'Damaged' or asset.assigned_to_id or asset.staff_allocations.filter(returned_at__isnull=True).exists()):
                 conflicts.append({'asset_id': asset.pk, 'reason': 'unavailable_or_staff_allocated'})
@@ -190,18 +194,23 @@ def execute_command(user, conference_id, payload):
         synchronize_statuses(ids)
     if action in {'dispatch', 'return', 'verify_return', 'transfer'}:
         from .models import PhysicalMovement
+        active_after = set(event.assets.values_list('pk', flat=True))
+        unchecked_after = set(event.crosscheck_assets.values_list('pk', flat=True))
+        staged_after = set(event.staged_assets.values_list('pk', flat=True))
+        movements = []
         for asset in assets:
             snapshot = {'asset': {'id': asset.pk, 'sku': asset.sku, 'label': asset.alias_name or asset.sku, 'quantity': asset.quantity},
                         'source': command['source'],
                         'before': {'active': asset.pk in active, 'unchecked': asset.pk in crosscheck, 'staged': asset.pk in staged},
-                        'after': {'active': event.assets.filter(pk=asset.pk).exists(), 'unchecked': event.crosscheck_assets.filter(pk=asset.pk).exists(), 'staged': event.staged_assets.filter(pk=asset.pk).exists()}}
+                        'after': {'active': asset.pk in active_after, 'unchecked': asset.pk in unchecked_after, 'staged': asset.pk in staged_after}}
             if dispatch_origin is not None:
                 snapshot['dispatch_origin'] = dispatch_origin
-            PhysicalMovement.objects.create(asset=asset, conference=event, target_conference=target, receipt=receipt,
-                                            action='transfer_out' if target else action, snapshot=snapshot)
+            movements.append(PhysicalMovement(asset=asset, conference=event, target_conference=target, receipt=receipt,
+                                              action='transfer_out' if target else action, snapshot=snapshot))
             if target:
-                PhysicalMovement.objects.create(asset=asset, conference=target, target_conference=event, receipt=receipt,
-                                                action='transfer_in', snapshot={'asset': snapshot['asset'], 'accepted_from_event_id': event.pk, 'source': command['source'], 'dispatch_origin': dispatch_origin})
+                movements.append(PhysicalMovement(asset=asset, conference=target, target_conference=event, receipt=receipt,
+                                                  action='transfer_in', snapshot={'asset': snapshot['asset'], 'accepted_from_event_id': event.pk, 'source': command['source'], 'dispatch_origin': dispatch_origin}))
+        PhysicalMovement.objects.bulk_create(movements)
     result = {'request_id': command['request_id'], 'action': action, 'asset_ids': ids,
               'conference': canonical_conference(event),
               'asset_states': AssetSerializer(Asset.objects.filter(pk__in=ids).order_by('pk'), many=True).data, 'replayed': False}
