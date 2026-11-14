@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type FC } from 'react';
+import { Scanner } from './Scanner';
+import { resolveScan } from '../state/scanIdentity';
 import { setWorkBlocker } from '../state/workSafety';
 
 type ReturnRow = {
   key: string;
   sku: string;
+  asset_id: number;
+  barcode?: string | null;
+  qr_code?: string | null;
+  serial_number?: string | null;
   name: string;
   quantity: number;
   type: string;
@@ -11,15 +17,13 @@ type ReturnRow = {
   unit_value: string;
   packed_at: string;
 };
-type Transport = {
-  reference: string;
-  return_date: string;
-  origin: string;
-  destination: string;
-  vehicle_number: string;
-  driver_phone: string;
-};
-type ReturnRequest = Transport & { request_key: string; source_hash: string; rows: string[] };
+type Trip = { return_date: string; origin: string; destination: string };
+type Truck = { reference: string; vehicle_number: string; driver_phone: string };
+type Transport = Trip & Truck;
+type TruckDraft = Truck & { id: number; rows: Record<string, number> };
+type IssueBase = Trip & { source_hash: string; request_key: string };
+type ReturnRequest = (IssueBase & Truck & { rows: string[] }) |
+  (IssueBase & { loads: (Truck & { rows: { key: string; quantity: number }[] })[] });
 type ReturnPreview = {
   source_hash: string;
   source: { rows: ReturnRow[]; reference: string; return_date: string; origin: string; destination: string };
@@ -100,15 +104,35 @@ export const ReturnDeliveries: FC<{
   const key = ['tt', 'pending-return', window.location.origin, accountId, conferenceId].map(encodeURIComponent).join(':');
   const [saved, setSaved] = useState<SavedReturn[]>([]);
   const [preview, setPreview] = useState<ReturnPreview | null>(null);
-  const [transport, setTransport] = useState<Transport | null>(null);
-  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [trucks, setTrucks]: [TruckDraft[], (next: TruckDraft[] | ((previous: TruckDraft[]) => TruckDraft[])) => void] = useState<TruckDraft[]>([]);
+  const nextTruckId = useRef(1);
+  const [activeTruckId, setActiveTruckId] = useState(1);
+  const [query, setQuery] = useState('');
+  const [scannedAsset, setScannedAsset] = useState<number | null>(null);
+  const [scanError, setScanError] = useState('');
+  const [camera, setCamera] = useState(false);
   const [pending, setPending] = useState<ReturnRequest | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [opened, setOpened] = useState<SavedReturn | null>(null);
   const [printReady, setPrintReady] = useState(false);
-  const selectedUnits = preview?.source.rows.reduce((sum, row) => sum + (selection.has(row.key) ? row.quantity : 0), 0) ?? 0;
+  const activeTruck = trucks.find(truck => truck.id === activeTruckId);
+  const allocated = new Map<string, number>();
+  let rowCount = 0;
+  for (const truck of trucks) {
+    for (const [key, quantity] of Object.entries(truck.rows)) {
+      allocated.set(key, (allocated.get(key) ?? 0) + quantity);
+      rowCount++;
+    }
+  }
+  const selectedUnits = [...allocated.values()].reduce((sum, count) => sum + count, 0);
+  const allRows = preview?.source.rows ?? [];
+  const filteredRows = allRows.filter(row => scannedAsset == null
+    ? [row.name, row.sku, row.owner.name].some(text => text.toLowerCase().includes(query.trim().toLowerCase()))
+    : row.asset_id === scannedAsset);
+  const total = (truck: TruckDraft) => Object.values(truck.rows).reduce((sum, count) => sum + count, 0);
   const frame = useRef<HTMLIFrameElement>(null);
   const inFlight = useRef(false);
 
@@ -127,7 +151,7 @@ export const ReturnDeliveries: FC<{
       const raw = localStorage.getItem(key);
       if (raw) {
         const request = JSON.parse(raw);
-        if (typeof request?.request_key !== 'string' || !Array.isArray(request.rows)) {
+        if (typeof request?.request_key !== 'string' || (!Array.isArray(request.rows) && !Array.isArray(request.loads))) {
           throw Error('A pending return record needs administrator review.');
         }
         setPending(request);
@@ -160,17 +184,58 @@ export const ReturnDeliveries: FC<{
       const data: ReturnPreview = await readJson(await apiFetch(`${endpoint}preview/`));
       const { reference, return_date, origin, destination } = data.source;
       setPreview(data);
-      setTransport({ reference, return_date, origin, destination, vehicle_number: '', driver_phone: '' });
-      setSelection(new Set());
+      setTrip({ return_date, origin, destination });
+      nextTruckId.current = 2;
+      setTrucks([{ id: 1, reference, vehicle_number: '', driver_phone: '', rows: {} }]);
+      setActiveTruckId(1);
+      resetSearch();
     } catch (e) { setError((e as Error).message); }
     finally { inFlight.current = false; setBusy(false); }
+  }
+
+  function resetSearch() {
+    setQuery('');
+    setScannedAsset(null);
+    setScanError('');
+  }
+
+  function updateTruck(changes: Partial<TruckDraft>) {
+    setTrucks(previous => previous.map(truck => truck.id === activeTruckId ? { ...truck, ...changes } : truck));
+  }
+
+  function scan(code: string) {
+    setCamera(false);
+    const match = resolveScan(code, allRows.map(row => ({
+      id: String(row.asset_id), sku: row.sku, barcode: row.barcode ?? undefined,
+      qrCode: row.qr_code ?? undefined, serialNumber: row.serial_number ?? undefined,
+    })));
+    setScannedAsset(match.kind === 'matched' ? Number(match.asset.id) : null);
+    setQuery(match.kind === 'matched' ? match.asset.sku : '');
+    setScanError(match.kind === 'ambiguous' ? 'This code matches more than one item. Search by SKU to choose the correct item.'
+      : match.kind === 'matched' ? '' : 'This code was not found in the available Packup records.');
+  }
+
+  function maxForTruck(row: ReturnRow, truck: TruckDraft) {
+    return row.quantity - (allocated.get(row.key) ?? 0) + (truck.rows[row.key] ?? 0);
+  }
+
+  function assign(row: ReturnRow, quantity: number, truck: TruckDraft) {
+    if (!Number.isSafeInteger(quantity) || quantity < 0 || quantity > maxForTruck(row, truck)) return;
+    const rows = { ...truck.rows };
+    if (quantity === 0) delete rows[row.key];
+    else rows[row.key] = quantity;
+    updateTruck({ rows });
   }
 
   async function issue(event?: FormEvent) {
     event?.preventDefault();
     if (inFlight.current || !canIssue || !ready) return;
-    const request = pending ?? (preview && transport && selection.size > 0 ? {
-      ...transport, request_key: crypto.randomUUID(), source_hash: preview.source_hash, rows: [...selection],
+    const request = pending ?? (preview && trip && selectedUnits > 0 && trucks.every(truck => total(truck) > 0) ? {
+      ...trip, request_key: crypto.randomUUID(), source_hash: preview.source_hash,
+      loads: trucks.map(({ reference, vehicle_number, driver_phone, rows }) => ({
+        reference, vehicle_number, driver_phone,
+        rows: Object.entries(rows).map(([key, quantity]) => ({ key, quantity })),
+      })),
     } : null);
     if (!request) return;
     inFlight.current = true;
@@ -189,15 +254,19 @@ export const ReturnDeliveries: FC<{
         setPending(null);
         if (response.status === 409) setPreview(null);
       }
-      const delivery: SavedReturn = await readJson(response);
-      if (!delivery.id || !delivery.number || !delivery.snapshot?.rows?.length) {
+      const result = await readJson(response);
+      const deliveries: SavedReturn[] = 'loads' in request ? result?.deliveries : [result];
+      const count = 'loads' in request ? request.loads.length : 1;
+      if (!Array.isArray(deliveries) || deliveries.length !== count ||
+          deliveries.some(delivery => !delivery?.id || !delivery?.number || !delivery?.snapshot?.rows?.length)) {
         throw Error('Save confirmation is incomplete. Retry to recover the same return challan.');
       }
       localStorage.removeItem(key);
       setPending(null);
       setPreview(null);
-      setSaved(previousRows => [delivery, ...previousRows.filter(row => row.id !== delivery.id)]);
-      openPaper(delivery);
+      const ids = new Set(deliveries.map(delivery => delivery.id));
+      setSaved(previousRows => [...deliveries, ...previousRows.filter(row => !ids.has(row.id))]);
+      openPaper(deliveries[0]);
     } catch (e) { setError((e as Error).message); }
     finally { inFlight.current = false; setBusy(false); }
   }
@@ -212,45 +281,97 @@ export const ReturnDeliveries: FC<{
     {!saved.length && <p className="text-sm text-slate-600">No saved return challans yet.</p>}
     {saved.length > 0 && <ul className="space-y-2">{saved.map(delivery => <li key={delivery.id}>
       <button className={button} onClick={() => openPaper(delivery)}>Open {delivery.number}</button>
-      <span className="ml-2 text-sm text-slate-700">{delivery.snapshot.reference} · {delivery.snapshot.return_date}</span>
+      <span className="ml-2 text-sm text-slate-700">{delivery.snapshot.reference} · {delivery.snapshot.return_date}{delivery.snapshot.vehicle_number && ` · ${delivery.snapshot.vehicle_number}`} · {delivery.snapshot.rows.reduce((sum, row) => sum + row.quantity, 0)} units</span>
     </li>)}</ul>}
-    {preview && transport && !pending && <form onSubmit={issue} className="space-y-3 border-t border-slate-200 pt-3">
-      <p className="text-sm">Select the Packup records for this return trip. Crosscheck verification follows the usual workflow.</p>
-      {!preview.source.rows.length && <p className="text-sm">No unused Packup records for warehouse equipment. Scan the items in Packup first.</p>}
-      {preview.source.rows.length > 0 && <>
+    {preview && trip && activeTruck && !pending && <form onSubmit={issue} className="space-y-3 border-t border-slate-200 pt-3">
+      {!allRows.length && <p className="text-sm">Scan equipment in Packup to make it available for a return challan.</p>}
+      {allRows.length > 0 && <>
         <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">
-          {fields.map(({ key: field, label, max, required }) => <label key={field} className="grid gap-1 text-sm">
+          {fields.filter(field => field.key in trip).map(({ key: field, label, max }) => <label key={field} className="grid gap-1 text-sm">
             {label}
             {field === 'origin' || field === 'destination'
-              ? <textarea aria-label={label} value={transport[field]} maxLength={max} required={required} rows={2}
-                  onChange={event => setTransport({ ...transport, [field]: event.target.value })} className="rounded border border-slate-300 p-2" />
-              : <input type={field === 'return_date' ? 'date' : 'text'} value={transport[field]} maxLength={max} required={required}
-                  onChange={event => setTransport({ ...transport, [field]: event.target.value })} className="rounded border border-slate-300 p-2" />}
+              ? <textarea aria-label={label} value={trip[field]} maxLength={max} required rows={2}
+                  onChange={event => setTrip({ ...trip, [field]: event.target.value })} className="rounded border border-slate-300 p-2" />
+              : <input type="date" value={trip.return_date} required
+                  onChange={event => setTrip({ ...trip, return_date: event.target.value })} className="rounded border border-slate-300 p-2" />}
           </label>)}
         </fieldset>
+        <div className="flex flex-wrap items-center gap-2" aria-label="Return trucks">
+          {trucks.map((truck, index) => <button key={truck.id} type="button"
+            className={`${button} ${truck.id === activeTruckId ? 'border-sky-600 bg-sky-50' : ''}`}
+            aria-pressed={truck.id === activeTruckId} onClick={() => setActiveTruckId(truck.id)} disabled={busy}>
+            Truck {index + 1} · {total(truck)} units
+          </button>)}
+          <button type="button" className={button} disabled={busy || trucks.length >= 20} onClick={() => {
+            const id = nextTruckId.current++;
+            setTrucks([...trucks, { id, reference: `${preview.source.reference} / Truck ${id}`, vehicle_number: '', driver_phone: '', rows: {} }]);
+            setActiveTruckId(id);
+            resetSearch();
+          }}>Add return truck</button>
+        </div>
+        <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">
+          {fields.filter(field => field.key in activeTruck).map(({ key: field, label, max, required }) => <label key={field} className="grid gap-1 text-sm">
+            {label}
+            <input value={activeTruck[field as keyof Truck]} maxLength={max}
+              required={required || (field === 'vehicle_number' && trucks.length > 1)}
+              onChange={event => updateTruck({ [field]: event.target.value })} className="rounded border border-slate-300 p-2" />
+          </label>)}
+          {trucks.length > 1 && <div><button type="button" className={button} onClick={() => {
+            const remaining = trucks.filter(truck => truck.id !== activeTruckId);
+            setTrucks(remaining);
+            setActiveTruckId(remaining[0].id);
+          }}>Remove this truck</button></div>}
+        </fieldset>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid flex-1 gap-1 text-sm">Search or scan Packup equipment
+            <input value={query} maxLength={2048} className="rounded border border-slate-300 p-2"
+              onChange={event => { setQuery(event.target.value); setScannedAsset(null); setScanError(''); }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') { event.preventDefault(); scan(query); }
+              }} />
+          </label>
+          <button type="button" className={button} onClick={() => setCamera(true)}>Scan equipment</button>
+          {(query || scannedAsset != null) && <button type="button" className={button} onClick={resetSearch}>Clear search</button>}
+        </div>
+        {camera && <Scanner onScan={scan} onClose={() => setCamera(false)} />}
+        {scanError && <p role="status" className="text-sm text-red-700">{scanError}</p>}
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={button} disabled={busy || preview.source.rows.length > 2500}
-            onClick={() => setSelection(new Set(preview.source.rows.map(row => row.key)))}>Select all Packup records</button>
-          <button type="button" className={button} disabled={busy || !selection.size}
-            onClick={() => setSelection(new Set())}>Clear selection</button>
-          <span className="text-sm">{selectedUnits} units selected</span>
+          <button type="button" className={button} disabled={busy || !filteredRows.length} onClick={() => {
+            const rows = { ...activeTruck.rows };
+            for (const row of filteredRows) {
+              const amount = maxForTruck(row, activeTruck);
+              if (amount > 0) rows[row.key] = amount;
+            }
+            updateTruck({ rows });
+          }}>{query ? 'Select matching Packup records' : 'Select all Packup records'}</button>
+          <button type="button" className={button} disabled={busy || !total(activeTruck)}
+            onClick={() => updateTruck({ rows: {} })}>Clear this truck</button>
+          <span className="text-sm">{selectedUnits} units assigned · {allRows.reduce((sum, row) => sum + row.quantity, 0) - selectedUnits} unassigned</span>
         </div>
         <fieldset disabled={busy} className="max-h-80 space-y-1 overflow-y-auto">
-          <legend className="text-sm font-semibold">Recorded Packup items</legend>
-          {preview.source.rows.map(row => <label key={row.key} className="flex items-start gap-2 rounded border border-slate-200 p-2 text-sm">
-            <input type="checkbox" checked={selection.has(row.key)} onChange={event => {
-              const next = new Set(selection);
-              if (event.target.checked) next.add(row.key);
-              else next.delete(row.key);
-              setSelection(next);
-            }} />
-            <span>{row.name} ({row.sku}) · {row.quantity}<small className="block text-slate-600">{packTime.format(new Date(row.packed_at))}</small></span>
-          </label>)}
+          <legend className="text-sm font-semibold">Equipment for Truck {trucks.indexOf(activeTruck) + 1}</legend>
+          {!filteredRows.length && <p className="text-sm">No matching Packup equipment.</p>}
+          {filteredRows.map(row => {
+            const max = maxForTruck(row, activeTruck);
+            const quantity = activeTruck.rows[row.key] ?? 0;
+            const label = `${row.name} (${row.sku})`;
+            return <label key={row.key} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 p-2 text-sm">
+              <span>{label}<small className="block text-slate-600">{max} available for this truck · {packTime.format(new Date(row.packed_at))}</small></span>
+              {row.quantity === 1 ? <input type="checkbox" checked={quantity === 1} disabled={max === 0}
+                aria-label={`Assign ${label}`} onChange={event => assign(row, Number(event.target.checked), activeTruck)} />
+                : <input type="number" min={0} max={max} step={1} value={quantity} disabled={max === 0}
+                  aria-label={`Quantity for ${label}`} className="w-24 rounded border border-slate-300 p-1"
+                  onChange={event => assign(row, Number(event.target.value), activeTruck)} />}
+            </label>;
+          })}
         </fieldset>
       </>}
       <div className="flex flex-wrap gap-2">
         <button className={button} type="button" disabled={busy} onClick={() => setPreview(null)}>Cancel return review</button>
-        <button className={button} disabled={!selection.size || selection.size > 2500 || busy}>Issue return challan ({selectedUnits})</button>
+        <button className={button} disabled={!selectedUnits || rowCount > 2500 || busy ||
+          trucks.some(truck => !total(truck) || !truck.reference.trim() || (trucks.length > 1 && !truck.vehicle_number.trim()))}>
+          {trucks.length === 1 ? `Issue return challan (${selectedUnits})` : `Issue ${trucks.length} return challans (${selectedUnits} units)`}
+        </button>
       </div>
     </form>}
     {opened && <div className="space-y-2">

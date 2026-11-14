@@ -906,20 +906,22 @@ class ReturnDelivery(models.Model):
     number = models.CharField(max_length=50, unique=True)
     snapshot = models.JSONField()
     issued_at = models.DateTimeField(auto_now_add=True)
-    receipt = models.OneToOneField(MovementReceipt, on_delete=models.PROTECT, related_name='return_delivery')
+    receipt = models.ForeignKey(MovementReceipt, on_delete=models.PROTECT, related_name='return_deliveries')
 
     class Meta:
         ordering = ['-pk']
 
 
 class ReturnDeliveryLine(models.Model):
-    """Claim a Packup movement once, even after Crosscheck or a later dispatch."""
+    """Allocate physical items or part of a bulk Packup movement to a return truck."""
 
     delivery = models.ForeignKey(ReturnDelivery, on_delete=models.PROTECT, related_name='lines')
     physical_movement = models.OneToOneField(PhysicalMovement, null=True, blank=True,
                                              on_delete=models.PROTECT, related_name='return_delivery_line')
-    quantity_movement = models.OneToOneField(QuantityMovement, null=True, blank=True,
-                                             on_delete=models.PROTECT, related_name='return_delivery_line')
+    quantity_movement = models.ForeignKey(QuantityMovement, null=True, blank=True,
+                                          on_delete=models.PROTECT, related_name='return_delivery_lines')
+    # Existing lines claimed the entire movement.
+    quantity = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         constraints = [models.CheckConstraint(
@@ -927,4 +929,9 @@ class ReturnDeliveryLine(models.Model):
                (models.Q(physical_movement__isnull=False, quantity_movement__isnull=True)
                 | models.Q(physical_movement__isnull=True, quantity_movement__isnull=False))},
             name='return_line_exactly_one_movement',
+        ), models.CheckConstraint(
+            condition=models.Q(quantity__isnull=True) | models.Q(quantity__gt=0),
+            name='return_line_positive_quantity',
+        ), models.UniqueConstraint(
+            fields=['delivery', 'quantity_movement'], name='return_line_one_bulk_row_per_truck',
         )]

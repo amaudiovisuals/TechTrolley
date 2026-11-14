@@ -85,10 +85,18 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    const scan=async action=>{const input=page.locator('input[placeholder="Scan to remove/verify..."]:visible').first();await input.fill('TRANSFER-CABLE');await input.press('Enter');
     const modal=page.getByRole('heading',{name:'Select Quantity',exact:true}).locator('..').locator('..').locator('..');await modal.locator('input[type=number]').fill('3');const response=savedResponse('/quantity-commands/');
     await modal.getByRole('button',{name:new RegExp(`^${action.replace('_',' ')}`,'i')}).click();assert.equal((await response).status(),200);await modal.waitFor({state:'hidden'});};
-   await scan('return');await page.getByRole('button',{name:'Crosscheck',exact:true}).click();await scan('verify_return');
-   const state=await inspect();assert.equal(state.source,12);assert.equal(state.target.dispatched,5);assert.equal(state.target.verified_total,3);assert.equal(state.available,83);assert.equal(state.packets[0].customer_document.rows[0].quantity,8);
+   await scan('return');
+   await page.getByRole('button',{name:'Crosscheck',exact:true}).click();
+   const input=page.locator('input[placeholder="Scan to remove/verify..."]:visible').first();
+   await input.fill('TRANSFER-CABLE');await input.press('Enter');
+   const modal=page.getByRole('heading',{name:'Select Quantity',exact:true}).locator('..').locator('..').locator('..');
+   await modal.locator('input[type=number]').fill('1');
+   const response=savedResponse('/quantity-commands/');
+   await modal.getByRole('button',{name:/^verify return/i}).click();
+   assert.equal((await response).status(),200);await modal.waitFor({state:'hidden'});
+   const state=await inspect();assert.equal(state.source,12);assert.equal(state.target.dispatched,5);assert.equal(state.target.verified_total,1);assert.equal(state.target.awaiting_verification,2);assert.equal(state.available,81);assert.equal(state.packets[0].customer_document.rows[0].quantity,8);
   });
-  await check('Verified Packup movement issues one frozen return paper and recovers an interrupted save',async()=>{
+  await check('Two return trucks split one Packup record and recover both challans after an interrupted save',async()=>{
    await page.reload();
    await openChallan('Quantity target B');
    await page.getByRole('button',{name:/Return Challan \(/}).click();
@@ -96,8 +104,16 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    await page.setViewportSize({width:390,height:844});
    assert.equal(await page.getByLabel('Returning from',{exact:true}).inputValue(),'Venue B road');
    await page.getByLabel('Return vehicle number',{exact:true}).fill('RETURN-TEST-1');
-   await page.getByRole('button',{name:'Select all Packup records',exact:true}).click();
-   await page.getByRole('button',{name:'Issue return challan (3)',exact:true}).click();
+   const search = page.getByLabel('Search or scan Packup equipment');
+   await search.fill('QR: TRANSFER-CABLE');
+   await search.press('Enter');
+   const quantity = page.getByRole('spinbutton',{name:/Quantity for Transfer cable/});
+   await quantity.fill('1');
+   await page.getByRole('button',{name:'Add return truck',exact:true}).click();
+   await page.getByLabel('Return vehicle number',{exact:true}).fill('RETURN-TEST-2');
+   assert.equal(await quantity.getAttribute('max'),'2');
+   await quantity.fill('2');
+   await page.getByRole('button',{name:'Issue 2 return challans (3 units)',exact:true}).click();
    const retry = page.getByRole('button',{name:'Retry saving same return challan',exact:true});
    await retry.waitFor();
    await page.setViewportSize({width:1400,height:1100});
@@ -107,12 +123,13 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    await retry.click();
    const frame = page.frameLocator('iframe[title^="Saved return "]');
    await frame.getByText('Return Challan',{exact:true}).waitFor();
-   assert.equal(await frame.getByRole('cell',{name:'3',exact:true}).count(),1);
+   assert.equal(await frame.getByRole('cell',{name:'1',exact:true}).count(),1);
    await frame.getByText('Vehicle: RETURN-TEST-1',{exact:true}).waitFor();
    assert.equal(returns.length,2);
    assert.deepEqual(returns[0],returns[1]);
    const state = await inspect();
-   assert.equal(state.target.verified_total,3);
+   assert.equal(state.target.verified_total,1);
+   assert.equal(state.target.awaiting_verification,2);
    assert.equal(state.packets[0].customer_document.rows[0].quantity,8);
    const saved = await page.evaluate(async eventId => {
     const response = await fetch('/api/conferences/' + eventId + '/return-deliveries/', {
@@ -120,8 +137,13 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
     });
     return response.json();
    },state.target_id);
-   assert.equal(saved.length,1);
-   assert.equal(saved[0].snapshot.rows[0].quantity,3);
+   assert.equal(saved.length,2);
+   const second = saved.find(entry => entry.snapshot.vehicle_number === 'RETURN-TEST-2');
+   assert.equal(second.snapshot.rows[0].quantity,2);
+   await page.getByRole('button',{name:'Open '+second.number,exact:true}).click();
+   const secondPaper = page.frameLocator('iframe[title="Saved return '+second.number+'"]');
+   await secondPaper.getByText('Vehicle: RETURN-TEST-2',{exact:true}).waitFor();
+   assert.equal(await secondPaper.getByRole('cell',{name:'2',exact:true}).count(),1);
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_App_and_Django:true,disposable_database:true,production_changed:false},null,2));
  }catch(e){console.error(log.slice(-2500));if(page)console.error((await page.locator('body').innerText()).slice(-3500));throw e;}
