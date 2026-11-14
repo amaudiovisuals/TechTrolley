@@ -638,7 +638,9 @@ const App: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [backendConferences, setBackendConferences] = useState<Booking[]>([]);
-  const [invoicingId, setInvoicingId] = useState<string | null>(null);
+  const [billingSaving, setBillingSaving] = useState(false);
+  const billingFlight = useRef(false);
+  const [billingFilter, setBillingFilter] = useState<'all' | 'pending' | 'demo'>('all');
   const [formErrors, setFormErrors] = useState<any>({});
   const [assetSaving, setAssetSaving] = useState(false);
   const assetSaveInFlight = useRef(false);
@@ -2114,33 +2116,62 @@ const App: React.FC = () => {
     });
   };
 
-  const handleToggleInvoiced = async (confId: string, currentStatus: boolean) => {
-    if (invoicingId === confId) return;
-    setInvoicingId(confId);
-    const newStatus = !currentStatus;
-
-    // Optimistic UI update
-    setBackendConferences(prev => prev.map(c => c.id === confId ? { ...c, is_invoiced: newStatus, isInvoiced: newStatus } : c));
-    setSelectedBookingForChallan(prev => prev && prev.id === confId ? { ...prev, is_invoiced: newStatus, isInvoiced: newStatus } : prev);
-
+  const updateBilling = async (conf: Booking, field: 'is_demo' | 'is_invoiced') => {
+    if (billingFlight.current) return;
+    const current = conferenceSnapshotsRef.current.get(conf.id) || conf;
+    const value = !current[field];
+    const demo = field === 'is_demo';
+    if (demo && value && !window.confirm(`Mark "${current.conferenceName}" as Demo · No billing required?`)) return;
+    billingFlight.current = true;
+    setBillingSaving(true);
     try {
-      const res = await apiFetch(`${API_BASE}/api/conferences/${confId}/`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_invoiced: newStatus })
+      const response = await apiFetch(`${API_BASE}/api/conferences/${conf.id}/${demo ? 'demo-billing/' : ''}`, {
+        method: demo ? 'POST' : 'PATCH',
+        body: JSON.stringify({
+          [field]: value,
+          expected_revision: current.revision ?? 0,
+          ...(demo ? { request_id: crypto.randomUUID() } : {}),
+        }),
       });
-      if (!res.ok) {
-        throw new Error(`Server responded with status ${res.status}`);
+      const data = await response.json();
+      if (!response.ok) {
+        const messages: Record<string, string> = {
+          document_changed: 'The program changed. Review the latest billing status and try again.',
+          demo_billing_already_invoiced: 'This program has already been invoiced. Review its invoice before marking it Demo.',
+          demo_billing_audit_program: 'Demo billing applies to operational programs.',
+        };
+        throw Error(messages[data.error] || data.is_invoiced?.[0] || 'Billing status could not be saved.');
       }
-    } catch (err) {
-      console.error('Error toggling invoice status:', err);
-      // Revert optimistic update
-      setBackendConferences(prev => prev.map(c => c.id === confId ? { ...c, is_invoiced: currentStatus, isInvoiced: currentStatus } : c));
-      setSelectedBookingForChallan(prev => prev && prev.id === confId ? { ...prev, is_invoiced: currentStatus, isInvoiced: currentStatus } : prev);
-      alert('Failed to update invoice status. Please check your network connection and try again.');
+      applyMovementReceipt({ conference: demo ? data.conference : data });
+      showScanToast(demo ? value ? 'Marked Demo · No billing required.' : 'Demo status removed.' : 'Invoice status saved.', 'success');
+    } catch (error) {
+      void fetchConferences();
+      showScanToast((error as Error).message, 'error');
     } finally {
-      setInvoicingId(null);
+      billingFlight.current = false;
+      setBillingSaving(false);
     }
+  };
+
+  const canMarkDemo = user?.role === 'accounts' || user?.role === 'admin';
+  const demoBadge = (conf?: Booking | null) => conf?.is_demo ? (
+    <span className="inline-block rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-medium text-violet-900">
+      Demo · No billing required
+    </span>
+  ) : null;
+  const billingControls = (conf: Booking) => {
+    const invoiced = Boolean(conf.is_invoiced || conf.isInvoiced);
+    const style = 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 disabled:opacity-50';
+    return <div className="flex flex-wrap items-center gap-2">
+      {user?.role === 'accounts' && !conf.is_demo && <button type="button" className={style}
+        disabled={billingSaving} onClick={() => void updateBilling(conf, 'is_invoiced')}>
+        {invoiced ? 'Invoiced' : 'Pending Invoice'}
+      </button>}
+      {canMarkDemo && !conf.isAudit && (!invoiced || conf.is_demo) && <button type="button" className={style}
+        disabled={billingSaving} onClick={() => void updateBilling(conf, 'is_demo')}>
+        {conf.is_demo ? 'Remove Demo' : 'Mark Demo'}
+      </button>}
+    </div>;
   };
 
   const handleUpdateLogistics = (settle = false) => {
@@ -6067,7 +6098,10 @@ const App: React.FC = () => {
     };
 
     // Sort challans by ID descending (newest created = top)
+    const needsInvoice = (conf: Booking) => !conf.is_demo && !conf.is_invoiced && !conf.isInvoiced;
     const sortedChallans = [...filteredConferences]
+      .filter(conf => !canMarkDemo || billingFilter === 'all' ||
+        (billingFilter === 'pending' ? needsInvoice(conf) : conf.is_demo))
       .filter(conf => !challanSearchQuery ||
         (conf.challanNumber && conf.challanNumber.toString().toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
         (conf.conferenceName && conf.conferenceName.toLowerCase().includes(challanSearchQuery.toLowerCase())) ||
@@ -6087,7 +6121,7 @@ const App: React.FC = () => {
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Invoice Overview</p>
                 <p className="text-sm font-black uppercase tracking-wider text-amber-400">
-                  Invoice Pending : <span className="text-white text-base font-black ml-1">{backendConferences.filter(c => !c.is_invoiced && !c.isInvoiced).length}</span>
+                  Invoice Pending : <span className="text-white text-base font-black ml-1">{backendConferences.filter(needsInvoice).length}</span>
                 </p>
               </div>
             </div>
@@ -6117,6 +6151,15 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
+          {canMarkDemo && <label className="flex flex-wrap items-center gap-2 px-4 pb-3 text-sm font-medium text-slate-800">
+            Billing status
+            <select aria-label="Billing status" value={billingFilter} onChange={event => setBillingFilter(event.target.value as typeof billingFilter)}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-slate-900">
+              <option value="all">All programs</option>
+              <option value="pending">Pending invoice</option>
+              <option value="demo">Demo</option>
+            </select>
+          </label>}
           {/* Desktop Table View */}
           <div className="hidden md:block overflow-x-auto custom-scrollbar">
             <table className="w-full text-left min-w-[1000px]">
@@ -6127,8 +6170,8 @@ const App: React.FC = () => {
                   <th className="px-6 py-6">Conference</th>
                   <th className="px-6 py-6">Assets</th>
                   <th className="px-6 py-6 text-center">Status</th>
-                  {user?.role === 'accounts' && (
-                    <th className="px-6 py-6 text-center">Invoice Status</th>
+                  {canMarkDemo && (
+                    <th className="px-6 py-6 text-center">Billing</th>
                   )}
                   <th className="px-6 py-6 text-right">Actions</th>
                 </tr>
@@ -6149,6 +6192,7 @@ const App: React.FC = () => {
                       </td>
                       <td className="px-10 py-6">
                         <p className="font-bold text-white text-xs uppercase">{conf.conferenceName}</p>
+                        {demoBadge(conf)}
                         <p className="text-[10px] text-slate-500 uppercase mt-1">{conf.associationName}</p>
                         {(conf.truckChallans || []).length > 0 && (
                           <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -6183,27 +6227,7 @@ const App: React.FC = () => {
                           {hasAssets ? 'Generated' : 'Draft'}
                         </span>
                       </td>
-                      {user?.role === 'accounts' && (
-                        <td className="px-6 py-6 text-center">
-                          <button
-                            disabled={invoicingId === conf.id}
-                            onClick={() => handleToggleInvoiced(conf.id, !!(conf.is_invoiced || conf.isInvoiced))}
-                            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
-                              (conf.is_invoiced || conf.isInvoiced)
-                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 shadow-sm shadow-emerald-500/10'
-                                : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25 shadow-sm shadow-amber-500/10'
-                            } ${invoicingId === conf.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
-                            title={(conf.is_invoiced || conf.isInvoiced) ? 'Click to mark as Pending Invoice' : 'Click to mark as Invoiced'}
-                          >
-                            {invoicingId === conf.id ? (
-                              <i aria-hidden="true" className="fa-solid fa-spinner fa-spin text-xs"></i>
-                            ) : (
-                              <i aria-hidden="true" className={`fa-solid ${(conf.is_invoiced || conf.isInvoiced) ? 'fa-circle-check text-emerald-400' : 'fa-clock text-amber-400'}`}></i>
-                            )}
-                            {(conf.is_invoiced || conf.isInvoiced) ? 'Invoiced' : 'Pending Invoice'}
-                          </button>
-                        </td>
-                      )}
+                      {canMarkDemo && <td className="px-6 py-6">{billingControls(conf)}</td>}
                       <td className="px-10 py-6 text-right space-x-4">
                         <button
                           onClick={() => { setSelectedBookingForChallan(conf); setChallanViewMode('Detail'); }}
@@ -6260,6 +6284,7 @@ const App: React.FC = () => {
                   <div>
                     <p className="text-[10px] text-slate-500 uppercase tracking-widest font-black">Conference</p>
                     <p className="font-bold text-white text-xs uppercase break-words">{conf.conferenceName}</p>
+                        {demoBadge(conf)}
                     <p className="text-[10px] text-slate-400 uppercase mt-0.5">{conf.associationName}</p>
                     {(conf.truckChallans || []).length > 0 && (
                       <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -6284,27 +6309,7 @@ const App: React.FC = () => {
                     )}
                   </div>
 
-                  {user?.role === 'accounts' && (
-                    <div className="flex justify-between items-center pt-3 border-t border-slate-800/40">
-                      <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Invoice Status</span>
-                      <button
-                        disabled={invoicingId === conf.id}
-                        onClick={() => handleToggleInvoiced(conf.id, !!(conf.is_invoiced || conf.isInvoiced))}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
-                          (conf.is_invoiced || conf.isInvoiced)
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
-                            : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
-                        } ${invoicingId === conf.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
-                      >
-                        {invoicingId === conf.id ? (
-                          <i aria-hidden="true" className="fa-solid fa-spinner fa-spin text-xs"></i>
-                        ) : (
-                          <i aria-hidden="true" className={`fa-solid ${(conf.is_invoiced || conf.isInvoiced) ? 'fa-circle-check text-emerald-400' : 'fa-clock text-amber-400'}`}></i>
-                        )}
-                        {(conf.is_invoiced || conf.isInvoiced) ? 'Invoiced' : 'Pending Invoice'}
-                      </button>
-                    </div>
-                  )}
+                  {canMarkDemo && <div className="pt-3 border-t border-slate-800/40">{billingControls(conf)}</div>}
 
                   <div className="flex justify-between items-center pt-3 border-t border-slate-800/40">
                     <div>
@@ -6421,6 +6426,7 @@ const App: React.FC = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <h4 className="text-lg font-black text-white uppercase leading-tight">{conf.conferenceName || conf.name}</h4>
+                  {demoBadge(conf)}
                   {conf.isAudit && (
                     <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-500/15 text-amber-400 border border-amber-500/20">
                       <i aria-hidden="true" className="fa-solid fa-eye text-[7px]" /> Audit Mode
@@ -6503,6 +6509,7 @@ const App: React.FC = () => {
                 <tr key={conf.id} className="hover:bg-slate-800/10 transition">
                   <td className="px-10 py-6 min-w-0">
                     <p className="font-black text-white text-base uppercase truncate max-w-xs">{conf.conferenceName || conf.name}</p>
+                    {demoBadge(conf)}
                     <div className="flex items-center gap-3 mt-1">
                       {conf.isAudit && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-500/15 text-amber-400 border border-amber-500/20">
@@ -7186,6 +7193,7 @@ const App: React.FC = () => {
                     <h2 className="text-5xl md:text-7xl font-black text-orange-500 uppercase tracking-tighter leading-none">
                       {conferenceFormData.name || "UNNAMED CONFERENCE"}
                     </h2>
+                    {demoBadge(backendConferences.find(conf => conf.id === String(conferenceFormData.id)))}
                     {conferenceFormData.is_audit && (
                       <span className="inline-flex items-center gap-2 mt-3 px-4 py-1.5 rounded-full text-[10px] font-black uppercase bg-amber-500/10 text-amber-500 border border-amber-500/30">
                         <i aria-hidden="true" className="fa-solid fa-eye" /> Audit Mode — Non-Blocking
@@ -8806,26 +8814,9 @@ const App: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="flex gap-4">
-                      {user?.role === 'accounts' && (
-                        <button
-                          disabled={invoicingId === conf.id}
-                          onClick={() => handleToggleInvoiced(conf.id, !!(conf.is_invoiced || conf.isInvoiced))}
-                          className={`px-5 py-3 rounded-xl font-bold uppercase text-xs shadow-lg transition-all flex items-center gap-2 border ${
-                            (conf.is_invoiced || conf.isInvoiced)
-                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 shadow-emerald-500/10'
-                              : 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25 shadow-amber-500/10'
-                          } ${invoicingId === conf.id ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`}
-                          title={(conf.is_invoiced || conf.isInvoiced) ? 'Click to mark as Pending Invoice' : 'Click to mark as Invoiced'}
-                        >
-                          {invoicingId === conf.id ? (
-                            <i aria-hidden="true" className="fa-solid fa-spinner fa-spin text-xs"></i>
-                          ) : (
-                            <i aria-hidden="true" className={`fa-solid ${(conf.is_invoiced || conf.isInvoiced) ? 'fa-circle-check text-emerald-400' : 'fa-clock text-amber-400'}`}></i>
-                          )}
-                          {(conf.is_invoiced || conf.isInvoiced) ? 'Invoiced' : 'Pending Invoice'}
-                        </button>
-                      )}
+                    <div className="flex flex-wrap items-center gap-4">
+                      {demoBadge(conf)}
+                      {canMarkDemo && billingControls(conf)}
                       <button
                         onClick={() => handlePrintChallan(conf, returnMode ? 'return' : 'dispatch', false, activeTruck, challanPrintDiscount.current)}
                         className="px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold uppercase text-xs shadow-lg shadow-sky-500/20 transition-all flex items-center gap-2"

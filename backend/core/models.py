@@ -346,6 +346,7 @@ class Conference(models.Model):
     # J-109: Audit Mode — when True, assets in this conference do not lock other live events
     is_audit = models.BooleanField(default=False, help_text="If True, this conference is a non-blocking audit list. Its assets will not lock availability for other conferences.")
     is_invoiced = models.BooleanField(default=False, help_text="Track if challan has been marked invoiced by accounts")
+    is_demo = models.BooleanField(default=False, help_text='Operational program with no billing required')
 
     def recalculate_related_asset_statuses(self):
         from .custody import synchronize_statuses

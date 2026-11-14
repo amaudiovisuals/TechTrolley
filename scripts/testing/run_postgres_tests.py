@@ -24,7 +24,7 @@ TEST_LABELS = ['core.tests', 'core.tests_step2', 'core.tests_step3', 'core.tests
                'core.tests_step4b', 'core.tests_step4b2', 'core.tests_step4b3a',
                'core.tests_step4b3b', 'core.tests_step4c', 'core.tests_step5a',
                'core.tests_step5b', 'core.tests_step5c', 'core.tests_step5d',
-               'core.tests_step6a', 'core.tests_step6b', 'core.tests_step6c', 'core.tests_step6d', 'core.tests_step8b1', 'core.tests_step8b2', 'core.tests_step8b3', 'core.tests_step8b5', 'core.tests_step8b6', 'core.tests_offline_packages', 'core.tests_hotfix_inventory', 'core.tests_program_deliveries', 'core.tests_saved_contacts_and_origins', 'core.tests_led_cases', 'core.tests_quantity_transfers', 'core.tests_return_deliveries', 'core.tests_skip_packup']
+               'core.tests_step6a', 'core.tests_step6b', 'core.tests_step6c', 'core.tests_step6d', 'core.tests_step8b1', 'core.tests_step8b2', 'core.tests_step8b3', 'core.tests_step8b5', 'core.tests_step8b6', 'core.tests_offline_packages', 'core.tests_hotfix_inventory', 'core.tests_program_deliveries', 'core.tests_saved_contacts_and_origins', 'core.tests_led_cases', 'core.tests_quantity_transfers', 'core.tests_return_deliveries', 'core.tests_skip_packup', 'core.tests_demo_billing']
 
 
 def clean_environment():

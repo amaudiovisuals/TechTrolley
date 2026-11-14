@@ -229,6 +229,7 @@ export interface Booking {
   isAudit?: boolean; // J-109: When true, assets in this conference do not lock other events
   is_invoiced?: boolean; // Track if challan has been marked invoiced by accounts
   isInvoiced?: boolean;
+  is_demo?: boolean;
   transfer_log?: any[];
   truckChallans?: TruckChallan[];
   // Backend / Legacy compatibility properties
