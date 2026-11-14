@@ -26,7 +26,7 @@ window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-toke
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4322/_fixture/inspect/')).json();
   const open=async()=>{await page.getByRole('button',{name:'Challans',exact:true}).first().click();await page.getByRole('row').filter({hasText:'Synthetic source event'}).getByRole('button',{name:'View',exact:true}).click();};
-  const clickCommand=async(name,action,status=200)=>{const response=page.waitForResponse(response=>response.url().endsWith('/manifest-commands/')&&response.request().postDataJSON().action===action&&response.status()===status);await page.getByRole('button',{name,exact:true}).click();await(await response).finished();await page.waitForFunction(()=>{const input=document.querySelector('[aria-label="Manifest from"]');return !input||!input.disabled;});};
+  const clickCommand=async(name,action,status=200)=>{const response=page.waitForResponse(response=>response.url().endsWith('/manifest-commands/')&&response.request().postDataJSON().action===action&&response.status()===status);await page.getByRole('button',{name,exact:true}).click();const result=await response;await result.finished();await page.waitForFunction(()=>{const input=document.querySelector('[aria-label="Manifest from"]');return !input||!input.disabled;});return result;};
   const masterLine=async name=>(await inspect()).document.lines.find(line=>line.snapshot.alias_name===name);
   const masterRow=name=>page.getByRole('row').filter({has:page.locator(`input[value="${name}"]`)});
   await page.goto('http://127.0.0.1:4321/');await open();
@@ -78,7 +78,10 @@ window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-toke
   });
   await check('Master reduction below truck quantities is rejected without freezing edits; a corrected master updates both copies',async()=>{
    await page.getByRole('button',{name:'View master challan',exact:true}).click();await page.getByRole('button',{name:'Edit Mode',exact:true}).click();await page.getByLabel('Reason for correcting this issued challan',{exact:true}).fill('Reviewed printed alias');
-   const quantity=masterRow('Bulk cable').locator('td').nth(5).locator('input');await quantity.fill('5');await clickCommand('Save Changes','save_master',409);await page.getByText('deallocate_before_reducing_master_line',{exact:true}).waitFor();assert.equal(await quantity.isDisabled(),false);await quantity.fill('6');
+   const quantity=masterRow('Bulk cable').locator('td').nth(5).locator('input');await quantity.fill('5');const rejected=await clickCommand('Save Changes','save_master',409);
+   assert.equal((await rejected.json()).error,'deallocate_before_reducing_master_line');
+   await quantity.locator('xpath=self::input[not(@disabled)]').waitFor();
+   await quantity.fill('6');
    await page.locator('input[value="Bulk cable"]').fill('Printed bulk cable');await clickCommand('Save Changes','save_master');await page.getByText('Challan saved.',{exact:true}).waitFor();
    const saved=await inspect();assert.equal(saved.all_documents.filter(doc=>doc.truck_id).every(doc=>doc.lines.some(line=>line.snapshot.alias_name==='Printed bulk cable')),true);assert.equal(saved.stock,100);
   });
