@@ -182,6 +182,7 @@ import {
 import { Scanner } from './components/Scanner';
 import { ChallanView } from './components/ChallanView';
 import { ProgramDeliveries } from './components/ProgramDeliveries';
+import { ReturnDeliveries } from './components/ReturnDeliveries';
 import { ConsumablePanel } from './components/ConsumablePanel';
 import { TruckManifestPanel } from './components/TruckManifestPanel';
 import { Logo } from './components/Logo';
@@ -5979,10 +5980,10 @@ const App: React.FC = () => {
         }
       : (hasTrucks ? { ...conf, vehicleNumber: '', driverPhone: '' } : conf);
 
-    // Store locally to persist exact current state across the new tab boundary. Always DELIVERY CHALLAN.
+    // Store the current preview for the standalone print tab.
     localStorage.setItem('print_conf_data', JSON.stringify(printConfObj));
     localStorage.setItem('print_document_kind', mode);
-    localStorage.setItem('print_challan_title', 'DELIVERY CHALLAN');
+    localStorage.setItem('print_challan_title', mode === 'return' ? 'RETURN CHALLAN PREVIEW' : 'DELIVERY CHALLAN');
     localStorage.setItem('print_truck_suffix', truckChallan ? `__truckId${truckChallan.id}` : '');
 
     const challanPool = allAssetsRef.current.length > 0 ? allAssetsRef.current : assets;
@@ -8633,15 +8634,10 @@ const App: React.FC = () => {
               const dispatchIds = (conf.challanAssets && conf.challanAssets.length > 0)
                 ? conf.challanAssets.map(String)
                 : [...(conf.assets || []), ...(conf.staged_assets || [])].map(String);
-              // Return challan uses the same dispatched list as its base — edited/added items
-              // should be present on the return too (transfers reduce it further if any).
               const returnIds = (conf.assets || []).map(String);
-              const hasTransfers = hasRecordedQuantities(conf) || (conf.transfer_log && conf.transfer_log.length > 0) ||
-                (dispatchIds.length !== returnIds.length || JSON.stringify([...dispatchIds].sort()) !== JSON.stringify([...returnIds].sort()));
-
-              // The printed challan PDF always says "DELIVERY CHALLAN" — "Return" is just our internal tab label.
-              const detailTitle = 'DELIVERY CHALLAN';
-
+              const showReturnTab = !conf.isAudit;
+              const hasTransferHistory = hasRecordedQuantities(conf) || Boolean(conf.transfer_log?.length) ||
+                dispatchIds.length !== returnIds.length || dispatchIds.some(id => !returnIds.includes(id));
               const trucks = conf.truckChallans || [];
               const hasTrucks = trucks.length > 0;
               const activeTruck = activeTruckChallanId ? trucks.find(t => t.id === activeTruckChallanId) : null;
@@ -8650,7 +8646,9 @@ const App: React.FC = () => {
               const archivedChallan = conf.challan_documents?.some(row =>
                 row.scope === (activeTruck ? `truck-${activeTruck.id}` : 'master') && row.provenance === 'reviewed_legacy_archive');
 
-              const targetAssetIds = challanAssetIds(conf, hasTransfers ? challanDetailTab : 'dispatch', activeTruck);
+              const returnMode = showReturnTab && challanDetailTab === 'return';
+              const detailTitle = returnMode ? 'RETURN CHALLAN PREVIEW' : 'DELIVERY CHALLAN';
+              const targetAssetIds = challanAssetIds(conf, returnMode ? 'return' : 'dispatch', activeTruck);
 
               // Guaranteed mapping: Every ID in targetAssetIds gets an asset object.
               // Multi-tier fallback ensures no item can EVER disappear due to pool lookup miss.
@@ -8739,8 +8737,8 @@ const App: React.FC = () => {
                       ← Back to List
                     </button>
 
-                    {/* Dual Challan Tab Toggle if transfers exist */}
-                    {hasTransfers && (!activeTruck || !conf.truck_manifest) && (
+                    {/* Live preview and saved copies share the return tab. */}
+                    {showReturnTab && (!activeTruck || !conf.truck_manifest) && (
                       <div className="flex bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800 shadow-xl">
                         <button
                           onClick={() => setChallanDetailTab('dispatch')}
@@ -8786,11 +8784,11 @@ const App: React.FC = () => {
                         </button>
                       )}
                       <button
-                        onClick={() => handlePrintChallan(conf, hasTransfers ? challanDetailTab : 'dispatch', false, activeTruck, challanPrintDiscount.current)}
+                        onClick={() => handlePrintChallan(conf, returnMode ? 'return' : 'dispatch', false, activeTruck, challanPrintDiscount.current)}
                         className="px-6 py-3 bg-sky-500 hover:bg-sky-400 text-white rounded-xl font-bold uppercase text-xs shadow-lg shadow-sky-500/20 transition-all flex items-center gap-2"
                       >
                         <i aria-hidden="true" className="fa-solid fa-print"></i>
-                        Print {activeTruck ? activeTruck.label : (hasTransfers ? (challanDetailTab === 'return' ? 'Return Challan' : 'Dispatch Challan') : 'Challan')}
+                        Print {activeTruck ? activeTruck.label : (returnMode ? 'Return Challan Preview' : hasTransferHistory ? 'Dispatch Challan' : 'Challan')}
                       </button>
                     </div>
                   </div>
@@ -9340,7 +9338,15 @@ const App: React.FC = () => {
                   })()}
 
                   <div className="bg-white p-8 min-h-screen container mx-auto rounded-3xl shadow-2xl challan-container">
-                    {['admin', 'boss', 'godown_incharge', 'accounts'].includes(user?.role || '') && <ProgramDeliveries
+                    {returnMode && !activeTruck && canReadHistory && <ReturnDeliveries
+                      key={`return-deliveries-${user?.user_id || user?.email}-${conf.id}`}
+                      accountId={String(user?.user_id || user?.email || '')}
+                      conferenceId={conf.id}
+                      canIssue={user?.role !== 'accounts'}
+                      apiBase={API_BASE}
+                      apiFetch={apiFetch}
+                    />}
+                    {!returnMode && canReadHistory && <ProgramDeliveries
                       key={`deliveries_${user?.user_id || user?.email || ''}_${conf.id}_${activeTruck?.id || 'master'}`}
                       accountId={String(user?.user_id || user?.email || '')}
                       conferenceId={String(conf.id)} truckId={activeTruck?.id}
@@ -9350,7 +9356,7 @@ const App: React.FC = () => {
                     />}
 
                     <ChallanView
-                      key={`${conf.id}_${activeTruck ? activeTruck.id : 'master'}_${hasTransfers && challanDetailTab === 'return' ? 'return' : 'dispatch'}`}
+                      key={`${conf.id}_${activeTruck ? activeTruck.id : 'master'}_${returnMode ? 'return' : 'dispatch'}`}
                       draftAccountId={String(user?.user_id || user?.email || "")}
                       booking={effectiveBooking}
                       onPrintDiscountChange={setChallanPrintDiscount}
@@ -9374,9 +9380,9 @@ const App: React.FC = () => {
                       } : undefined}
                       canImportSources={confTicketSourceState.status === 'ready' && confTicketSourceState.eventId === conf.id}
                       requiresCorrectionReason={Boolean(conf.truck_manifest && conf.challan_documents?.some(doc => doc.truck_id && doc.state === 'issued'))}
-                      sourcesReady={(hasTransfers && challanDetailTab === 'return') || challanSourcesReady(conf, activeTruck?.id)}
+                      sourcesReady={(returnMode) || challanSourcesReady(conf, activeTruck?.id)}
                       onRetrySources={() => fetchConferenceSubrentalTickets(conf.id)}
-                      useSavedDocument={!(hasTransfers && challanDetailTab === 'return')}
+                      useSavedDocument={!(returnMode)}
                       onSaveDocument={(scope, payload) => handleSaveChallanDocument(conf.id, scope, payload)}
                       challanTitle={detailTitle}
                       companySettings={companySettings}
@@ -9388,8 +9394,8 @@ const App: React.FC = () => {
                       localStorageSuffix={activeTruck ? `__truckId${activeTruck.id}` : undefined}
                       legacyStorageSuffix={activeTruck ? `__truck${activeTruck.truck_number}` : undefined}
                       
-                      subrentalTickets={hasTransfers && challanDetailTab === 'return' ? [] : confSubrentalTickets}
-                      readOnly={user?.role === 'accounts' || user?.role === 'technician' || Boolean(conf.truck_manifest && activeTruck) || (hasTransfers && challanDetailTab === 'return')}
+                      subrentalTickets={returnMode ? [] : confSubrentalTickets}
+                      readOnly={user?.role === 'accounts' || user?.role === 'technician' || Boolean(conf.truck_manifest && activeTruck) || (returnMode)}
 
                   />
                 </div>
