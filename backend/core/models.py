@@ -897,3 +897,34 @@ class ProgramDelivery(models.Model):
     class Meta:
         ordering = ['-id']
         constraints = [models.UniqueConstraint(fields=['conference', 'reference'], name='unique_program_delivery_reference')]
+
+
+class ReturnDelivery(models.Model):
+    """One issued return journey with a frozen transport and equipment snapshot."""
+
+    conference = models.ForeignKey(Conference, on_delete=models.PROTECT, related_name='return_deliveries')
+    number = models.CharField(max_length=50, unique=True)
+    snapshot = models.JSONField()
+    issued_at = models.DateTimeField(auto_now_add=True)
+    receipt = models.OneToOneField(MovementReceipt, on_delete=models.PROTECT, related_name='return_delivery')
+
+    class Meta:
+        ordering = ['-pk']
+
+
+class ReturnDeliveryLine(models.Model):
+    """Claim a Packup movement once, even after Crosscheck or a later dispatch."""
+
+    delivery = models.ForeignKey(ReturnDelivery, on_delete=models.PROTECT, related_name='lines')
+    physical_movement = models.OneToOneField(PhysicalMovement, null=True, blank=True,
+                                             on_delete=models.PROTECT, related_name='return_delivery_line')
+    quantity_movement = models.OneToOneField(QuantityMovement, null=True, blank=True,
+                                             on_delete=models.PROTECT, related_name='return_delivery_line')
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            **{'condition' if django.VERSION >= (5, 1) else 'check':
+               (models.Q(physical_movement__isnull=False, quantity_movement__isnull=True)
+                | models.Q(physical_movement__isnull=True, quantity_movement__isnull=False))},
+            name='return_line_exactly_one_movement',
+        )]

@@ -17,7 +17,7 @@ from rest_framework.response import Response
 from .asset_commands import CommandError, canonical_conference
 from .models import (Asset, Conference, TruckChallan, SubrentalTicketItem, SubrentalCompany,
                      ChallanDocument, ChallanLine, ChallanRevision, MovementReceipt,
-                     ChallanNumberLock, ChallanNumberReservation, CompanySettings)
+                     ChallanNumberLock, ChallanNumberReservation, CompanySettings, ReturnDelivery)
 from .permissions import WAREHOUSE_ROLES, get_business_role
 from .challan_lock import require_challan_edit
 
@@ -94,6 +94,8 @@ def reserve_number(number, event, truck, document=None):
         number = allocate_number()
     if (Conference.objects.exclude(pk=event.pk).filter(challan_number=number).exists()
             or TruckChallan.objects.exclude(conference=event).filter(challan_number=number).exists()):
+        raise CommandError('number_already_used')
+    if ReturnDelivery.objects.filter(number=number).exists():
         raise CommandError('number_already_used')
     reservation, _ = ChallanNumberReservation.objects.get_or_create(number=number, defaults={'conference': event})
     if reservation.conference_id != event.pk:

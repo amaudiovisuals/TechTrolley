@@ -3,7 +3,7 @@ const {spawn}=require('node:child_process'),{pathToFileURL}=require('node:url');
 const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./browser_runtime.cjs');
 (async()=>{
  const backend=spawn(process.env.TT_TEST_PYTHON||'python3',['-B',path.join(__dirname,'quantity_transfer_test_server.py')],{cwd:root,stdio:['ignore','pipe','pipe']});
- let log='',server,browser,page,closing=false,transport=Promise.resolve(),timer,loseReply=true;const checks=[],errors=[],transfers=[];
+ let log='',server,browser,page,closing=false,transport=Promise.resolve(),timer,loseReply=true,loseReturnReply=true;const checks=[],errors=[],transfers=[],returns=[];
  const check=async(name,run)=>{console.error('Checking: '+name);await run();checks.push(name);};
  try{
   await new Promise((resolve,reject)=>{timer=setTimeout(()=>reject(Error(log)),15000);backend.stdout.on('data',d=>{log+=d;if(log.includes('SYNTHETIC_QUANTITY_TRANSFER_READY')){clearTimeout(timer);resolve();}});backend.stderr.on('data',d=>log+=d);backend.once('exit',code=>reject(Error(`Backend ${code}: ${log}`)));});
@@ -16,8 +16,15 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
    const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'};
    if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
    const transfer=req.method()==='POST'&&url.pathname.endsWith('/quantity-transfers/');if(transfer)transfers.push(req.postDataJSON());
+   const issueReturn = req.method() === 'POST' && url.pathname.endsWith('/return-deliveries/');
+   if (issueReturn) returns.push(req.postDataJSON());
    try{const task=transport.then(()=>route.fetch({url:`http://127.0.0.1:4412${url.pathname}${url.search}`}));transport=task.then(()=>{},()=>{});const response=await task;
     if(transfer&&loseReply){loseReply=false;assert.equal(response.status(),200,await response.text());return route.abort('failed');}
+    if (issueReturn && loseReturnReply) {
+     loseReturnReply = false;
+     assert.equal(response.status(), 201, await response.text());
+     return route.abort('failed');
+    }
     return route.fulfill({response,headers:{...response.headers(),...headers}});
    }catch(e){if(!closing)errors.push(e.message);return route.abort().catch(()=>{});}
   });
@@ -80,6 +87,41 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
     await modal.getByRole('button',{name:new RegExp(`^${action.replace('_',' ')}`,'i')}).click();assert.equal((await response).status(),200);await modal.waitFor({state:'hidden'});};
    await scan('return');await page.getByRole('button',{name:'Crosscheck',exact:true}).click();await scan('verify_return');
    const state=await inspect();assert.equal(state.source,12);assert.equal(state.target.dispatched,5);assert.equal(state.target.verified_total,3);assert.equal(state.available,83);assert.equal(state.packets[0].customer_document.rows[0].quantity,8);
+  });
+  await check('Verified Packup movement issues one frozen return paper and recovers an interrupted save',async()=>{
+   await page.reload();
+   await openChallan('Quantity target B');
+   await page.getByRole('button',{name:/Return Challan \(/}).click();
+   await page.getByRole('button',{name:'New return challan',exact:true}).click();
+   await page.setViewportSize({width:390,height:844});
+   assert.equal(await page.getByLabel('Returning from',{exact:true}).inputValue(),'Venue B road');
+   await page.getByLabel('Return vehicle number',{exact:true}).fill('RETURN-TEST-1');
+   await page.getByRole('button',{name:'Select all Packup records',exact:true}).click();
+   await page.getByRole('button',{name:'Issue return challan (3)',exact:true}).click();
+   const retry = page.getByRole('button',{name:'Retry saving same return challan',exact:true});
+   await retry.waitFor();
+   await page.setViewportSize({width:1400,height:1100});
+   await page.reload();
+   await openChallan('Quantity target B');
+   await page.getByRole('button',{name:/Return Challan \(/}).click();
+   await retry.click();
+   const frame = page.frameLocator('iframe[title^="Saved return "]');
+   await frame.getByText('Return Challan',{exact:true}).waitFor();
+   assert.equal(await frame.getByRole('cell',{name:'3',exact:true}).count(),1);
+   await frame.getByText('Vehicle: RETURN-TEST-1',{exact:true}).waitFor();
+   assert.equal(returns.length,2);
+   assert.deepEqual(returns[0],returns[1]);
+   const state = await inspect();
+   assert.equal(state.target.verified_total,3);
+   assert.equal(state.packets[0].customer_document.rows[0].quantity,8);
+   const saved = await page.evaluate(async eventId => {
+    const response = await fetch('/api/conferences/' + eventId + '/return-deliveries/', {
+     headers: {Authorization: 'Token ' + localStorage.getItem('token')},
+    });
+    return response.json();
+   },state.target_id);
+   assert.equal(saved.length,1);
+   assert.equal(saved[0].snapshot.rows[0].quantity,3);
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_App_and_Django:true,disposable_database:true,production_changed:false},null,2));
  }catch(e){console.error(log.slice(-2500));if(page)console.error((await page.locator('body').innerText()).slice(-3500));throw e;}
