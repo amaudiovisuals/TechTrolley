@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 
 from .asset_commands import CommandError, execute_command
 from .challan_documents import reserve_number
-from .models import Asset, CompanySettings, Conference, ReturnDelivery, SubrentalCompany
+from .models import Asset, CompanySettings, Conference, ReturnDelivery, ReturnDeliveryLine, SubrentalCompany
 from .quantity_commands import execute_quantity_command
 from .return_deliveries import issue_return
 from .tests_program_deliveries import reviewed
@@ -116,6 +116,56 @@ class ReturnDeliveryTests(TestCase):
         response = self.client.post(f'/api/conferences/{self.target.pk}/return-deliveries/', body, format='json')
         self.assertEqual(response.status_code, 409)
         self.assertFalse(ReturnDelivery.objects.exists())
+
+    def test_split_bulk_return_across_trucks_is_atomic_and_keeps_crosscheck_balances(self):
+        self.physical('stage', self.unit)
+        self.physical('dispatch', self.unit)
+        self.physical('return', self.unit)
+        self.bulk_move('stage', 6)
+        self.bulk_move('dispatch', 6)
+        self.bulk_move('return', 6)
+        body = self.payload(self.preview())
+        physical, bulk = body.pop('rows')
+        truck = {name: body.pop(name) for name in ('reference', 'vehicle_number', 'driver_phone')}
+        body['loads'] = [
+            {**truck, 'reference': 'Truck A', 'rows': [{'key': bulk, 'quantity': 2}]},
+            {**truck, 'reference': 'Truck B', 'vehicle_number': 'TRUCK-B',
+             'rows': [{'key': physical, 'quantity': 1}, {'key': bulk, 'quantity': 5}]},
+        ]
+        self.assertEqual(self.issue(body).status_code, 409)
+        self.assertFalse(ReturnDelivery.objects.exists())
+        body['loads'][1]['rows'][1]['quantity'] = 4
+        result = self.issue(body)
+        self.assertEqual(result.status_code, 201, result.data)
+        first, second = result.data['deliveries']
+        self.assertNotEqual(first['number'], second['number'])
+        self.assertEqual([row['quantity'] for row in first['snapshot']['rows']], [2])
+        self.assertEqual([row['quantity'] for row in second['snapshot']['rows']], [1, 4])
+        self.assertEqual(ReturnDeliveryLine.objects.filter(quantity_movement__isnull=False).count(), 2)
+        self.assertEqual(self.preview()['source']['rows'], [])
+        self.assertEqual(self.event.quantity_allocations.get().awaiting_verification, 6)
+        self.bulk_move('verify_return', 2)
+        balance = self.event.quantity_allocations.get()
+        self.assertEqual((balance.verified_total, balance.awaiting_verification), (2, 4))
+        self.assertEqual(self.issue(body).data, result.data)
+
+    def test_single_truck_can_leave_bulk_remainder_and_find_legacy_claims(self):
+        self.bulk_move('stage', 10)
+        self.bulk_move('dispatch', 10)
+        self.bulk_move('return', 10)
+        body = self.payload(self.preview())
+        key, = body.pop('rows')
+        truck = {name: body.pop(name) for name in ('reference', 'vehicle_number', 'driver_phone')}
+        body['loads'] = [{**truck, 'rows': [{'key': key, 'quantity': 3}]}]
+        self.assertEqual(self.issue(body).status_code, 201)
+        preview = self.preview()
+        self.assertEqual(preview['source']['rows'][0]['quantity'], 7)
+        self.assertEqual(self.issue(self.payload(preview)).status_code, 201)
+        self.assertEqual(self.preview()['source']['rows'], [])
+
+        # Prior releases used NULL as an implicit claim of the entire movement.
+        ReturnDeliveryLine.objects.filter(quantity=7).update(quantity=None)
+        self.assertEqual(self.preview()['source']['rows'], [])
 
     def test_accounts_can_read_but_cannot_issue(self):
         account = User.objects.create_user('accounts-return')

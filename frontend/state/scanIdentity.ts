@@ -1,6 +1,6 @@
 import type { Asset } from '../types';
 const normalize = (value: unknown) => String(value ?? '').trim().toUpperCase().replace(/\s+/g, '');
-export function resolveScan(text: string, pool: Asset[]) {
+export function resolveScan<T extends Pick<Asset, 'id' | 'sku' | 'barcode' | 'qrCode' | 'serialNumber'>>(text: string, pool: T[]) {
   const input = text.trim();
   if (!input || input.length > 2048) return { kind: 'invalid' as const };
   // Known label formats are accepted; arbitrary words/numbers are never DB IDs.

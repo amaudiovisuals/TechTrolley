@@ -1,10 +1,11 @@
-"""Issue one return challan from selected Packup movements, independently of custody."""
+"""Allocate recorded Packup equipment to return challans, independently of custody."""
 
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -17,7 +18,7 @@ from .challan_documents import allocate_number
 from .challan_lock import INDIA, challans_locked
 from .inventory_ownership import warehouse_managed
 from .models import (
-    ChallanLine, ChallanNumberReservation, CompanySettings, Conference, MovementReceipt,
+    Asset, ChallanLine, ChallanNumberReservation, CompanySettings, Conference, MovementReceipt,
     QuantityMovement, ReturnDelivery, ReturnDeliveryLine,
 )
 from .program_deliveries import access, digest, label, party
@@ -41,15 +42,24 @@ def source(event):
         return_delivery_line__isnull=True,
     )
     quantities = QuantityMovement.objects.filter(
-        allocation__conference=event, action='return', quantity__gt=0, return_delivery_line__isnull=True,
+        allocation__conference=event, action='return', quantity__gt=0,
     )
+    legacy_claims = ReturnDeliveryLine.objects.filter(
+        delivery__conference=event, quantity_movement__isnull=False, quantity__isnull=True,
+    ).values('quantity_movement_id')
+    quantities = quantities.exclude(pk__in=legacy_claims)
+    # Legacy lines claimed the whole movement. New lines claim their explicit quantities.
+    allocated = dict(ReturnDeliveryLine.objects.filter(
+        delivery__conference=event, quantity_movement__isnull=False, quantity__isnull=False,
+    ).values('quantity_movement_id').annotate(total=Sum('quantity')).values_list('quantity_movement_id', 'total'))
     items = []
     for movement in physical.select_related('asset__subrental_company', 'receipt__actor'):
         if eligible_asset(movement.asset):
             items.append(('physical', movement, movement.asset, 1))
     for movement in quantities.select_related('allocation__asset__subrental_company', 'receipt__actor'):
-        if eligible_asset(movement.allocation.asset):
-            items.append(('quantity', movement, movement.allocation.asset, movement.quantity))
+        remaining = movement.quantity - allocated.get(movement.pk, 0)
+        if remaining > 0 and eligible_asset(movement.allocation.asset):
+            items.append(('quantity', movement, movement.allocation.asset, remaining))
 
     company = CompanySettings.objects.order_by('pk').first()
     lines = ChallanLine.objects.filter(
@@ -120,14 +130,40 @@ def review_hash(review):
     return digest({key: value for key, value in review.items() if key not in {'reference', 'return_date'}})
 
 
+def parse_loads(data, split):
+    if not split:
+        return [{**data, 'rows': {key: None for key in data['rows']}}]
+    raw_loads = data['loads']
+    if not isinstance(raw_loads, list) or not 1 <= len(raw_loads) <= 20:
+        raise ValidationError('Choose between 1 and 20 return trucks.')
+    loads, line_count = [], 0
+    for raw in raw_loads:
+        if not isinstance(raw, dict) or set(raw) != {'reference', 'vehicle_number', 'driver_phone', 'rows'}:
+            raise ValidationError('Review the details for each return truck.')
+        raw_rows = raw['rows']
+        if not isinstance(raw_rows, list) or any(
+            not isinstance(row, dict) or set(row) != {'key', 'quantity'}
+            or type(row['quantity']) is not int or row['quantity'] <= 0 for row in raw_rows
+        ):
+            raise ValidationError('Enter a positive whole quantity for each truck item.')
+        parse_keys([row['key'] for row in raw_rows])
+        line_count += len(raw_rows)
+        if line_count > 2500:
+            raise ValidationError('Select up to 2500 equipment rows per issue.')
+        loads.append({**raw, 'rows': {row['key']: row['quantity'] for row in raw_rows}})
+    return loads
+
+
 @transaction.atomic
 def issue_return(user, event_id, data):
-    if not isinstance(data, dict) or set(data) != {
-        'request_key', 'source_hash', 'rows', 'reference', 'return_date',
-        'origin', 'destination', 'vehicle_number', 'driver_phone',
-    }:
+    common_fields = {'request_key', 'source_hash', 'return_date', 'origin', 'destination'}
+    split = isinstance(data, dict) and 'loads' in data
+    load_fields = {'loads'} if split else {'rows', 'reference', 'vehicle_number', 'driver_phone'}
+    if not isinstance(data, dict) or set(data) != common_fields | load_fields:
         raise ValidationError('Invalid return challan request.')
-    keys = parse_keys(data['rows'])
+    if not split:
+        parse_keys(data['rows'])
+    loads = parse_loads(data, split)
     try:
         request_key = UUID(str(data['request_key']))
         return_date = date.fromisoformat(data['return_date'])
@@ -140,40 +176,69 @@ def issue_return(user, event_id, data):
     if not created:
         if receipt.payload_hash != fingerprint:
             raise CommandError('request_id_reused')
-        return serialize(receipt.return_delivery), 200
+        return issue_response(list(receipt.return_deliveries.order_by('pk')), split), 200
 
     event = lock_conference_for_write(event_id, {})
     require_issuable(event)
     preview = source(event)
     if data['source_hash'] != review_hash(preview):
         raise CommandError('return_preview_changed')
-    selected = set(data['rows'])
-    rows = [row for row in preview['rows'] if row['key'] in selected]
-    if len(rows) != len(keys):
-        raise CommandError('return_rows_unavailable')
     if not preview['issuer']['name']:
         raise ValidationError('Set up the issuing company before saving a return challan.')
-    snapshot = {
-        'version': 1, 'rows': rows, 'issuer': preview['issuer'], 'program': preview['program'],
-        'reference': label(data['reference'], 100, required=True),
+    available = {row['key']: row for row in preview['rows']}
+    remaining = {key: row['quantity'] for key, row in available.items()}
+    common = {
+        'version': 1, 'issuer': preview['issuer'], 'program': preview['program'],
         'origin': label(data['origin'], 4000, required=True),
         'destination': label(data['destination'], 4000, required=True),
         'return_date': return_date.isoformat(),
-        'vehicle_number': label(data['vehicle_number'], 50), 'driver_phone': label(data['driver_phone'], 50),
-        'total': f'{sum(Decimal(row["unit_value"]) * row["quantity"] for row in rows):.2f}',
         'issued_by': user.get_username(),
     }
-    number = allocate_number()
-    ChallanNumberReservation.objects.create(number=number, conference=event)
-    delivery = ReturnDelivery.objects.create(
-        conference=event, number=number, snapshot=snapshot, receipt=receipt,
-    )
-    ReturnDeliveryLine.objects.bulk_create([
-        ReturnDeliveryLine(delivery=delivery, **{f'{kind}_movement_id': pk}) for kind, pk in keys
-    ])
-    receipt.result = {'return_delivery_id': delivery.pk, 'number': delivery.number}
+    snapshots = []
+    for load in loads:
+        rows = []
+        for key, quantity in load['rows'].items():
+            if key not in available:
+                raise CommandError('return_rows_unavailable')
+            amount = remaining[key] if quantity is None else quantity
+            if amount <= 0 or amount > remaining[key]:
+                raise CommandError('return_quantity_exceeded')
+            remaining[key] -= amount
+            rows.append({**available[key], 'quantity': amount})
+        snapshots.append({
+            **common, 'rows': rows,
+            'reference': label(load['reference'], 100, required=True),
+            'vehicle_number': label(load['vehicle_number'], 50, required=len(loads) > 1),
+            'driver_phone': label(load['driver_phone'], 50),
+            'total': f'{sum(Decimal(row["unit_value"]) * row["quantity"] for row in rows):.2f}',
+        })
+
+    deliveries = []
+    for snapshot in snapshots:
+        number = allocate_number()
+        ChallanNumberReservation.objects.create(number=number, conference=event)
+        delivery = ReturnDelivery.objects.create(
+            conference=event, number=number, snapshot=snapshot, receipt=receipt,
+        )
+        claims = []
+        for row in snapshot['rows']:
+            kind, pk = row['key'].split(':')
+            claims.append(ReturnDeliveryLine(
+                delivery=delivery, quantity=row['quantity'], **{f'{kind}_movement_id': int(pk)},
+            ))
+        ReturnDeliveryLine.objects.bulk_create(claims)
+        deliveries.append(delivery)
+    receipt.result = {'return_delivery_ids': [delivery.pk for delivery in deliveries]} if split else {
+        'return_delivery_id': deliveries[0].pk, 'number': deliveries[0].number,
+    }
     receipt.save(update_fields=['result'])
-    return serialize(delivery), 201
+    return issue_response(deliveries, split), 201
+
+
+def issue_response(deliveries, split):
+    if split:
+        return {'deliveries': [serialize(delivery) for delivery in deliveries]}
+    return serialize(deliveries[0])
 
 
 @api_view(['GET'])
@@ -183,7 +248,13 @@ def return_preview(request, pk):
     event = get_object_or_404(Conference, pk=pk)
     require_issuable(event)
     preview = source(event)
-    return Response({'source': preview, 'source_hash': review_hash(preview)})
+    source_hash = review_hash(preview)
+    identities = Asset.objects.in_bulk({row['asset_id'] for row in preview['rows']})
+    for row in preview['rows']:
+        asset = identities.get(row['asset_id'])
+        if asset:
+            row.update(barcode=asset.barcode, qr_code=asset.qr_code, serial_number=asset.serial_number)
+    return Response({'source': preview, 'source_hash': source_hash})
 
 
 @api_view(['GET', 'POST'])
@@ -200,6 +271,7 @@ def return_deliveries(request, pk):
             'request_id_reused': 'This request was already used.',
             'return_preview_changed': 'Packup records or costs changed. Review the latest returns.',
             'return_rows_unavailable': 'A selected Packup row is unavailable for this challan.',
+            'return_quantity_exceeded': 'The truck assignments exceed the recorded Packup quantity.',
         }
         return Response({'detail': messages[error.code]}, status=error.status)
     return Response(result, status=status)
