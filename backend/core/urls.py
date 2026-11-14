@@ -1,3 +1,4 @@
+from .skip_packup import skip_packup
 from . import program_deliveries, address_book, led_cases, return_deliveries
 from .asset_commands import asset_commands
 from .offline_packages import offline_package
@@ -33,6 +34,7 @@ urlpatterns = [
     path('saved-customers/<int:pk>/', address_book.customer_detail, name='saved_customer'),
     path('saved-venues/', address_book.venues, name='saved_venues'),
     path('saved-venues/<int:pk>/', address_book.venue_detail, name='saved_venue'),
+    path('conferences/<int:pk>/skip-packup/', skip_packup, name='skip_packup'),
     path('conferences/<int:pk>/return-deliveries/', return_deliveries.return_deliveries, name='return_deliveries'),
     path('conferences/<int:pk>/return-deliveries/preview/', return_deliveries.return_preview, name='return_preview'),
     path('conferences/<int:pk>/deliveries/', program_deliveries.program_deliveries, name='program_deliveries'),
