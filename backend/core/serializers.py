@@ -302,10 +302,14 @@ class ConferenceSerializer(serializers.ModelSerializer):
     expected_revision = serializers.IntegerField(required=False, write_only=True, min_value=0)
     class Meta:
         model = Conference
-        read_only_fields = ['revision', 'lifecycle_state', 'completed_at', 'completed_by', 'archived_at', 'archived_by']
+        read_only_fields = ['revision', 'lifecycle_state', 'completed_at', 'completed_by', 'archived_at', 'archived_by', 'is_demo']
         fields = '__all__'
 
     def validate(self, data):
+        if 'is_demo' in self.initial_data:
+            raise serializers.ValidationError({'is_demo': 'Use the Demo billing command.'})
+        if self.instance and self.instance.is_demo and data.get('is_invoiced') is True:
+            raise serializers.ValidationError({'is_invoiced': 'Remove Demo status before marking the program invoiced.'})
         from .challan_lock import challans_locked
         if self.instance and challans_locked(self.instance):
             paper_fields = {

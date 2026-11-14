@@ -27,6 +27,10 @@ with tempfile.TemporaryDirectory(prefix='tt-quantity-transfers-') as media:
     call_command('migrate',verbosity=0)
     user=User.objects.create_user('transfer-admin',email='transfer@example.test',is_staff=False);user.profile.role='admin';user.profile.save()
     Token.objects.create(user=user,key='synthetic-quantity-transfer-token')
+    accounts = User.objects.create_user('transfer-accounts', email='transfer-accounts@example.test')
+    accounts.profile.role = 'accounts'
+    accounts.profile.save()
+    Token.objects.create(user=accounts, key='synthetic-quantity-accounts-token')
     CompanySettings.objects.create(name='Synthetic Pvt Ltd',address='Synthetic godown road',gst_number='PVT-GST')
     owner=SubrentalCompany.objects.create(name='Synthetic AM',address='Synthetic supplier road',gst_number='AM-GST',inventory_mode='shared_warehouse')
     bulk=Asset.objects.create(sku='TRANSFER-CABLE',qr_code='TRANSFER-CABLE',alias_name='Transfer cable master',quantity=100,type='Cable',subrental_company=owner)

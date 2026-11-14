@@ -28,7 +28,13 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
     return route.fulfill({response,headers:{...response.headers(),...headers}});
    }catch(e){if(!closing)errors.push(e.message);return route.abort().catch(()=>{});}
   });
-  await context.addInitScript(()=>{localStorage.setItem('token','synthetic-quantity-transfer-token');localStorage.setItem('user',JSON.stringify({user_id:1,email:'transfer@example.test',role:'admin',is_staff:false}));});
+  await context.addInitScript(() => {
+   const accounts = localStorage.getItem('test-billing-role') === 'accounts';
+   localStorage.setItem('token', accounts ? 'synthetic-quantity-accounts-token' : 'synthetic-quantity-transfer-token');
+   localStorage.setItem('user',JSON.stringify(accounts
+    ? {user_id:2,email:'transfer-accounts@example.test',role:'accounts',is_staff:false}
+    : {user_id:1,email:'transfer@example.test',role:'admin',is_staff:false}));
+  });
   page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   const inspect=async()=>(await page.request.get('http://127.0.0.1:4412/_fixture/inspect/')).json();
   const open=async name=>{await page.getByRole('button',{name:'Conference',exact:true}).first().click();await page.getByRole('row').filter({hasText:name}).getByTitle('Edit Conference Details',{exact:true}).click();};
@@ -171,6 +177,39 @@ const root=path.resolve(__dirname,'../..'),{chromium,launchOptions}=require('./b
     return response.json();
    },state.target_id);
    assert.deepEqual(preview.source.rows.map(row=>row.quantity),[5]);
+  });
+  await check('Accounts can mark and filter Demo, restore billing, and still view operational challans',async()=>{
+   await page.evaluate(() => localStorage.setItem('test-billing-role','accounts'));
+   await page.reload();
+   await page.getByRole('button',{name:'Challans',exact:true}).first().click();
+   const event = page.getByRole('row').filter({hasText:'Quantity target B'});
+   await page.getByText(/Invoice Pending\s*:\s*2/).waitFor();
+   const mark = savedResponse('/demo-billing/');
+   await event.getByRole('button',{name:'Mark Demo',exact:true}).click();
+   assert.equal((await mark).status(),200);
+   await event.getByText('Demo · No billing required',{exact:true}).waitFor();
+   assert.equal(await event.getByRole('button',{name:'Pending Invoice',exact:true}).count(),0);
+   await page.getByText(/Invoice Pending\s*:\s*1/).waitFor();
+   const filter=page.getByLabel('Billing status',{exact:true});
+   await filter.selectOption('pending');
+   await event.waitFor({state:'hidden'});
+   await filter.selectOption('demo');
+   await event.getByRole('button',{name:'View',exact:true}).click();
+   await paper().locator('tr').filter({hasText:'Transfer cable master'}).waitFor();
+   await page.getByText('Demo · No billing required',{exact:true}).waitFor();
+   await page.getByRole('button',{name:/Return Challan \(/}).click();
+   const returns=page.getByRole('region',{name:'Saved return challans',exact:true});
+   await returns.getByText(/RETURN-TEST-2/).waitFor();
+   const restore = savedResponse('/demo-billing/');
+   await page.getByRole('button',{name:'Remove Demo',exact:true}).click();
+   assert.equal((await restore).status(),200);
+   await page.getByText('Demo · No billing required',{exact:true}).waitFor({state:'hidden'});
+   await page.getByRole('button',{name:/Back to List/}).click();
+   await filter.selectOption('pending');
+   const invoice=page.waitForResponse(response=>response.request().method()==='PATCH'&&response.url().match(/\/conferences\/2\/$/));
+   await event.getByRole('button',{name:'Pending Invoice',exact:true}).click();
+   assert.equal((await invoice).status(),200);
+   await event.waitFor({state:'hidden'});
   });
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:checks.length,checks,actual_App_and_Django:true,disposable_database:true,production_changed:false},null,2));
  }catch(e){console.error(log.slice(-2500));if(page)console.error((await page.locator('body').innerText()).slice(-3500));throw e;}
