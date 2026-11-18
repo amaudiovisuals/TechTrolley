@@ -8576,7 +8576,8 @@ const App: React.FC = () => {
                                const isOpen = !!expandedGroups[gKey];
                                return (
                                  <div key={gKey} className="relative rounded-2xl border border-orange-100 bg-orange-50/10 overflow-hidden shadow-sm">
-                                   <button onClick={() => toggleGroup(gKey)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-orange-50/20 transition-all">
+                                   <div className="flex items-center gap-2 pr-3">
+                                   <button aria-expanded={isOpen} onClick={() => toggleGroup(gKey)} className="min-w-0 flex-1 flex items-center gap-3 px-4 py-3 hover:bg-orange-50/20 transition-all">
                                      <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center text-sm border border-orange-200 shrink-0">
                                        <i aria-hidden="true" className="fa-solid fa-box"></i>
                                      </div>
@@ -8584,6 +8585,18 @@ const App: React.FC = () => {
                                      <span className="shrink-0 px-2 py-0.5 bg-orange-500 text-white text-[9px] font-black rounded-full">x {eventQuantityTotal(conferenceFormData, items.map(i => i.id), 'crosscheck')}</span>
                                      <i aria-hidden="true" className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-slate-400 text-[10px] shrink-0`}></i>
                                    </button>
+                                   {canVerifyReturns(user) && <button type="button"
+                                     aria-label={`Verify receipt for ${name}`}
+                                     title={items.length === 1 ? 'Verify receipt' : 'Choose equipment to verify'}
+                                     disabled={quantitySaving || pendingMovementCount > 0 || eventFormSealed}
+                                     onClick={() => {
+                                       if (items.length === 1) verifyCrosscheckAsset(items[0]);
+                                       else setExpandedGroups(previous => ({ ...previous, [gKey]: true }));
+                                     }}
+                                     className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-xl bg-orange-600 text-white disabled:opacity-50">
+                                     <i aria-hidden="true" className="fa-solid fa-check"></i>
+                                   </button>}
+                                   </div>
                                    {isOpen && (
                                      <div className="border-t border-orange-100 divide-y divide-orange-50">
                                        {items.map(asset => (
@@ -8605,7 +8618,7 @@ const App: React.FC = () => {
                                                  }`} title="Report Issue">
                                                  <i aria-hidden="true" className="fa-solid fa-circle-exclamation text-[9px]"></i>
                                                </button>
-                                               <button onClick={() => verifyCrosscheckAsset(asset)} className="w-7 h-7 bg-orange-500 text-white rounded-lg flex items-center justify-center transition-all active:scale-95" title="Verify Receipt">
+                                               <button type="button" disabled={quantitySaving || pendingMovementCount > 0 || eventFormSealed} aria-label={`Verify receipt ${asset.sku || asset.serialNumber}`} onClick={() => verifyCrosscheckAsset(asset)} className="w-[44px] h-[44px] bg-orange-600 text-white rounded-lg flex items-center justify-center transition-all active:scale-95" title="Verify Receipt">
                                                  <i aria-hidden="true" className="fa-solid fa-check text-[9px]"></i>
                                                </button>
                                              </div>
