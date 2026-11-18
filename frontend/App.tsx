@@ -2079,7 +2079,7 @@ const App: React.FC = () => {
         } else {
           if (res.status === 409) { setEventDraftConflict(true); await fetchConferences(); }
           const errData = await res.json().catch(() => ({}));
-          alert(`Failed to save conference. Status: ${res.status}\n${JSON.stringify(errData)}`);
+          alert(apiErrorMessage(errData, 'The conference could not be saved. Review the required fields and try again.'));
         }
       })
       .catch(err => alert(`Event not confirmed as saved: ${err}`))
@@ -2940,7 +2940,7 @@ const App: React.FC = () => {
             fetchAssets();
           }
         } else {
-          setUploadResult({ created: 0, skipped: 0, errors: data.errors || (Array.isArray(data) ? data : [data.error || data.detail || data.message || 'Upload failed']) });
+          setUploadResult({ created: 0, skipped: 0, errors: data.errors || (Array.isArray(data) ? data : [apiErrorMessage(data, 'The upload failed. Check the file format and required columns.')]) });
           setUploadFeedback({ type: 'error', text: 'Error: Failed to upload file.' });
         }
       })
@@ -3314,13 +3314,13 @@ const App: React.FC = () => {
         if (res.ok || res.status === 404) {
           fetchAssets();
         } else {
-          let errText = res.statusText;
+          let errText = 'This equipment could not be deleted. Review its current program and document history.';
           try {
             const errData = await res.json();
-            errText = JSON.stringify(errData);
+            errText = apiErrorMessage(errData, errText);
           } catch (e) { }
           console.error("Delete failed:", res.status, errText);
-          alert(`Failed to delete asset. Server responded with: ${res.status} ${errText}`);
+          alert(errText);
         }
       })
       .catch(err => {
@@ -3591,7 +3591,7 @@ const App: React.FC = () => {
             });
         } else {
           const errData = await res.json();
-          alert(`Failed to create component: ${JSON.stringify(errData)}`);
+          alert(apiErrorMessage(errData, 'The equipment component could not be created. Check its required details.'));
         }
       })
       .catch(() => alert('Network error while creating component.'));
