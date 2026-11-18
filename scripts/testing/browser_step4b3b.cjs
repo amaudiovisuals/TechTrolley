@@ -72,7 +72,7 @@ window.tailwind={config:{}};localStorage.setItem('token','synthetic-sources-toke
    await page.getByRole('button',{name:'View Truck 1 challan',exact:true}).click();const printed=context.waitForEvent('page');await page.getByRole('button',{name:'Print Truck 1',exact:true}).click();const copy=await printed;copy.on('pageerror',error=>errors.push(error.message));await copy.waitForLoadState();await copy.getByText('Manual cable',{exact:true}).first().waitFor();assert.equal(await copy.getByText('Manual cable',{exact:true}).count(),3);await copy.close();
   });
   await check('Issued transfer fails without a reason, then records the correction without changing stock',async()=>{
-   await page.getByLabel('Move Bulk cable',{exact:true}).fill('1');await clickCommand('Move selected manifest quantities','move',409);await page.getByRole('alert').filter({hasText:'issued_manifest_requires_correction_reason'}).waitFor();
+   await page.getByLabel('Move Bulk cable',{exact:true}).fill('1');await clickCommand('Move selected manifest quantities','move',409);await page.getByRole('alert').filter({hasText:'Enter a reason before changing an issued truck challan.'}).waitFor();
    const before=await inspect();await page.getByLabel('Manifest correction reason').fill('Repacked one cable');await clickCommand('Move selected manifest quantities','move');await page.getByText('Truck manifest confirmed.',{exact:true}).waitFor();
    const after=await inspect(), truck=after.all_documents.find(doc=>doc.truck_id&&doc.state==='issued');assert.equal(after.stock,100);assert.equal(truck.lines.find(line=>line.snapshot.alias_name==='Bulk cable').quantity,3);assert.equal(truck.number,before.all_documents.find(doc=>doc.truck_id===truck.truck_id).number);
   });

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from './apiErrors';
 // Keep credentials in the request header. Filenames never come from HTML or URLs.
 export async function downloadEventPdf(
   id: string | number, apiFetch: (url: string) => Promise<Response>,
@@ -14,7 +15,7 @@ export async function downloadPrivatePdf(
   const response = await apiFetch(path);
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw Error(error.detail || 'Document download failed. Check your login and event assignment.');
+    throw Error(apiErrorMessage(error, 'Document download failed. Check your login and event assignment.'));
   }
   if (!response.headers.get('Content-Type')?.toLowerCase().startsWith('application/pdf')) throw Error('The server did not return a PDF.');
   const blob = await response.blob();

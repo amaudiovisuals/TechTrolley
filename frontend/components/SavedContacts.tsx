@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import React from 'react';
 import { setWorkBlocker } from '../state/workSafety';
 
@@ -34,7 +35,7 @@ function ContactPicker({ kind, form, onChange, apiFetch, canSave }: {
     const timer = setTimeout(() => {
       apiFetch(`/api/saved-${kind}/?search=${encodeURIComponent(query)}`).then(async response => {
         const data = await response.json();
-        if (!response.ok) throw Error(data.detail || 'Saved details could not load.');
+        if (!response.ok) throw Error(apiErrorMessage(data, 'Saved details could not load. Refresh and try again.'));
         if (!Array.isArray(data)) throw Error('Saved details could not be read.');
         if (current) setRows(data);
       }).catch(e => { if (current) { setRows([]); setError(e.message); } }).finally(() => { if (current) setLoading(false); });
@@ -63,7 +64,7 @@ function ContactPicker({ kind, form, onChange, apiFetch, canSave }: {
         method: update ? 'PATCH' : 'POST', body: JSON.stringify({ ...body, ...(update ? { expected_revision: selected!.revision } : {}) }),
       });
       const data = await response.json();
-      if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : Object.entries(data).map(([key, value]) => `${key}: ${value}`).join('\n'));
+      if (!response.ok) throw Error(apiErrorMessage(data, 'The contact could not be saved. Check its name, address and GST details.'));
       setSelected(data); setSavedName(data.name); setReload(n => n + 1);
       setNotice(`${update ? 'Updated' : 'Saved'} “${data.name}” in the address book. Save the program separately to keep its filled details.`);
     } catch (e) { setError((e as Error).message); }

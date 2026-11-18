@@ -1,3 +1,4 @@
+import { apiErrorMessage } from './apiErrors';
 export type StaffEndpoint = '/api/staff-commands/' | '/api/employee-link-commands/';
 export interface StaffPending {
     version: 1;
@@ -59,7 +60,7 @@ export class StaffWorkQueue {
             const response = await apiFetch(value.endpoint, { method: 'POST', body: JSON.stringify(value.payload) });
             const result = await response.json();
             if (!response.ok) {
-                const message = result.error || `Staff save failed (${response.status})`;
+                const message = apiErrorMessage(result, 'The staff equipment change could not be saved. Review the current records.');
                 if ([400, 403, 404, 409, 428].includes(response.status)) {
                     this.store.setItem(this.key, JSON.stringify({ ...value, status: 'rejected', error: message }));
                     this.announce();

@@ -109,7 +109,11 @@ def validate_sources(event, lines):
         else:
             if asset.pk not in membership: raise CommandError('manifest_physical_source_requires_review')
             capacity = 1
-        if line.quantity > capacity: raise CommandError('manifest_source_exceeds_recorded_capacity')
+        if line.quantity > capacity:
+            raise CommandError('manifest_source_exceeds_recorded_capacity', details=[{
+                'asset_id': asset.pk, 'sku': asset.sku, 'alias_name': asset.alias_name,
+                'saved_quantity': line.quantity, 'recorded_capacity': capacity,
+            }])
 
 
 def validate_total(master):

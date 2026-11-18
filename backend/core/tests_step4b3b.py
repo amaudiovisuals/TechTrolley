@@ -57,6 +57,19 @@ class ManifestTests(TestCase):
     def move(self,index=0,quantity=2,**fields):
         return self.run_command('move',from_truck_id=self.trucks[0].pk,to_truck_id=self.trucks[1].pk,
             items=[{'master_line_id':self.lines[index]['id'],'quantity':quantity}],**fields)
+    def test_capacity_error_identifies_the_saved_item_and_both_counts(self):
+        from .truck_manifests import validate_sources
+        document = self.event.challan_documents.get(scope='master')
+        line = document.lines.get(asset=self.physical)
+        line.quantity = 8; line.save()
+        with self.assertRaises(CommandError) as error:
+            validate_sources(self.event, [line])
+        self.assertEqual(error.exception.code, 'manifest_source_exceeds_recorded_capacity')
+        self.assertEqual(error.exception.details, [{'asset_id': self.physical.pk, 'sku': self.physical.sku,
+            'alias_name': self.physical.alias_name, 'saved_quantity': 8, 'recorded_capacity': 1}])
+        self.assertFalse(TruckManifest.objects.exists())
+        self.assertFalse(TruckChallan.objects.exists())
+
     def stock(self):return list(Asset.objects.order_by('pk').values_list('quantity',flat=True))
 
     def test_start_copies_all_sources_once_and_allocates_distinct_numbers(self):

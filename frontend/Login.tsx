@@ -1,3 +1,4 @@
+import { apiErrorMessage } from './state/apiErrors';
 import React, { useState, useEffect } from 'react';
 import { Logo } from './components/Logo';
 import { CompanySettings } from './types';
@@ -57,7 +58,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     role: data.role
                 });
             } else {
-                setError(data.error || data.detail || 'Login failed');
+                setError(apiErrorMessage(data, 'Login failed. Check your login details and try again.'));
             }
         } catch (err) {
             setError('Connection refused. Please try again.');

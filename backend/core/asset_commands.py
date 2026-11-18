@@ -120,8 +120,10 @@ def execute_command(user, conference_id, payload, *, batch_limit=500):
         if any(is_quantity_stock(a) for a in assets):
             raise CommandError('quantity_stock_requires_quantity_workflow', 400)
         other_events = Conference.objects.filter(is_audit=False).exclude(pk=event.pk)
-        other_ids = set(other_events.filter(assets__in=ids).values_list('assets', flat=True))
-        other_ids.update(other_events.filter(crosscheck_assets__in=ids).values_list('crosscheck_assets', flat=True))
+        locations = {}
+        for relation, stage in (('assets', 'packup'), ('crosscheck_assets', 'crosscheck')):
+            for asset_id, event_id, name in other_events.filter(**{relation + '__in': ids}).order_by('pk').values_list(relation + '__pk', 'pk', 'name'):
+                locations.setdefault(asset_id, []).append({'conference_id': event_id, 'conference_name': name, 'stage': stage})
         child_ids = {}
         for parent_id, child_id in Asset.objects.filter(parent_asset_id__in=ids).values_list('parent_asset_id', 'pk'):
             child_ids.setdefault(parent_id, set()).add(child_id)
@@ -130,20 +132,21 @@ def execute_command(user, conference_id, payload, *, batch_limit=500):
             children = child_ids.get(asset.pk, set())
             if not children <= selected_ids or (asset.parent_asset_id and asset.parent_asset_id not in selected_ids):
                 conflicts.append({'asset_id': asset.pk, 'reason': 'component_set_required'})
-            if asset.pk in other_ids:
-                conflicts.append({'asset_id': asset.pk, 'reason': 'held_by_other_event'})
+            if asset.pk in locations:
+                conflicts.append({'asset_id': asset.pk, 'reason': 'held_by_other_event', 'locations': locations[asset.pk]})
             if action in {'stage', 'dispatch', 'transfer'} and (asset.status in RESTRICTED or asset.flag or asset.condition == 'Damaged' or asset.assigned_to_id or asset.staff_allocations.filter(returned_at__isnull=True).exists()):
                 conflicts.append({'asset_id': asset.pk, 'reason': 'unavailable_or_staff_allocated'})
             if action == 'dispatch' and asset.pk not in staged | active:
                 conflicts.append({'asset_id': asset.pk, 'reason': 'not_staged'})
             if action in {'stage', 'dispatch'} and asset.pk in crosscheck:
-                conflicts.append({'asset_id': asset.pk, 'reason': 'crosscheck_pending'})
+                conflicts.append({'asset_id': asset.pk, 'reason': 'crosscheck_pending', 'locations': [{'conference_id': event.pk, 'conference_name': event.name, 'stage': 'crosscheck'}]})
             if action in {'return', 'transfer'} and asset.pk not in active and not (action == 'return' and asset.pk in crosscheck):
                 conflicts.append({'asset_id': asset.pk, 'reason': 'not_dispatched_here'})
             if action == 'verify_return' and asset.pk not in crosscheck:
                 conflicts.append({'asset_id': asset.pk, 'reason': 'not_awaiting_crosscheck'})
         if conflicts:
-            raise CommandError('asset_conflict', details=conflicts)
+            labels = {asset.pk: {'sku': asset.sku, 'alias_name': asset.alias_name} for asset in assets}
+            raise CommandError('asset_conflict', details=[{**row, **labels[row['asset_id']]} for row in conflicts])
 
     if action == 'require':
         event.requirements.add(*ids)

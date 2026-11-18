@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import React from 'react';
 import { clearPendingDelivery, deliveryPendingKey, readPendingDelivery, savePendingDelivery, validDeliveryRequest, type DeliveryIssueRequest, type SupplierPaperDetails } from '../state/programDeliveryDrafts';
 import { setWorkBlocker } from '../state/workSafety';
@@ -87,7 +88,7 @@ export const ProgramDeliveries: React.FC<{
 
   async function json(response: Response) {
     const body = await response.json();
-    if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : Array.isArray(body) && body.every(entry => typeof entry === 'string') ? body.join(' ') : JSON.stringify(body));
+    if (!response.ok) throw new Error(apiErrorMessage(body, 'The delivery challan could not be saved. Review its details and try again.'));
     return body;
   }
   const reload = React.useCallback(async () => {

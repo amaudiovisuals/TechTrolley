@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type FC } from 'react';
 import { Scanner } from './Scanner';
 import { resolveScan } from '../state/scanIdentity';
@@ -87,7 +88,7 @@ const fields: { key: keyof Transport; label: string; max: number; required?: boo
 
 async function readJson(response: Response) {
   const data = await response.json();
-  if (!response.ok) throw Error(data?.detail || (Array.isArray(data) ? data.join(' ') : 'Return challan request failed.'));
+  if (!response.ok) throw Error(apiErrorMessage(data, 'The return challan request failed. Refresh and review its current details.'));
   return data;
 }
 
