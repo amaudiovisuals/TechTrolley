@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import React, { useEffect, useState } from 'react';
 import { findSavedWork, copySavedWork, RecoveryIdentity, SavedWork } from '../state/savedWorkRecovery';
 import { setWorkBlocker } from '../state/workSafety';
@@ -24,7 +25,7 @@ export function SavedWorkRecovery({account,apiFetch,onCopied}:{key?:string;accou
     try{
       await copySavedWork(row,localStorage,location.origin,identity,async ids=>{
         const res=await apiFetch('/api/saved-work/recovery-check/',{method:'POST',body:JSON.stringify({email:identity.email,request_ids:ids,confirmed_own_work:true})});const data=await res.json();
-        if(!res.ok||data.review_allowed!==true||data.user_id!==identity.user_id)throw Error(data.error||'Ownership of this saved work could not be confirmed.');
+        if(!res.ok||data.review_allowed!==true||data.user_id!==identity.user_id)throw Error(apiErrorMessage(data, 'Ownership of this saved work could not be confirmed.'));
       },assertSession);
       assertSession();await refresh();window.dispatchEvent(new StorageEvent('storage',{key:row.target}));onCopied?.();
     }catch(e){setError((e as Error).message);await refresh().catch(()=>{});}

@@ -46,7 +46,12 @@ with tempfile.TemporaryDirectory(prefix='tt-quantity-browser-') as media:
             'unchecked_ids': list(event.crosscheck_assets.values_list('pk', flat=True)), 'draft_asset_ids': list(document.lines.values_list('asset_id', flat=True)), 'movements': QuantityMovement.objects.count(), 'receipts': MovementReceipt.objects.count(),
             'allocation': list(event.quantity_allocations.values('reserved', 'dispatched', 'awaiting_verification', 'dispatched_total', 'verified_total'))})
 
-    urlpatterns = [path('api/', include('core.urls')), path('_fixture/inspect/', inspect)]
+    def hold_crosscheck(request):
+        other = Conference.objects.create(name='Previous venue program')
+        other.crosscheck_assets.add(physical)
+        return JsonResponse({'ok': True})
+
+    urlpatterns = [path('api/', include('core.urls')), path('_fixture/inspect/', inspect), path('_fixture/hold-crosscheck/', hold_crosscheck)]
     print('SYNTHETIC_QUANTITY_SERVER_READY', flush=True)
     with make_server('127.0.0.1', 4316, WSGIHandler()) as server:
         server.serve_forever()

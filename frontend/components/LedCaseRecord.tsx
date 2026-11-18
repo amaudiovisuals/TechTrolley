@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import React from 'react';
 import type { Asset } from '../types';
 
@@ -6,7 +7,7 @@ export function LedCaseRecord({asset, canReview, apiFetch}: {key?: string; asset
   async function load() {
     setLoading(true); setError('');
     try { const response=await apiFetch(`/api/assets/${asset.id}/led-case-conversion/`), body=await response.json();
-      if (!response.ok) throw Error(body.error || 'Conversion review unavailable.'); setReview(body);
+      if (!response.ok) throw Error(apiErrorMessage(body, 'The LED box review is unavailable. Refresh and try again.')); setReview(body);
     } catch(e) { setError((e as Error).message); } finally {setLoading(false);}
   }
   if (asset.stock_kind === 'led_panel') return <section aria-label="LED panel origin" className="rounded-xl border border-slate-300 bg-white text-slate-900 p-4 space-y-2">

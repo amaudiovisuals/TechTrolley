@@ -1,3 +1,4 @@
+import { apiErrorMessage } from './state/apiErrors';
 import { SavedContacts } from './components/SavedContacts';
 import { LedCasePicker } from './components/LedCasePicker';
 import { LedCaseRecord } from './components/LedCaseRecord';
@@ -567,7 +568,7 @@ const App: React.FC = () => {
   const loadCustodyReview = useCallback(async (id: number): Promise<CustodyReviewData> => {
     const res = await apiFetch(`${API_BASE}/api/conferences/${id}/custody-review/`);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || data.error || 'Could not load custody review.');
+    if (!res.ok) throw new Error(apiErrorMessage(data, 'Could not load custody review. Refresh and try again.'));
     return data;
   }, [apiFetch, API_BASE]);
   const [challanViewMode, setChallanViewMode] = useState<'List' | 'Detail'>('List');
@@ -1758,7 +1759,7 @@ const App: React.FC = () => {
     });
     const result = await response.json();
     if (!response.ok) {
-      const error = new Error(result.error || `Challan save failed (${response.status})`) as Error & { definitive: boolean };
+      const error = new Error(apiErrorMessage(result, 'The challan could not be saved. Refresh and review its current details.')) as Error & { definitive: boolean };
       error.definitive = [400, 403, 404, 409, 428].includes(response.status);
       throw error;
     }
@@ -2078,7 +2079,7 @@ const App: React.FC = () => {
         } else {
           if (res.status === 409) { setEventDraftConflict(true); await fetchConferences(); }
           const errData = await res.json().catch(() => ({}));
-          alert(`Failed to save conference. Status: ${res.status}\n${JSON.stringify(errData)}`);
+          alert(apiErrorMessage(errData, 'The conference could not be saved. Review the required fields and try again.'));
         }
       })
       .catch(err => alert(`Event not confirmed as saved: ${err}`))
@@ -2412,16 +2413,7 @@ const App: React.FC = () => {
         const result = await response.json();
         if (!response.ok) {
           const ErrorType = [400, 403, 404, 409, 428].includes(response.status) && result.error !== 'request_id_reused' ? RejectedMovement : Error;
-          const sourceMessages: Record<string, string> = { external_rental_uses_supplier_balance: 'This is an external rental. Record its receipt or return in the supplier ticket.', supplier_inventory_classification_required: 'This supplier inventory needs shared-godown classification before new quantity movements.', supplier_ticket_quantity_requires_review: 'This stock also has supplier order history. Review those quantities before reserving it.' };
-          Object.assign(sourceMessages, {
-            skip_packup_review_changed: 'Packup changed. Refresh and review the current equipment list.',
-            skip_packup_review_blocked: 'Resolve the listed items before skipping Packup.',
-            skip_packup_admin_required: 'Only the Admin login can skip Packup.',
-            skip_packup_empty: 'There are no items in Packup.',
-            skip_packup_reason_required: 'Enter a reason for skipping Packup.',
-            skip_packup_audit_program: 'Skip Packup is unavailable for audit programs.',
-          });
-          throw new ErrorType(`${sourceMessages[result.error] || result.error || 'Movement rejected'}${result.conflicts?.length ? ': ' + result.conflicts.map((item: any) => `${item.asset_id} ${item.reason}`).join(', ') : ''}`);
+          throw Object.assign(new ErrorType(apiErrorMessage(result)), { code: result.error });
         }
         return result;
       }, async result => { assertQueueSession(); if (result.operation === 'consumable') await publishConsumableReceipt(result, assertQueueSession); else {
@@ -2492,12 +2484,6 @@ const App: React.FC = () => {
     } catch (error) {
       if (error instanceof RejectedMovement) {
         (error as Error & { definitive?: boolean }).definitive = true;
-        if (error.message === 'legacy_quantity_requires_reconciliation') {
-          error.message = 'A bulk item has no recorded quantity for this program. Verify its actual quantity before splitting the challan.';
-        }
-        if (error.message === 'issued_truck_split_cannot_cancel') {
-          error.message = 'This split includes issued truck or delivery paperwork. Open the master to leave the truck view.';
-        }
       }
       throw error;
     } finally {
@@ -2524,7 +2510,7 @@ const App: React.FC = () => {
   const prepareOfflineEvent = async (id: number) => {
     const response = await apiFetch(`${API_BASE}/api/conferences/${id}/offline-package/`);
     const data = await response.json();
-    if (!response.ok) throw Error(data.error || 'Offline data could not be prepared.');
+    if (!response.ok) throw Error(apiErrorMessage(data, 'Offline data could not be prepared. Reconnect and try again.'));
     return data;
   };
   const queueOfflineAsset = async (eventId: number, assetId: number) => {
@@ -2954,7 +2940,7 @@ const App: React.FC = () => {
             fetchAssets();
           }
         } else {
-          setUploadResult({ created: 0, skipped: 0, errors: data.errors || (Array.isArray(data) ? data : [data.error || data.detail || data.message || 'Upload failed']) });
+          setUploadResult({ created: 0, skipped: 0, errors: data.errors || (Array.isArray(data) ? data : [apiErrorMessage(data, 'The upload failed. Check the file format and required columns.')]) });
           setUploadFeedback({ type: 'error', text: 'Error: Failed to upload file.' });
         }
       })
@@ -3328,13 +3314,13 @@ const App: React.FC = () => {
         if (res.ok || res.status === 404) {
           fetchAssets();
         } else {
-          let errText = res.statusText;
+          let errText = 'This equipment could not be deleted. Review its current program and document history.';
           try {
             const errData = await res.json();
-            errText = JSON.stringify(errData);
+            errText = apiErrorMessage(errData, errText);
           } catch (e) { }
           console.error("Delete failed:", res.status, errText);
-          alert(`Failed to delete asset. Server responded with: ${res.status} ${errText}`);
+          alert(errText);
         }
       })
       .catch(err => {
@@ -3605,7 +3591,7 @@ const App: React.FC = () => {
             });
         } else {
           const errData = await res.json();
-          alert(`Failed to create component: ${JSON.stringify(errData)}`);
+          alert(apiErrorMessage(errData, 'The equipment component could not be created. Check its required details.'));
         }
       })
       .catch(() => alert('Network error while creating component.'));

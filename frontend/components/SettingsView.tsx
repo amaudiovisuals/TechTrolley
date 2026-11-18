@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import React, { useState, useEffect } from 'react';
 
 interface SettingsViewProps {
@@ -183,7 +184,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user, onCr
                 onCredentialsChanged?.();
             } else {
                 const data = await res.json();
-                setPasswordMsg({ type: 'error', text: data.error || data.detail || 'Failed to update password.' });
+                setPasswordMsg({ type: 'error', text: apiErrorMessage(data, 'Failed to update password. Check the required fields.') });
             }
         } catch (e) {
             setPasswordMsg({ type: 'error', text: 'Connection error while updating password.' });
@@ -207,7 +208,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user, onCr
                 fetchUsers();
             } else {
                 const data = await res.json();
-                setAddEmployeeMsg({ type: 'error', text: data.error || 'Failed to add user.' });
+                setAddEmployeeMsg({ type: 'error', text: apiErrorMessage(data, 'Failed to add user. Check the required fields.') });
             }
         } catch (e) {
             setAddEmployeeMsg({ type: 'error', text: 'Connection error.' });
@@ -272,13 +273,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user, onCr
                 fetchEmployees();
                 fetchUsers();
             } else if (res.status !== 401) {
-                let errorText = data.error || data.detail;
-                if (!errorText && typeof data === 'object') {
-                    errorText = Object.entries(data)
-                        .map(([field, errs]) => `${field}: ${Array.isArray(errs) ? errs.join(' ') : errs}`)
-                        .join(' | ');
-                }
-                setAddEmployeeMsg({ type: 'error', text: errorText || 'Failed to add user.' });
+                setAddEmployeeMsg({ type: 'error', text: apiErrorMessage(data, 'Failed to add user. Check the required fields.') });
             }
         } catch (err) {
             setAddEmployeeMsg({ type: 'error', text: 'Connection error.' });
@@ -309,7 +304,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user, onCr
                 fetchUsers();
             } else {
                 const data = await res.json().catch(() => ({}));
-                const errMsg = data.error || data.detail || 'Please ensure you have administrator permissions.';
+                const errMsg = apiErrorMessage(data, 'Please ensure you have administrator permissions.');
                 alert(`Failed to update role. ${errMsg}`);
                 fetchEmployees();
                 fetchUsers();
@@ -355,7 +350,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ apiFetch, user, onCr
                 method: 'POST', body: JSON.stringify({email: resetEmail, new_password: resetPassword, current_password: resetAdminPassword})
             });
             const data = await res.json();
-            if (!res.ok) { setResetError(data.error || data.detail || 'Password reset failed.'); return; }
+            if (!res.ok) { setResetError(apiErrorMessage(data, 'Password reset failed. Check the selected user.')); return; }
             setResetEmail(null); setResetPassword(''); setResetAdminPassword('');
             alert(data.message);
             if (data.login_required) onCredentialsChanged?.();

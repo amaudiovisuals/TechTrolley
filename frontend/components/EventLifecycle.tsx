@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../state/apiErrors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LifecycleAction, LifecyclePending, LifecycleWorkQueue, lifecycleScope } from '../state/eventLifecycle';
 import { setWorkBlocker } from '../state/workSafety';
@@ -112,7 +113,7 @@ function LifecyclePanel({ eventId, refreshEpoch, user, queue, pending, storageEr
     let current = true; setData(null); setError(''); setReason(''); setConfirmed(false);
     apiFetch(`/api/conferences/${eventId}/lifecycle-review/`).then(async response => {
       const value = await response.json();
-      if (!response.ok) throw Error(value.error || `Event review failed (${response.status})`);
+      if (!response.ok) throw Error(apiErrorMessage(value, 'The program review could not load. Refresh and try again.'));
       if (value.mode !== 'lifecycle_review' || value.conference_id !== eventId || !Array.isArray(value.blockers) || !/^[a-f0-9]{64}$/.test(value.snapshot_sha256)) throw Error('Unexpected event review response.');
       if (current) { setData(value); setAction(value.state === 'open' ? 'complete' : value.state === 'completed' ? 'archive' : 'reopen'); }
     }).catch(reason => { if (current) setError(reason instanceof Error ? reason.message : 'Could not load event review.'); });

@@ -114,6 +114,27 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
       await tick.waitFor({ state: 'hidden' });
       assert.deepEqual((await state()).unchecked_ids, [1]);
     });
+    await check('A rejected QR scan names the holding program and Crosscheck stage in plain English', async () => {
+      await page.request.post('http://127.0.0.1:4316/_fixture/hold-crosscheck/');
+      await page.getByRole('button', { name: 'Requirements', exact: true }).click();
+      const response = page.waitForResponse(response => response.url().endsWith('/asset-commands/') && response.status() === 409);
+      await scan('PHYSICAL-1');
+      const result = await (await response).json();
+      assert.equal(result.error, 'asset_conflict');
+      await page.getByText(/PHYSICAL-1: awaiting Crosscheck in “Previous venue program”/).waitFor();
+      assert.equal(await page.getByText(/held_by_other_event|asset_conflict/).count(), 0);
+      const message = await page.evaluate(async () => {
+        const { apiErrorMessage } = await import('/state/apiErrors.ts');
+        return {
+          capacity: apiErrorMessage({ error: 'manifest_source_exceeds_recorded_capacity', conflicts: [{ sku: 'CABLE-1', saved_quantity: 8, recorded_capacity: 1 }] }),
+          unknown: apiErrorMessage({ error: 'future_unmapped_error' }),
+          delivery: apiErrorMessage(['Save a reviewed customer challan before creating this delivery.']),
+        };
+      });
+      assert.match(message.capacity, /CABLE-1: the saved challan lists 8, but the program records allow 1/);
+      assert(!message.unknown.includes('future_unmapped_error'));
+      assert.equal(message.delivery, 'Save a reviewed customer challan before creating this delivery.');
+    });
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ checks: checks.length, names: checks, environment: 'Actual React App and DRF endpoints; fresh headless Chrome profile; migrated disposable SQLite; loopback-only transport' }, null, 2));
   } catch (error) { console.error('Synthetic backend diagnostics:', backendOutput); throw error; }

@@ -73,6 +73,45 @@ class MovementTests(SnapshotTestCase):
         self.assertFalse(self.event.staged_assets.exists())
         self.assertEqual(MovementReceipt.objects.count(), 0)
 
+    def test_crosscheck_conflict_names_the_program_stage_and_sku_without_moving_stock(self):
+        self.other.crosscheck_assets.add(self.asset)
+        response = self.client.post(f'/api/conferences/{self.event.pk}/asset-commands/', {
+            'request_id': str(uuid.uuid4()), 'action': 'stage', 'asset_ids': [self.asset.pk],
+        }, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['error'], 'asset_conflict')
+        conflict = response.data['conflicts'][0]
+        self.assertEqual(conflict['sku'], self.asset.sku)
+        self.assertEqual(conflict['locations'], [{'conference_id': self.other.pk,
+            'conference_name': self.other.name, 'stage': 'crosscheck'}])
+        self.assertTrue(self.other.crosscheck_assets.filter(pk=self.asset.pk).exists())
+        self.assertFalse(self.event.staged_assets.exists())
+        self.assertFalse(MovementReceipt.objects.exists())
+
+    def test_conflict_locations_include_each_live_holder_and_exclude_audits(self):
+        self.other.assets.add(self.asset)
+        another = Conference.objects.create(name='Pending return')
+        another.crosscheck_assets.add(self.asset)
+        audit = Conference.objects.create(name='Audit only', is_audit=True)
+        audit.assets.add(self.asset); audit.crosscheck_assets.add(self.asset)
+        with self.assertRaises(CommandError) as error:
+            self.move('stage')
+        self.assertEqual(error.exception.details[0]['locations'], [
+            {'conference_id': self.other.pk, 'conference_name': self.other.name, 'stage': 'packup'},
+            {'conference_id': another.pk, 'conference_name': another.name, 'stage': 'crosscheck'}])
+        self.other.assets.clear(); another.crosscheck_assets.clear()
+        self.move('stage')
+        self.assertTrue(self.event.staged_assets.filter(pk=self.asset.pk).exists())
+
+    def test_same_program_crosscheck_includes_location_and_verification_releases_it(self):
+        self.move('stage'); self.move('dispatch'); self.move('return')
+        with self.assertRaises(CommandError) as error:
+            self.move('stage')
+        self.assertEqual(error.exception.details[0]['locations'][0]['conference_id'], self.event.pk)
+        self.assertEqual(error.exception.details[0]['locations'][0]['stage'], 'crosscheck')
+        self.move('verify_return'); self.move('stage', event=self.other)
+        self.assertTrue(self.other.staged_assets.filter(pk=self.asset.pk).exists())
+
     def test_unstaged_dispatch_and_direct_return_are_rejected(self):
         for action in ('dispatch', 'return', 'verify_return'):
             with self.assertRaises(CommandError): self.move(action)
