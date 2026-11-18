@@ -211,6 +211,9 @@ def execute_command(user, conference_id, payload, *, batch_limit=500):
                 movements.append(PhysicalMovement(asset=asset, conference=target, target_conference=event, receipt=receipt,
                                                   action='transfer_in', snapshot={'asset': snapshot['asset'], 'accepted_from_event_id': event.pk, 'source': command['source'], 'dispatch_origin': dispatch_origin}))
         PhysicalMovement.objects.bulk_create(movements)
+        if action in {'dispatch', 'transfer'}:
+            from .draft_dispatch import append_dispatched_units
+            append_dispatched_units(target if target else event, user, ids)
     result = {'request_id': command['request_id'], 'action': action, 'asset_ids': ids,
               'conference': canonical_conference(event),
               'asset_states': AssetSerializer(Asset.objects.filter(pk__in=ids).order_by('pk'), many=True).data, 'replayed': False}

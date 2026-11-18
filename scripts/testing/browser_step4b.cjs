@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'); const path = require('node:path');
 const { spawn } = require('node:child_process'); const { pathToFileURL } = require('node:url');
 const ROOT = path.resolve(__dirname, '../..');
-const { chromium } = require(process.env.TT_PLAYWRIGHT_MODULE || '/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const { chromium, launchOptions } = require('./browser_runtime.cjs');
 const checks = []; async function check(name, run) { await run(); checks.push(name); }
 (async () => {
   const backend = spawn(process.env.TT_TEST_PYTHON || path.join(ROOT, 'backend/venv/bin/python'), [path.join(__dirname, 'quantity_test_server.py')], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -19,7 +19,7 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
     await ready;
     server = await createServer({ root: path.join(ROOT, 'frontend'), configFile: path.join(ROOT, 'frontend/vite.config.ts'), server: { host: '127.0.0.1', port: 4315, strictPort: true } });
     await server.listen();
-    browser = await chromium.launch({ headless: true, executablePath: process.env.TT_CHROME_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+    browser = await chromium.launch(launchOptions());
     const context = await browser.newContext(); const page = await context.newPage(); const errors = [], writes = [];
     page.on('pageerror', error => errors.push(error.message)); page.on('dialog', dialog => dialog.accept());
     let dropNextQuantity = false;
@@ -62,7 +62,7 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
     const state = async () => (await page.request.get('http://127.0.0.1:4316/_fixture/inspect/')).json();
     await check('Actual scanner stages a partial bulk quantity without cloning or a conference PUT', async () => {
       await scan('BULK-10'); await quantity(6, 'stage');
-      await page.getByRole('button', { name: /Synthetic cable stock.*x 1/i }).click();
+      await page.getByRole('button', { name: /Synthetic cable stock.*x /i }).click();
       await page.getByText('6 packed · 0 on site · 0 unchecked', { exact: true }).waitFor();
       const saved = await state(); assert.equal(saved.asset_count, 2); assert.equal(saved.stock, 10); assert.equal(saved.allocation[0].reserved, 6);
       assert.equal(writes.length, 1); assert(writes[0].path.endsWith('/quantity-commands/'));
@@ -74,6 +74,7 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
       await page.getByRole('button', { name: 'Submit Dispatch to Show', exact: true }).waitFor({ state: 'hidden' });
       const saved = await state(); assert.equal(saved.allocation[0].dispatched, 6); assert.equal(saved.allocation[0].reserved, 0);
       const last = writes.at(-1); assert(last.path.endsWith('/quantity-commands/')); assert.deepEqual(last.payload.items, [{ asset_id: 1, quantity: 6 }]); assert.deepEqual(last.payload.physical_asset_ids, [2]);
+      assert.deepEqual(saved.draft_asset_ids,[2]);
     });
     await check('A committed bulk return with a dropped response survives reload and exact retry', async () => {
       await page.getByRole('button', { name: 'Packup', exact: true }).click();
@@ -88,10 +89,30 @@ const checks = []; async function check(name, run) { await run(); checks.push(na
     });
     await check('Warehouse verification releases only explicitly verified units', async () => {
       await page.getByRole('button', { name: 'Crosscheck', exact: true }).click();
-      await page.getByRole('button', { name: /Synthetic cable stock.*x 1/i }).click();
-      await page.getByTitle('Verify Receipt').click(); await quantity(1, 'verify return');
+      const tick = page.getByRole('button', { name: 'Verify receipt for Synthetic cable stock', exact: true });
+      await tick.waitFor();
+      assert.equal(await tick.isEnabled(), true);
+      await tick.click(); await quantity(1, 'verify return');
+      await page.getByRole('button', { name: /Synthetic cable stock.*x /i }).click();
       await page.getByText('0 packed · 4 on site · 1 unchecked', { exact: true }).waitFor();
       const saved = await state(); assert.equal(saved.allocation[0].verified_total, 1); assert.equal(saved.stock, 10); assert.equal(saved.asset_count, 2);
+    });
+    await check('Godown incharge verifies an individual unit using the visible group tick', async () => {
+      await page.getByRole('button', { name: 'Packup', exact: true }).click();
+      const input = page.getByPlaceholder('Scan to remove/verify...');
+      await input.fill('PHYSICAL-1'); await input.press('Enter');
+      await page.getByRole('button', { name: 'Crosscheck', exact: true }).click();
+      const tick = page.getByRole('button', { name: 'Verify receipt for Synthetic speaker', exact: true });
+      await tick.waitFor();
+      await page.setViewportSize({ width: 390, height: 844 });
+      if (process.env.TT_TEST_SCREENSHOT) await page.screenshot({path:process.env.TT_TEST_SCREENSHOT});
+      assert.equal(await tick.evaluate(element => { const box = element.getBoundingClientRect(); return box.width >= 44 && box.right <= innerWidth; }), true);
+      const response = page.waitForResponse(response => response.url().endsWith('/asset-commands/') &&
+        response.request().postDataJSON().action === 'verify_return');
+      await tick.click();
+      assert.equal((await response).status(), 200);
+      await tick.waitFor({ state: 'hidden' });
+      assert.deepEqual((await state()).unchecked_ids, [1]);
     });
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ checks: checks.length, names: checks, environment: 'Actual React App and DRF endpoints; fresh headless Chrome profile; migrated disposable SQLite; loopback-only transport' }, null, 2));

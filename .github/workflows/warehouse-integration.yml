@@ -60,6 +60,7 @@ jobs:
         env:
           TT_TEST_PYTHON: python
         run: |
+          node scripts/testing/browser_step4b.cjs
           node scripts/testing/browser_warehouse_quantities.cjs
           node scripts/testing/browser_contacts_transfers.cjs
           node scripts/testing/browser_quantity_transfers.cjs
