@@ -339,6 +339,12 @@ def save_document(user, event_id, scope, payload, coordinated=False):
             if not same_ref and asset.subrental_company_id and asset.subrental_company.inventory_mode == 'shared_warehouse':
                 raise CommandError('shared_stock_ticket_requires_review')
         elif asset:
+            from .unit_challan_quantities import individual_source
+            if (line['quantity'] > 1 and individual_source(asset)
+                    and not (was_issued and same_ref and line['quantity'] <= original.quantity)):
+                raise CommandError('individual_challan_quantity_exceeds_one', details=[{
+                    'asset_id': asset.pk, 'sku': asset.sku, 'recorded_quantity': asset.quantity,
+                }])
             allocation = quantities.get(asset.pk)
             if not same_ref and asset.subrental_company_id and (asset.quantity_tracking or asset.quantity != 1) and asset.type != 'Consumables':
                 from .inventory_ownership import require_warehouse_quantity_source

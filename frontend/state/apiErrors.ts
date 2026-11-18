@@ -19,6 +19,7 @@ const messages: Record<string, string> = {
   source_not_in_master: 'A selected item is no longer on the master challan. Refresh the split before trying again.',
   start_truck_manifest_first: 'Add Truck 2 before allocating equipment between trucks.',
   supplier_balance_requires_review: 'The supplier’s recorded receipt quantities need review before this equipment can be split between trucks.',
+  individual_challan_quantity_exceeds_one: 'Each individual equipment QR represents one item. Set this row to quantity 1; include the other items using their own QRs.',
   asset_conflict: 'This equipment cannot be moved yet. Review its current location.',
   manifest_source_exceeds_recorded_capacity: 'A saved challan quantity is higher than the recorded equipment count. Ask Admin to review the draft before splitting it between trucks.',
   legacy_quantity_requires_reconciliation: 'An older item has no confirmed quantity for this program. Ask Admin to review its equipment records before continuing.',
